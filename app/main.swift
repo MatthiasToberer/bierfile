@@ -143,7 +143,18 @@ enum Bier {
 	/// silently inside a menu bar app.
 	static func runInTerminal(_ args: [String]) {
 		guard let exe = executable() else { return }
-		let command = ([exe] + args).map { "'\($0)'" }.joined(separator: " ")
+		// Two layers of quoting, and both have to hold. The shell sees
+		// single quotes, so an embedded ' has to close and reopen them;
+		// AppleScript sees a string literal, so a backslash or a quote
+		// has to be escaped again — backslash first, or the escapes
+		// would escape each other. A path from the config file with a
+		// quote in it would otherwise end the command early.
+		let shell = ([exe] + args)
+			.map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+			.joined(separator: " ")
+		let command = shell
+			.replacingOccurrences(of: "\\", with: "\\\\")
+			.replacingOccurrences(of: "\"", with: "\\\"")
 		let script = "tell application \"Terminal\"\n"
 			+ "activate\n"
 			+ "do script \"\(command)\"\n"

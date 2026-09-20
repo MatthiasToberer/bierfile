@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.13.2
+BIER_VERSION=0.14.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -180,6 +180,48 @@ entries() {
 	{ grep -E '^[[:space:]]*(tap|brew|cask|mas|vscode)[[:space:]]+"' "$1" || true; } |
 		sed -E 's/^[[:space:]]*([a-z]+)[[:space:]]+"([^"]+)".*/\1 "\2"/' |
 		sort -u
+}
+
+# A Brewfile is Ruby, and "brew bundle" evaluates it. Anything in it
+# that is not an entry is therefore a program somebody put there — and
+# "entries" above would not show it, because it reads only the front of
+# a line: brew "wget"; system("…") is displayed as plain brew "wget".
+#
+# So the whole line has to fit. Options are allowed by name, and
+# "postinstall" is deliberately not among them: its value is a shell
+# command. A trailing comment is fine — nothing can hide behind a #,
+# not even a quote.
+brewfile_grammar() {
+	local name='"[^"]*"'
+	local key='(id|trusted|args|link|greedy|require_sha|conflicts_with|restart_service|start_service)'
+	local value='(true|false|nil|[0-9]+|"[^"]*"|\[[^]]*\]|\{[^}]*\})'
+	local opt="([[:space:]]*,[[:space:]]*$key:[[:space:]]*$value)"
+	printf '%s%s%s' \
+		'^[[:space:]]*(tap|brew|cask|mas|vscode)[[:space:]]+' \
+		"$name$opt*[[:space:]]*(#.*)?\$" \
+		'|^[[:space:]]*(#.*)?$'
+}
+
+# The lines of a Brewfile that are not entries, numbered.
+foreign_lines() {
+	[ -f "$1" ] || return 0
+	grep -nvE "$(brewfile_grammar)" "$1" || true
+}
+
+# Refuses to hand a file to "brew bundle", which would run it.
+verify_brewfile() {
+	local bad
+	bad=$(foreign_lines "$1")
+	[ -z "$bad" ] || die "$1 holds lines that are not entries:
+
+$(printf '%s\n' "$bad" | sed 's/^/       /')
+
+     A Brewfile is Ruby and \"brew bundle\" runs it, so these would be
+     executed on this Mac — and no bier command shows them, because
+     they only have to look like an entry at the front of the line.
+
+     Take them out. If you put them there yourself and mean it, run
+     brew bundle install --file \"$1\" by hand."
 }
 
 # What a device is supposed to have: its device file plus main. Only
@@ -559,7 +601,10 @@ cmd_take() {
 		printf 'Install now? [y/N] '
 		read -r answer || answer=""
 		case $answer in
-		j | J | y | Y) brew bundle install --file "$taken" ;;
+		j | J | y | Y)
+			verify_brewfile "$taken"
+			brew bundle install --file "$taken"
+			;;
 		*) info "Not installed — bier status reports it as missing, bier install fetches it." ;;
 		esac
 	fi
@@ -898,6 +943,20 @@ cmd_list() {
 cmd_status() {
 	need_brew
 	need_repo
+
+	# Say it here as well. Aborting only at install time would mean the
+	# line sits in the file for weeks without anybody being told.
+	local f bad
+	for f in "$MAIN_FILE" "$HOST_FILE"; do
+		bad=$(foreign_lines "$f")
+		[ -z "$bad" ] || {
+			info "WARNING  $f holds lines that are not entries:"
+			printf '%s\n' "$bad" | sed 's/^/           /'
+			info "         brew would run them. bier install refuses until they are gone."
+			info ""
+		}
+	done
+
 	local tmp
 	tmp=$(tmpfile)
 	brew bundle dump --force --file "$tmp"
@@ -968,6 +1027,10 @@ cmd_diff() {
 cmd_install() {
 	need_brew
 	need_repo
+	# Both before either: finding the second one poisoned after the
+	# first has already been installed would be half a rescue.
+	verify_brewfile "$MAIN_FILE"
+	verify_brewfile "$HOST_FILE"
 	if [ -f "$MAIN_FILE" ]; then
 		brew bundle install --file "$MAIN_FILE"
 	fi
@@ -1088,6 +1151,22 @@ cmd_upgrade() {
 	if [ "$fresh" = no ] && [ "$force" = no ]; then
 		info "Rebuild anyway: bier upgrade --force"
 		return 0
+	fi
+
+	# Checking out a tag means running its code straight afterwards, so
+	# look at the signature first. Verification is skipped when nothing
+	# is signed at all — otherwise no existing installation could ever
+	# upgrade again — but a signature that does not verify stops here.
+	if [ -n "$UPGRADE_TAG" ]; then
+		if git -C "$ROOT" cat-file tag "$UPGRADE_TAG" 2>/dev/null |
+			grep -q 'BEGIN PGP SIGNATURE'; then
+			git -C "$ROOT" verify-tag "$UPGRADE_TAG" >/dev/null 2>&1 ||
+				die "the signature on $UPGRADE_TAG does not verify — not upgrading.
+     Somebody may have put a tag on the server who should not have."
+			info "Signature on $UPGRADE_TAG verified."
+		else
+			info "Note: $UPGRADE_TAG carries no signature."
+		fi
 	fi
 
 	# Nothing newer, but --force was given: rebuild what is here instead
