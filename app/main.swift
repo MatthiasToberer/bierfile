@@ -40,6 +40,12 @@ struct BierState {
 // MARK: - Calling bier
 
 enum Bier {
+	/// Where the guide lives. Opening the local GUIDE.md hands macOS a
+	/// .md file, and a Mac with no handler for those does nothing at all
+	/// — the menu entry looked broken. The rendered page needs only a
+	/// browser, and every Mac has one.
+	static let guideURL = "https://github.com/MatthiasToberer/bierfile/blob/main/GUIDE.md"
+
 	/// GUI programs do not inherit the shell's PATH. Homebrew and the
 	/// Command Line Tools therefore have to be added explicitly.
 	static let path = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -455,19 +461,12 @@ class Controller: NSObject, NSMenuDelegate {
 
 	@objc private func doUpgrade() { Bier.runInTerminal(["upgrade"]) }
 
-	/// GUIDE.md walks through it step by step, README.md gives the
-	/// overview. If both are missing, show the folder rather than nothing.
+	/// The guide, rendered, in whatever browser the Mac uses. The local
+	/// file is still there for anyone who wants it — "Show folder in
+	/// Finder" leads to it.
 	@objc private func doDocs() {
-		guard !state.repo.isEmpty else { return }
-		let root = URL(fileURLWithPath: state.repo)
-		for name in ["GUIDE.md", "README.md"] {
-			let file = root.appendingPathComponent(name)
-			if FileManager.default.fileExists(atPath: file.path) {
-				NSWorkspace.shared.open(file)
-				return
-			}
-		}
-		doReveal()
+		guard let url = URL(string: Bier.guideURL) else { return }
+		NSWorkspace.shared.open(url)
 	}
 
 	@objc private func doReveal() {
