@@ -250,19 +250,25 @@ warns without being asked. Options are allowed by name —
 The check refuses rather than filters. Silently dropping the line would
 hide exactly the attack it is meant to catch.
 
-## Signed tags
+## Who gets to run code on your Mac
 
 `bier upgrade` checks a tag out and runs `install.sh` straight
-afterwards, so whoever can push a tag can run code on every
-installation. Sign releases:
+afterwards. Whoever can push a tag to the code remote therefore runs
+code on every installation that upgrades. Nothing is verified and
+nothing is sandboxed in between. That is the trust boundary, and it is
+worth stating rather than papering over.
 
-```sh
-git tag -s v0.14.0 -m "…"
-```
+The repository is writable by its owner. Anything from anyone else
+arrives as a pull request and is read before it is merged.
 
-`bier upgrade` verifies a signature when it finds one and stops if it
-does not verify. An unsigned tag is only noted, not refused — otherwise
-no installation made before this rule could ever upgrade again.
+Signing was built and taken out again. A signature only helps when the
+verifier insists on one particular key — and insisting locks out
+everyone who has never imported it, which is every stranger who ever
+cloned the repository. Not insisting checks nothing. What was left was
+the same trust boundary plus code implying otherwise, so it went.
+
+`v0.14.0` still carries a signature from that attempt. Nothing reads
+it.
 
 ## Looking at the icon
 

@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.14.0
+BIER_VERSION=0.15.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -1151,22 +1151,6 @@ cmd_upgrade() {
 	if [ "$fresh" = no ] && [ "$force" = no ]; then
 		info "Rebuild anyway: bier upgrade --force"
 		return 0
-	fi
-
-	# Checking out a tag means running its code straight afterwards, so
-	# look at the signature first. Verification is skipped when nothing
-	# is signed at all — otherwise no existing installation could ever
-	# upgrade again — but a signature that does not verify stops here.
-	if [ -n "$UPGRADE_TAG" ]; then
-		if git -C "$ROOT" cat-file tag "$UPGRADE_TAG" 2>/dev/null |
-			grep -q 'BEGIN PGP SIGNATURE'; then
-			git -C "$ROOT" verify-tag "$UPGRADE_TAG" >/dev/null 2>&1 ||
-				die "the signature on $UPGRADE_TAG does not verify — not upgrading.
-     Somebody may have put a tag on the server who should not have."
-			info "Signature on $UPGRADE_TAG verified."
-		else
-			info "Note: $UPGRADE_TAG carries no signature."
-		fi
 	fi
 
 	# Nothing newer, but --force was given: rebuild what is here instead
