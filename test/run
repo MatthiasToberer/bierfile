@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+#
+# Testlauf für bier.
+#
+#   test/run              alle Fälle
+#   test/run take         nur Fälle, deren Name "take" enthält
+#   test/run -v           Ausgabe der Fälle mitzeigen
+#
+# Jeder Fall läuft in einer eigenen Welt: eigener Git-Server, zwei
+# simulierte Macs, ein Homebrew-Doppelgänger. Das echte System und das
+# echte Repo werden nicht angefasst.
+
+set -uo pipefail
+
+REPO=$(cd "$(dirname "$0")/.." && pwd)
+export REPO
+
+VERBOSE=no
+FILTER=""
+for arg in "$@"; do
+	case $arg in
+	-v | --verbose) VERBOSE=yes ;;
+	*) FILTER=$arg ;;
+	esac
+done
+
+# Die Doppelgänger müssen vor dem echten Homebrew liegen.
+export PATH="$REPO/test/stubs:$PATH"
+
+# bier soll nie den Konfigurations- oder Repo-Pfad des echten Rechners
+# erwischen, falls ein Fall etwas zu setzen vergisst.
+unset BIER_ROOT BIER_HOST BIER_CONFIG 2>/dev/null || true
+
+TOTAL=0
+BAD=0
+FAILED_NAMES=()
+
+for case_file in "$REPO"/test/cases/*.sh; do
+	name=$(basename "$case_file" .sh)
+	if [ -n "$FILTER" ] && [[ $name != *"$FILTER"* ]]; then
+		continue
+	fi
+
+	title=$(sed -n '2s/^# *//p' "$case_file")
+	TOTAL=$((TOTAL + 1))
+
+	WORK=$(mktemp -d -t biertest)
+	# stdout und stderr des Falls gehören beide ins Protokoll, sonst
+	# scheitert ein Fall schweigend.
+	out=$(
+		{
+			export WORK
+			# shellcheck source=/dev/null
+			source "$REPO/test/lib/harness.sh"
+			set -eE
+			# Bricht set -e den Fall ab, muss zu sehen sein, woran.
+			trap 'printf "    ABBRUCH bei: %s\n" "$BASH_COMMAND" >&2' ERR
+			world
+			# shellcheck source=/dev/null
+			source "$case_file"
+			exit $FAILED
+		} 2>&1
+	)
+	rc=$?
+	rm -rf "$WORK"
+
+	if [ "$rc" = 0 ]; then
+		printf '  ok    %s — %s\n' "$name" "$title"
+		[ "$VERBOSE" = no ] || printf '%s\n' "$out" | sed 's/^/        /'
+	else
+		printf '  FEHL  %s — %s\n' "$name" "$title"
+		printf '%s\n' "$out" | sed 's/^/        /'
+		BAD=$((BAD + 1))
+		FAILED_NAMES+=("$name")
+	fi
+done
+
+echo
+if [ "$BAD" = 0 ]; then
+	printf '%s Fälle, alle bestanden.\n' "$TOTAL"
+	exit 0
+fi
+printf '%s von %s Fällen gescheitert: %s\n' "$BAD" "$TOTAL" "${FAILED_NAMES[*]}"
+exit 1

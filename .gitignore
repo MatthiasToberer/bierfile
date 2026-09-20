@@ -1,0 +1,7 @@
+.DS_Store
+app/build/
+
+# Das Säuberungsskript kennt die echten Gerätenamen und die Adresse des
+# privaten Servers. Es ist ein Umzugshelfer für diesen einen Mac und
+# gehört nicht in das Repo, das es veröffentlichen soll.
+werkzeug/

@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+#
+# Homebrew-Doppelgänger für die Tests.
+#
+# Der "Systemzustand" eines simulierten Macs steht in der Datei
+# $BIER_TEST_SYSTEM, im Brewfile-Format. Alles, was bier von brew
+# verlangt, wird darauf abgebildet — dadurch sind Tests deterministisch
+# und können Zustände herstellen, die auf einem echten Mac mühsam oder
+# destruktiv wären.
+#
+# Nachgebildet wird nur, was bier tatsächlich aufruft. Wo echtes brew
+# sich eigen verhält, wird das absichtlich mitgespielt: brew untap
+# verweigert den Dienst, solange ein Cask aus dem Tap installiert ist.
+
+set -euo pipefail
+
+SYS=${BIER_TEST_SYSTEM:?BIER_TEST_SYSTEM ist nicht gesetzt}
+[ -f "$SYS" ] || : >"$SYS"
+
+# Namen eines Eintragstyps aus dem Systemzustand.
+names_of() {
+	sed -nE "s/^[[:space:]]*$1[[:space:]]+\"([^\"]+)\".*/\1/p" "$SYS"
+}
+
+# Zeile entfernen, die auf Typ und Namen passt. Der Name darf kurz sein
+# ("sikarugir") oder voll qualifiziert ("tap/sikarugir") — echtes brew
+# nimmt beides.
+drop_entry() {
+	local kind=$1 name=$2 tmp
+	tmp=$(mktemp)
+	grep -vE "^[[:space:]]*$kind[[:space:]]+\"([^\"]*/)?$name\"" "$SYS" >"$tmp" || true
+	mv "$tmp" "$SYS"
+}
+
+cmd=${1:-}
+shift || true
+
+case $cmd in
+bundle)
+	sub=${1:-}
+	shift || true
+	file=""
+	while [ $# -gt 0 ]; do
+		case $1 in
+		--file)
+			shift
+			file=${1:-}
+			;;
+		--file=*) file=${1#--file=} ;;
+		esac
+		shift || true
+	done
+
+	case $sub in
+	dump)
+		[ -n "$file" ] || exit 1
+		cp "$SYS" "$file"
+		;;
+	install)
+		# Alles aus der Datei gilt danach als installiert.
+		[ -f "$file" ] || exit 1
+		grep -E '^[[:space:]]*(tap|brew|cask|mas|vscode)[[:space:]]+"' "$file" >>"$SYS" || true
+		# Doppelte zusammenfassen, Reihenfolge ist egal.
+		tmp=$(mktemp)
+		sort -u "$SYS" >"$tmp"
+		mv "$tmp" "$SYS"
+		echo "install: $(basename "$file")"
+		;;
+	*) exit 1 ;;
+	esac
+	;;
+
+list)
+	case "${1:-}" in
+	--formula) names_of brew ;;
+	--cask)
+		# Echtes brew nennt Casks kurz, auch wenn sie aus einem Tap
+		# kommen. Genau daran ist kind_of einmal gescheitert.
+		names_of cask | sed -E 's|.*/||'
+		;;
+	*) names_of brew ;;
+	esac
+	;;
+
+tap)
+	if [ $# -eq 0 ]; then
+		names_of tap
+	else
+		printf 'tap "%s"\n' "$1" >>"$SYS"
+	fi
+	;;
+
+untap)
+	name=${1:?}
+	if grep -qE "^[[:space:]]*cask[[:space:]]+\"$name/" "$SYS"; then
+		echo "Error: Refusing to untap $name because it contains the following installed casks:" >&2
+		exit 1
+	fi
+	drop_entry tap "$name"
+	echo "Untapped $name"
+	;;
+
+uninstall)
+	kind=brew
+	if [ "${1:-}" = "--cask" ]; then
+		kind=cask
+		shift
+	fi
+	name=${1:?}
+	if ! grep -qE "^[[:space:]]*$kind[[:space:]]+\"([^\"]*/)?$name\"" "$SYS"; then
+		echo "Error: No such keg: $name" >&2
+		exit 1
+	fi
+	drop_entry "$kind" "$name"
+	echo "Uninstalling $name"
+	;;
+
+--version) echo "Homebrew 7.0.0-fake" ;;
+*) exit 0 ;;
+esac

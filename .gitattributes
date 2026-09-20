@@ -1,0 +1,9 @@
+# Brewfiles sind Listen ohne Reihenfolge. Ändern zwei Macs sie
+# gleichzeitig, ist fast immer beides richtig — git soll die Seiten
+# dann zusammenführen, statt einen Konflikt zu hinterlassen, den
+# jemand von Hand auflösen müsste.
+#
+# Die Regel gilt dem Daten-Repo: install.sh legt diese Datei dort ab,
+# und das Harness baut damit seine Testwelt. Hier im Programm-Repo
+# liegen keine Brewfiles, hier tut sie nichts.
+Brewfiles/* merge=union
