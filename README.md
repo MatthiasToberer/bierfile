@@ -13,6 +13,21 @@ Es ist ein Shell-Skript ohne Abhängigkeiten außer Homebrew und Git, dazu
 eine kleine Menüleisten-App in Swift. Nichts läuft in der Cloud, nichts
 schreibt nach Hause; deine Listen liegen in einem Repo, das dir gehört.
 
+> [!WARNING]
+> **Mach ein Backup, bevor du `bier` das erste Mal benutzt.**
+>
+> `bier` installiert und **deinstalliert** Software auf deinem Mac —
+> `bier uninstall`, `bier prune` und `bier install` greifen echt durch.
+> Beim Entfernen eines Programms können auch dessen Einstellungen und
+> Daten verschwinden, und ein falscher Eintrag in einer Liste wirkt sich
+> auf *alle* deine Geräte aus.
+>
+> Das hier ist ein Hobbyprojekt, das ohne jede Gewährleistung
+> bereitgestellt wird. Die Benutzung geschieht auf eigene Gefahr; für
+> verlorene Daten oder entfernte Software übernehme ich keine Haftung.
+> Sorge für eine laufende Sicherung — Time Machine oder etwas
+> Gleichwertiges — und überzeuge dich, dass sie funktioniert.
+
 ---
 
 ## Was es kann

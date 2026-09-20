@@ -18,6 +18,21 @@ Zwei Wege durch diese Anleitung:
 Ganz unten stehen [Beispiele](#beispiele) mit zwei und drei Macs. Den
 Überblick in Kurzform gibt [README.md](README.md).
 
+> [!WARNING]
+> **Mach ein Backup, bevor du `bier` das erste Mal benutzt.**
+>
+> `bier` installiert und **deinstalliert** Software auf deinem Mac —
+> `bier uninstall`, `bier prune` und `bier install` greifen echt durch.
+> Beim Entfernen eines Programms können auch dessen Einstellungen und
+> Daten verschwinden, und ein falscher Eintrag in einer Liste wirkt sich
+> auf *alle* deine Geräte aus.
+>
+> Das hier ist ein Hobbyprojekt, das ohne jede Gewährleistung
+> bereitgestellt wird. Die Benutzung geschieht auf eigene Gefahr; für
+> verlorene Daten oder entfernte Software übernehme ich keine Haftung.
+> Sorge für eine laufende Sicherung — Time Machine oder etwas
+> Gleichwertiges — und überzeuge dich, dass sie funktioniert.
+
 ---
 
 ## Dosenschießen
