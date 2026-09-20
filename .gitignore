@@ -5,3 +5,6 @@ app/build/
 # privaten Servers. Es ist ein Umzugshelfer für diesen einen Mac und
 # gehört nicht in das Repo, das es veröffentlichen soll.
 werkzeug/
+
+# Arbeitsdokument für Claude, bleibt im privaten Repo.
+CLAUDE.md
