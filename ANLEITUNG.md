@@ -15,7 +15,8 @@ Zwei Wege durch diese Anleitung:
 - **[7-Minuten-Pils](#7-minuten-pils)** — der ausführliche Weg, bei dem
   jeder Schritt erklärt wird. Nichts wird vorausgesetzt.
 
-Ganz unten stehen [Beispiele](#beispiele) mit zwei und drei Macs.
+Ganz unten stehen [Beispiele](#beispiele) mit zwei und drei Macs. Den
+Überblick in Kurzform gibt [README.md](README.md).
 
 ---
 

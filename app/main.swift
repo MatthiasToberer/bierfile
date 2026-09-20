@@ -445,8 +445,8 @@ class Controller: NSObject, NSMenuDelegate {
 
 	@objc private func doUpdate() { Bier.runInTerminal(["update"]) }
 
-	/// ANLEITUNG.md ist für Anwender, README.md für Entwickler. Fehlt
-	/// beides, lieber den Ordner zeigen als nichts zu tun.
+	/// ANLEITUNG.md führt Schritt für Schritt, README.md gibt den
+	/// Überblick. Fehlt beides, lieber den Ordner zeigen als nichts tun.
 	@objc private func doDocs() {
 		guard !state.repo.isEmpty else { return }
 		let root = URL(fileURLWithPath: state.repo)
