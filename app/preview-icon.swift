@@ -1,14 +1,14 @@
-// Rendert die Glas-Zustände als PNG, damit man sie ansehen kann, ohne die
-// App zu starten:
+// Renders the glass states as PNGs so they can be looked at without
+// starting the app:
 //
 //   swiftc -o /tmp/preview Glass.swift preview-icon.swift -framework AppKit
 //   /tmp/preview /tmp/glas
 //
-// Schreibt voll.png, leer.png, sechs Einzelbilder der Animation und
-// pixel.png — die drei Zustände in echter Menüleisten-Größe, hart
-// vergrößert. Das ist die Ansicht, die zählt: alles andere schmeichelt.
-// Die Menüleiste zeichnet das Bild als Template, also schwarz auf hell
-// bzw. weiß auf dunkel. Hier kommt es schwarz auf weiß heraus.
+// Writes full.png, empty.png, six frames of the animation and
+// pixel.png — the three states at true menu bar size, scaled up with
+// no smoothing. That is the view that counts: anything else flatters.
+// The menu bar draws the image as a template, so black on light or
+// white on dark. Here it comes out black on white.
 
 import AppKit
 
@@ -30,7 +30,7 @@ func write(_ image: NSImage, scale: CGFloat, to path: String) {
 
 	if let data = rep.representation(using: .png, properties: [:]) {
 		try? data.write(to: URL(fileURLWithPath: path))
-		print("geschrieben: \(path)")
+		print("written: \(path)")
 	}
 }
 
@@ -61,12 +61,12 @@ func writeStrip(_ images: [NSImage], scale: CGFloat, to path: String) {
 
 	if let data = rep.representation(using: .png, properties: [:]) {
 		try? data.write(to: URL(fileURLWithPath: path))
-		print("geschrieben: \(path)")
+		print("written: \(path)")
 	}
 }
 
-/// In Retina-Originalgröße rendern, dann ohne Glättung vergrößern — so
-/// sieht man, was in der Menüleiste wirklich ankommt.
+/// Render at native Retina size, then scale up without smoothing — that
+/// shows what actually lands in the menu bar.
 func writePixels(_ images: [NSImage], zoom: Int, to path: String) {
 	let w = Int(Glass.size.width * 2), h = Int(Glass.size.height * 2)
 	let outW = (w * zoom + 10) * images.count, outH = h * zoom + 20
@@ -112,8 +112,8 @@ enum Preview {
 		try? FileManager.default.createDirectory(atPath: dir,
 		                                         withIntermediateDirectories: true)
 
-		write(Glass.image(full: true), scale: scale, to: "\(dir)/voll.png")
-		write(Glass.image(full: false), scale: scale, to: "\(dir)/leer.png")
+		write(Glass.image(full: true), scale: scale, to: "\(dir)/full.png")
+		write(Glass.image(full: false), scale: scale, to: "\(dir)/empty.png")
 
 		let frames = (0 ..< 6).map { Glass.busy(phase: CGFloat($0) / 6.0) }
 		for (i, frame) in frames.enumerated() {

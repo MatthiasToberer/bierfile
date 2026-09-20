@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dump schreibt nur, was über main hinausgeht
+# dump records only what goes beyond main
 
 seed_file mini Brewfiles/main <<'EOF'
 brew "wget"
@@ -14,6 +14,6 @@ EOF
 
 bier mini dump
 out=$OUT
-assert_contains "$out" "1 zusätzlich zu 2 in main"
+assert_contains "$out" "1 on top of 2 in main"
 assert_file_has "$(bf mini mini)" 'brew "htop"'
-assert_file_lacks "$(bf mini mini)" 'brew "wget"' "main-Einträge gehören nicht ins Gerätefile"
+assert_file_lacks "$(bf mini mini)" 'brew "wget"' "main entries do not belong in the device file"

@@ -1,9 +1,9 @@
 #!/bin/sh
 #
-# Baut BierMenu.app. Braucht nur die Command Line Tools, kein Xcode-Projekt.
+# Builds BierMenu.app. Needs only the Command Line Tools, no Xcode project.
 #
-#   ./app/build.sh              baut nach app/build/BierMenu.app
-#   ./app/build.sh --install    baut und kopiert nach /Applications
+#   ./app/build.sh              builds into app/build/BierMenu.app
+#   ./app/build.sh --install    builds and copies to /Applications
 
 set -eu
 
@@ -14,9 +14,9 @@ APP=$BUILD/BierMenu.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 
-# Die Versionsnummer steht in bin/bier und wird hier übernommen, damit
-# App und Skript nie auseinanderlaufen. Deshalb ein unquotiertes
-# Here-Dokument: $VERSION soll eingesetzt werden.
+# The version number lives in bin/bier and is taken from there, so that
+# app and script never drift apart. Hence an unquoted here-document:
+# $VERSION is meant to be substituted.
 VERSION=$(sed -nE 's/^BIER_VERSION=(.*)$/\1/p' "$HERE/../bin/bier")
 [ -n "$VERSION" ] || VERSION=0
 
@@ -34,7 +34,7 @@ cat >"$APP/Contents/Info.plist" <<EOF
 	<key>CFBundleShortVersionString</key><string>$VERSION</string>
 	<key>CFBundleVersion</key><string>$VERSION</string>
 	<key>LSMinimumSystemVersion</key><string>13.0</string>
-	<!-- Menüleisten-App: kein Dock-Symbol, kein Menü oben links. -->
+	<!-- Menu bar app: no dock icon, no menu at the top left. -->
 	<key>LSUIElement</key><true/>
 </dict>
 </plist>
@@ -49,14 +49,14 @@ swiftc -O \
 	"$HERE/Glass.swift" "$HERE/main.swift"
 
 # Ad-hoc signieren. Ohne Signatur verweigert macOS den Start als
-# Anmelde-Objekt, und SMAppService braucht eine stabile Identität.
+# a login item, and SMAppService needs a stable identity.
 # Die Ausgabe interessiert nur, wenn es schiefgeht.
 if ! out=$(codesign --force --sign - --identifier net.toberer.biermenu "$APP" 2>&1); then
 	printf '%s\n' "$out" >&2
 	exit 1
 fi
 
-echo "gebaut: $APP"
+echo "built: $APP"
 
 if [ "${1:-}" = "--install" ]; then
 	rm -rf /Applications/BierMenu.app

@@ -1,105 +1,104 @@
 #!/usr/bin/env bash
 #
-# Zusicherungen und die Testwelt.
+# Assertions and the test world.
 #
-# Jeder Fall bekommt eine frische Welt: einen Git-Server, zwei Macs und
-# je einen Systemzustand, den der brew-Doppelgänger liest. Nichts davon
-# berührt das echte System oder das echte Repo.
+# Every case gets a fresh world: git servers, two Macs and one system
+# state per Mac that the brew stand-in reads. None of it touches the real
+# system or the real repository.
 
-# --- Zusicherungen -----------------------------------------------------
+# --- Assertions --------------------------------------------------------
 
 FAILED=0
 
 fail() {
-	printf '    FEHLER: %s\n' "$1" >&2
+	printf '    FAILED: %s\n' "$1" >&2
 	if [ $# -gt 1 ]; then
-		printf '      erwartet: %s\n' "$2" >&2
-		printf '      bekommen: %s\n' "${3-}" >&2
+		printf '      expected: %s\n' "$2" >&2
+		printf '      got:      %s\n' "${3-}" >&2
 	fi
 	FAILED=1
 	return 1
 }
 
 assert_eq() {
-	[ "$1" = "$2" ] || fail "${3:-Werte unterschiedlich}" "$1" "$2"
+	[ "$1" = "$2" ] || fail "${3:-values differ}" "$1" "$2"
 }
 
 assert_contains() {
 	case "$1" in
 	*"$2"*) return 0 ;;
 	esac
-	fail "${3:-Text fehlt}" "enthält '$2'" "$1"
+	fail "${3:-text missing}" "contains '$2'" "$1"
 }
 
 assert_not_contains() {
 	case "$1" in
-	*"$2"*) fail "${3:-Text sollte fehlen}" "ohne '$2'" "$1" ;;
+	*"$2"*) fail "${3:-text should be absent}" "without '$2'" "$1" ;;
 	esac
 	return 0
 }
 
 assert_file_has() {
-	grep -qF "$2" "$1" || fail "${3:-Zeile fehlt in $1}" "$2" "$(cat "$1")"
+	grep -qF "$2" "$1" || fail "${3:-line missing in $1}" "$2" "$(cat "$1")"
 }
 
 assert_file_lacks() {
 	if grep -qF "$2" "$1"; then
-		fail "${3:-Zeile sollte weg sein aus $1}" "ohne $2" "$(cat "$1")"
+		fail "${3:-line should be gone from $1}" "without $2" "$(cat "$1")"
 	fi
 }
 
-# Führt aus und erwartet Erfolg. Bei Misserfolg wird die Ausgabe gezeigt.
+# Runs a command and expects success. On failure the output is shown.
 assert_ok() {
 	local rc=0
 	"$@" || rc=$?
-	[ "$rc" = 0 ] || fail "Befehl scheiterte (exit $rc): $*" "exit 0" "${OUT-}"
+	[ "$rc" = 0 ] || fail "command failed (exit $rc): $*" "exit 0" "${OUT-}"
 }
 
 assert_fails() {
 	local rc=0
 	"$@" || rc=$?
-	[ "$rc" != 0 ] || fail "Befehl hätte scheitern müssen: $*" "exit != 0" "${OUT-}"
+	[ "$rc" != 0 ] || fail "command should have failed: $*" "exit != 0" "${OUT-}"
 }
 
-# Eine Ausgabe, in der die Shell selbst klagt, ist immer ein Fehler —
-# auch wenn der Exit-Code 0 ist. Genau so ist mir ein Fehler durch die
-# Lappen gegangen: "tmp: unbound variable" wurde gemeldet, aber bier
-# beendete sich trotzdem mit 0.
+# Output in which the shell itself complains is always a failure — even
+# when the exit code is 0. That is exactly how one slipped past me:
+# "tmp: unbound variable" was printed, yet bier still exited with 0.
 assert_sane() {
 	local pat
 	for pat in 'unbound variable' 'command not found' 'syntax error' \
 		'No such file or directory' 'Bad substitution' 'integer expression'; do
 		case "$1" in
-		*"$pat"*) fail "die Shell klagt: $pat" "saubere Ausgabe" "$1" ;;
+		*"$pat"*) fail "the shell complains: $pat" "clean output" "$1" ;;
 		esac
 	done
 }
 
-# --- Testwelt ----------------------------------------------------------
+# --- Test world --------------------------------------------------------
 
-# Legt zwei Server und zwei Macs an. $WORK ist vom Runner gesetzt.
+# Creates two servers and two Macs. $WORK is set by the runner.
 #
-# Code und Daten liegen getrennt, wie in echt:
+# Code and data live apart, as they do in reality:
 #
-#   $WORK/code.git      Code-Server (in echt: GitHub)
-#   $WORK/data.git      Daten-Server (in echt: privat)
-#   $WORK/code-<host>   Arbeitskopie des Programms
-#   $WORK/<host>        Arbeitskopie der Brewfiles
-#   $WORK/sys-<host>    was auf dem Mac "installiert" ist
+#   $WORK/code.git      code server (in reality: GitHub)
+#   $WORK/data.git      data server (in reality: private)
+#   $WORK/code-<host>   working copy of the program
+#   $WORK/<host>        working copy of the Brewfiles
+#   $WORK/sys-<host>    what is "installed" on that Mac
 world() {
 	local host seed
 
-	# --- Daten ---
+	# --- Data ---
 	seed=$WORK/seed-data
 	mkdir -p "$seed/Brewfiles"
-	# Die union-Regel gehört zu den Brewfiles, also ins Daten-Repo.
+	# The union rule belongs with the Brewfiles, so: the data repository.
 	cp "$REPO/.gitattributes" "$seed/.gitattributes"
 	: >"$seed/Brewfiles/main"
 	git init -q --initial-branch=main "$seed"
 	git -C "$seed" config user.email test@example.com
 	git -C "$seed" config user.name Test
 	git -C "$seed" add -A
-	git -C "$seed" commit -qm "Anfang"
+	git -C "$seed" commit -qm "start"
 	git init -q --bare --initial-branch=main "$WORK/data.git"
 	git -C "$seed" remote add origin "$WORK/data.git"
 	git -C "$seed" push -q -u origin main
@@ -112,7 +111,7 @@ world() {
 	git -C "$seed" config user.email test@example.com
 	git -C "$seed" config user.name Test
 	git -C "$seed" add -A
-	git -C "$seed" commit -qm "Programm"
+	git -C "$seed" commit -qm "program"
 	git init -q --bare --initial-branch=main "$WORK/code.git"
 	git -C "$seed" remote add origin "$WORK/code.git"
 	git -C "$seed" push -q -u origin main
@@ -134,7 +133,7 @@ world() {
 	done
 }
 
-# Bringt beide Macs über den Server auf denselben Stand.
+# Brings both Macs to the same state through the server.
 share() {
 	local h
 	for h in mini macbook; do
@@ -149,12 +148,12 @@ share() {
 	done
 }
 
-# Setzt den Systemzustand eines Macs. Zeilen kommen über stdin.
+# Sets the system state of a Mac. Lines come in on stdin.
 system() {
 	cat >"$WORK/sys-$1"
 }
 
-# Schreibt eine Brewfile-Datei und committet sie auf dem Server.
+# Writes a Brewfile and commits it to the server.
 seed_file() {
 	local host=$1 path=$2
 	cat >"$WORK/$host/$path"
@@ -167,7 +166,7 @@ seed_file() {
 	done
 }
 
-# Legt die Antworten für die nächste Rückfrage fest.
+# Sets the answers for the next prompts.
 answer() {
 	if [ $# -eq 0 ]; then
 		: >"$WORK/.in"
@@ -176,16 +175,17 @@ answer() {
 	fi
 }
 
-# Führt bier auf einem der Macs aus.
+# Runs bier on one of the Macs.
 #
-# Die Ausgabe steht danach in $OUT, der Rückgabewert ist der von bier.
-# Bewusst keine Subshell und keine Pipe: in einer Subshell gesetzte
-# Fehlermarken gingen verloren, der Fall liefe grün durch.
+# The output ends up in $OUT, the return value is the one from bier.
+# Deliberately no subshell and no pipe: failure marks set inside a
+# subshell would be lost and the case would pass green.
 bier() {
 	local host=$1 rc=0
 	shift
-	# data kommt bewusst aus der Config, nicht aus der Umgebung: sonst
-	# ließe sich der Fall "noch kein Daten-Repo" gar nicht nachstellen.
+	# data deliberately comes from the config, not from the environment:
+	# otherwise the "no data repository yet" case could not be staged at
+	# all.
 	BIER_ROOT=$WORK/code-$host \
 		BIER_HOST=$host \
 		BIER_TEST_SYSTEM=$WORK/sys-$host \
@@ -196,7 +196,7 @@ bier() {
 	return $rc
 }
 
-# Pfad zu einer Brewfile-Datei eines Macs.
+# Path to one Mac's Brewfile.
 bf() {
 	printf '%s' "$WORK/$1/Brewfiles/$2"
 }

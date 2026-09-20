@@ -1,30 +1,29 @@
 #!/usr/bin/env bash
 #
-# Homebrew-Doppelgänger für die Tests.
+# Homebrew stand-in for the tests.
 #
-# Der "Systemzustand" eines simulierten Macs steht in der Datei
-# $BIER_TEST_SYSTEM, im Brewfile-Format. Alles, was bier von brew
-# verlangt, wird darauf abgebildet — dadurch sind Tests deterministisch
-# und können Zustände herstellen, die auf einem echten Mac mühsam oder
-# destruktiv wären.
+# The "system state" of a simulated Mac lives in the file
+# $BIER_TEST_SYSTEM, in Brewfile format. Everything bier asks of brew is
+# mapped onto it — that makes the tests deterministic and lets them stage
+# states that would be tedious or destructive on a real Mac.
 #
-# Nachgebildet wird nur, was bier tatsächlich aufruft. Wo echtes brew
-# sich eigen verhält, wird das absichtlich mitgespielt: brew untap
-# verweigert den Dienst, solange ein Cask aus dem Tap installiert ist.
+# Only what bier actually calls is modelled. Where real brew has a mind
+# of its own, that is reproduced on purpose: brew untap refuses to work
+# while a cask from the tap is still installed.
 
 set -euo pipefail
 
-SYS=${BIER_TEST_SYSTEM:?BIER_TEST_SYSTEM ist nicht gesetzt}
+SYS=${BIER_TEST_SYSTEM:?BIER_TEST_SYSTEM is not set}
 [ -f "$SYS" ] || : >"$SYS"
 
-# Namen eines Eintragstyps aus dem Systemzustand.
+# The names of one entry kind from the system state.
 names_of() {
 	sed -nE "s/^[[:space:]]*$1[[:space:]]+\"([^\"]+)\".*/\1/p" "$SYS"
 }
 
-# Zeile entfernen, die auf Typ und Namen passt. Der Name darf kurz sein
-# ("sikarugir") oder voll qualifiziert ("tap/sikarugir") — echtes brew
-# nimmt beides.
+# Remove the line matching kind and name. The name may be short
+# ("sikarugir") or fully qualified ("tap/sikarugir") — real brew accepts
+# both.
 drop_entry() {
 	local kind=$1 name=$2 tmp
 	tmp=$(mktemp)
@@ -57,10 +56,10 @@ bundle)
 		cp "$SYS" "$file"
 		;;
 	install)
-		# Alles aus der Datei gilt danach als installiert.
+		# Everything in the file counts as installed afterwards.
 		[ -f "$file" ] || exit 1
 		grep -E '^[[:space:]]*(tap|brew|cask|mas|vscode)[[:space:]]+"' "$file" >>"$SYS" || true
-		# Doppelte zusammenfassen, Reihenfolge ist egal.
+		# Collapse duplicates, the order does not matter.
 		tmp=$(mktemp)
 		sort -u "$SYS" >"$tmp"
 		mv "$tmp" "$SYS"
@@ -74,8 +73,8 @@ list)
 	case "${1:-}" in
 	--formula) names_of brew ;;
 	--cask)
-		# Echtes brew nennt Casks kurz, auch wenn sie aus einem Tap
-		# kommen. Genau daran ist kind_of einmal gescheitert.
+		# Real brew names casks short, even when they come from a tap.
+		# That is exactly what kind_of tripped over once.
 		names_of cask | sed -E 's|.*/||'
 		;;
 	*) names_of brew ;;

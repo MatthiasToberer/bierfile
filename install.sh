@@ -1,16 +1,16 @@
 #!/bin/sh
 #
-# Richtet bier und BierMenu auf diesem Mac ein. Das Programm-Repo muss
-# schon geklont sein; um das Repo für die Brewfiles kümmert sich dieses
-# Skript — es fragt nach der Adresse und klont es:
+# Sets up bier and BierMenu on this Mac. The program repository has to be
+# cloned already; this script takes care of the repository for the
+# Brewfiles — it asks for the address and clones it:
 #
 #   git clone git@github.com:MatthiasToberer/bierfile.git ~/bierfile
 #   ~/bierfile/install.sh
 #
-#   ./install.sh --data git@dein-server:bierdaten.git   ohne Rückfrage
-#   ./install.sh --uninstall   entfernt Verknüpfung und App wieder
+#   ./install.sh --data git@your-server:bierdata.git   without asking
+#   ./install.sh --uninstall   removes the symlink and the app again
 #
-# Mehrfach ausführen ist harmlos: es ersetzt, was da ist.
+# Running it more than once is harmless: it replaces what is there.
 
 set -eu
 
@@ -27,8 +27,8 @@ die() {
 	exit 1
 }
 
-# --yes beantwortet alle Rückfragen mit ja. "bier update" nutzt das:
-# dort soll ein einziger Befehl genügen.
+# --yes answers every question with yes. "bier update" relies on that:
+# there a single command has to be enough.
 YES=no
 DATA_ARG=""
 prev=""
@@ -43,11 +43,11 @@ for arg in "$@"; do
 	prev=$arg
 done
 
-# Fragt nur, wenn wirklich jemand am Terminal sitzt.
+# Only asks if somebody is actually sitting at the terminal.
 ask() {
 	[ "$YES" = no ] || return 0
 	[ -t 0 ] || return 1
-	printf '   %s [j/N] ' "$1"
+	printf '   %s [y/N] ' "$1"
 	read -r answer || return 1
 	case $answer in
 	j | J | y | Y) return 0 ;;
@@ -55,8 +55,8 @@ ask() {
 	esac
 }
 
-# /Applications gehört root:admin und ist für Admins beschreibbar. Wer
-# keine Adminrechte hat, bekommt die App ins eigene Verzeichnis.
+# /Applications belongs to root:admin and is writable for admins. Anyone
+# without admin rights gets the app in their own directory.
 app_target() {
 	if [ -w /Applications ]; then
 		echo /Applications/BierMenu.app
@@ -66,11 +66,11 @@ app_target() {
 	fi
 }
 
-# Beendet ein laufendes BierMenu und wartet, bis es wirklich weg ist.
-# Ein festes "sleep 1" reicht nicht: hängt der alte Prozess noch, findet
-# "open" ihn am Leben und aktiviert ihn bloß, statt die neue Fassung zu
-# starten — dann läuft nach der Installation weiter der alte Code.
-# Liefert 0, wenn etwas lief.
+# Stops a running BierMenu and waits until it is really gone. A fixed
+# "sleep 1" is not enough: if the old process is still hanging around,
+# "open" finds it alive and merely activates it instead of starting the
+# new build — and the old code keeps running after the install.
+# Returns 0 if something was running.
 stop_app() {
 	pgrep -f 'MacOS/BierMenu' >/dev/null 2>&1 || return 1
 
@@ -79,7 +79,7 @@ stop_app() {
 	while pgrep -f 'MacOS/BierMenu' >/dev/null 2>&1; do
 		i=$((i + 1))
 		if [ "$i" -gt 20 ]; then
-			# Nach fünf Sekunden hart beenden.
+			# Kill it hard after five seconds.
 			pkill -9 -f 'MacOS/BierMenu' 2>/dev/null || true
 			sleep 1
 			break
@@ -89,84 +89,84 @@ stop_app() {
 	return 0
 }
 
-# --- Entfernen ---------------------------------------------------------
+# --- Removal -----------------------------------------------------------
 
 if [ "${1:-}" = "--uninstall" ]; then
-	say "BierMenu beenden und entfernen"
+	say "Stopping and removing BierMenu"
 	stop_app || true
 	for candidate in /Applications/BierMenu.app "$HOME/Applications/BierMenu.app"; do
 		if [ -d "$candidate" ]; then
 			rm -rf "$candidate"
-			ok "entfernt: $candidate"
+			ok "removed: $candidate"
 		fi
 	done
 
-	say "Verknüpfung entfernen"
+	say "Removing the symlink"
 	if [ -L "$LINK" ]; then
 		rm -f "$LINK"
-		ok "entfernt: $LINK"
+		ok "removed: $LINK"
 	else
-		ok "keine Verknüpfung unter $LINK"
+		ok "no symlink at $LINK"
 	fi
 
 	say "Config"
-	if [ -f "$CONFIG" ] && ask "auch $CONFIG löschen?"; then
+	if [ -f "$CONFIG" ] && ask "delete $CONFIG as well?"; then
 		rm -f "$CONFIG"
-		ok "gelöscht"
+		ok "deleted"
 	else
-		ok "bleibt liegen: $CONFIG"
+		ok "left in place: $CONFIG"
 	fi
 
-	printf '\nDas Repo unter %s bleibt unangetastet.\n\n' "$HERE"
+	printf '\nThe repository at %s is left untouched.\n\n' "$HERE"
 	exit 0
 fi
 
-# --- Vorbedingungen ----------------------------------------------------
+# --- Prerequisites -----------------------------------------------------
 
-say "Vorbedingungen"
-[ "$(uname)" = "Darwin" ] || die "läuft nur auf macOS"
-[ -d "$HERE/.git" ] || die "$HERE ist kein Git-Repo — erst klonen"
-command -v git >/dev/null 2>&1 || die "git fehlt"
-command -v brew >/dev/null 2>&1 || die "Homebrew fehlt — siehe https://brew.sh"
+say "Prerequisites"
+[ "$(uname)" = "Darwin" ] || die "runs on macOS only"
+[ -d "$HERE/.git" ] || die "$HERE is not a git repository — clone it first"
+command -v git >/dev/null 2>&1 || die "git is missing"
+command -v brew >/dev/null 2>&1 || die "Homebrew is missing — see https://brew.sh"
 command -v swiftc >/dev/null 2>&1 ||
-	die "swiftc fehlt — 'xcode-select --install' und nochmal versuchen"
-ok "macOS, git, Homebrew und swiftc sind da"
+	die "swiftc is missing — run 'xcode-select --install' and try again"
+ok "macOS, git, Homebrew and swiftc are present"
 
-# --- bier in den PATH --------------------------------------------------
+# --- bier onto the PATH ------------------------------------------------
 
-say "bier verfügbar machen"
+say "Making bier available"
 mkdir -p "$BIN_DIR"
 ln -sfn "$HERE/bin/bier" "$LINK"
 ok "$LINK -> $HERE/bin/bier"
 case ":$PATH:" in
 *":$BIN_DIR:"*)
-	ok "$BIN_DIR liegt im PATH"
+	ok "$BIN_DIR is on the PATH"
 	;;
 *)
-	warn "$BIN_DIR liegt nicht im PATH. Diese Zeile in ~/.zshrc ergänzen:"
+	warn "$BIN_DIR is not on the PATH. Add this line to ~/.zshrc:"
 	printf '\n       export PATH="%s:$PATH"\n' "$BIN_DIR"
 	;;
 esac
 
-# Ein gleichnamiges Programm weiter vorn im PATH verdeckt die
-# Verknüpfung lautlos — dann startet "bier" etwas anderes.
+# A program of the same name earlier on the PATH shadows the symlink
+# silently — then "bier" starts something else.
 found=$(command -v bier 2>/dev/null || true)
 if [ -n "$found" ] && [ "$found" != "$LINK" ]; then
-	warn "'bier' startet $found, nicht $LINK"
-	warn "Dieser Pfad liegt im PATH weiter vorn und verdeckt die Verknüpfung."
+	warn "'bier' starts $found, not $LINK"
+	warn "That path comes earlier on the PATH and shadows the symlink."
 	if [ -L "$found" ]; then
-		warn "Er zeigt auf $(readlink "$found")"
+		warn "It points at $(readlink "$found")"
 	fi
-	warn "Entweder den Eintrag entfernen oder $HERE/bin/bier direkt aufrufen."
+	warn "Either remove that entry or call $HERE/bin/bier directly."
 fi
 
-# --- Git-Haken ---------------------------------------------------------
+# --- Git hook ----------------------------------------------------------
 
-say "Tests vor dem Push"
+say "Tests before pushing"
 git -C "$HERE" config core.hooksPath .githooks
-ok "pre-push verlangt grüne Tests, bevor Code auf den Server geht"
+ok "pre-push requires green tests before code goes to the server"
 
-# --- Konfiguration -----------------------------------------------------
+# --- Configuration -----------------------------------------------------
 
 config_get() {
 	[ -f "$CONFIG" ] || return 0
@@ -176,7 +176,7 @@ config_get() {
 
 config_set() {
 	mkdir -p "$(dirname "$CONFIG")"
-	[ -f "$CONFIG" ] || printf '# Konfiguration für bier.\n' >"$CONFIG"
+	[ -f "$CONFIG" ] || printf '# Configuration for bier.\n' >"$CONFIG"
 	if grep -qE "^[[:space:]]*$1[[:space:]]*=" "$CONFIG"; then
 		sed -i '' "s|^[[:space:]]*$1[[:space:]]*=.*|$1 = $2|" "$CONFIG"
 	else
@@ -184,38 +184,38 @@ config_set() {
 	fi
 }
 
-say "Konfiguration"
+say "Configuration"
 config_set root "$HERE"
 config_set host "$(hostname -s)"
-ok "$CONFIG zeigt auf $HERE"
+ok "$CONFIG points at $HERE"
 
-# --- Dein eigenes Repo für die Brewfiles -------------------------------
+# --- Your own repository for the Brewfiles -----------------------------
 #
-# Der Bestand verrät, welche Software auf den Macs liegt. Er gehört
-# deshalb nicht in das öffentliche Programm-Repo, sondern in ein
-# eigenes, privates — auf das man auch Schreibrecht hat.
+# The inventory reveals which software is on the Macs. It therefore does
+# not belong in the public program repository but in one of your own, a
+# private one — which you also have write access to.
 
-say "Repo für deine Brewfiles"
+say "Repository for your Brewfiles"
 
 DATA=$(config_get data)
 
 if [ -z "$DATA" ] && [ -d "$HERE/Brewfiles" ]; then
-	warn "In $HERE liegen Brewfiles — eine alte Einrichtung."
-	warn "Code und Daten gehören inzwischen getrennt. Bis zum Umzug"
-	warn "wird weiter aus diesem Verzeichnis gearbeitet."
+	warn "There are Brewfiles in $HERE — an older setup."
+	warn "Code and data belong apart these days. Until you move them,"
+	warn "work continues out of this directory."
 	DATA=$HERE
 fi
 
 if [ -n "$DATA_ARG" ]; then
 	case $DATA_ARG in
 	*://* | *@*:* )
-		# Eine Adresse: klonen, falls noch nicht geschehen.
-		target=$HOME/bierdaten
+		# An address: clone it unless that has already happened.
+		target=$HOME/bierdata
 		if [ -d "$target/.git" ]; then
-			ok "$target ist schon da"
+			ok "$target is already there"
 		else
 			git clone -q "$DATA_ARG" "$target"
-			ok "geklont nach $target"
+			ok "cloned to $target"
 		fi
 		DATA=$target
 		;;
@@ -227,65 +227,65 @@ fi
 
 if [ -z "$DATA" ] || [ ! -d "$DATA/.git" ]; then
 	if [ "$YES" = yes ] || [ ! -t 0 ]; then
-		die "Es fehlt das Repo für deine Brewfiles.
-     Lege dir ein leeres, privates Git-Repo an und rufe auf:
-       $0 --data git@dein-server:bierdaten.git"
+		die "The repository for your Brewfiles is missing.
+     Create an empty, private git repository and run:
+       $0 --data git@your-server:bierdata.git"
 	fi
 	printf '
-   Deine Brewfiles brauchen ein eigenes, privates Repo — sie verraten,
-   welche Software auf deinen Macs liegt, und in das Programm-Repo
-   kannst du ohnehin nicht schreiben.
+   Your Brewfiles need a private repository of their own — they reveal
+   which software is on your Macs, and you cannot write to the program
+   repository anyway.
 
-   Wenn du noch keins hast, lege eins an: ein leeres Repository bei
-   GitHub (auf "privat" stellen), auf einem Server oder einem NAS.
+   If you do not have one yet, create it: an empty repository on GitHub
+   (set it to private), on a server, or on a NAS.
 
-   Adresse (z.B. git@github.com:name/bierdaten.git), leer = abbrechen
+   Address (e.g. git@github.com:yourname/bierdata.git), empty = cancel
    > '
 	read -r answer || answer=""
-	[ -n "$answer" ] || die "ohne Daten-Repo kann bier nichts tun"
-	DATA=$HOME/bierdaten
+	[ -n "$answer" ] || die "without a data repository bier can do nothing"
+	DATA=$HOME/bierdata
 	if [ -d "$DATA/.git" ]; then
-		ok "$DATA ist schon da"
+		ok "$DATA is already there"
 	else
 		git clone -q "$answer" "$DATA" ||
-			die "Klonen von $answer ist fehlgeschlagen"
-		ok "geklont nach $DATA"
+			die "cloning $answer failed"
+		ok "cloned to $DATA"
 	fi
 fi
 
 config_set data "$DATA"
-ok "Brewfiles liegen in $DATA"
+ok "Brewfiles live in $DATA"
 
-# Frisch angelegte Repos sind leer. Die union-Regel gehört dorthin,
-# damit gleichzeitige Änderungen auf zwei Macs sich selbst auflösen.
+# Freshly created repositories are empty. The union rule belongs in
+# there, so that simultaneous changes on two Macs resolve themselves.
 if [ ! -f "$DATA/.gitattributes" ]; then
 	cp "$HERE/.gitattributes" "$DATA/.gitattributes"
 	mkdir -p "$DATA/Brewfiles"
 	[ -f "$DATA/Brewfiles/main" ] || : >"$DATA/Brewfiles/main"
 	git -C "$DATA" add .gitattributes Brewfiles
-	git -C "$DATA" commit -qm "bier: Grundgerüst" || true
-	ok "Grundgerüst im Daten-Repo angelegt"
+	git -C "$DATA" commit -qm "bier: scaffolding" || true
+	ok "scaffolding created in the data repository"
 fi
 
-# --- App bauen und installieren ----------------------------------------
+# --- Build and install the app -----------------------------------------
 
-say "BierMenu bauen"
+say "Building BierMenu"
 "$HERE/app/build.sh" >/dev/null
-ok "gebaut"
+ok "built"
 
 TARGET=$(app_target)
 was_running=no
 if stop_app; then
 	was_running=yes
-	ok "laufende Fassung beendet"
+	ok "stopped the running build"
 fi
 rm -rf "$TARGET"
 cp -R "$HERE/app/build/BierMenu.app" "$TARGET"
-ok "installiert: $TARGET"
+ok "installed: $TARGET"
 open "$TARGET"
 
-# Nachsehen, ob wirklich die neue Fassung läuft — sonst hätte man nach
-# der Installation stillschweigend weiter den alten Code vor sich.
+# Check that the new build really is running — otherwise you would
+# silently still be looking at the old code after installing.
 i=0
 while [ "$i" -lt 20 ]; do
 	if pgrep -f "$TARGET/Contents/MacOS/BierMenu" >/dev/null 2>&1; then
@@ -296,37 +296,37 @@ while [ "$i" -lt 20 ]; do
 done
 if pgrep -f "$TARGET/Contents/MacOS/BierMenu" >/dev/null 2>&1; then
 	if [ "$was_running" = yes ]; then
-		ok "neu gestartet — der Krug hängt wieder in der Menüleiste"
+		ok "restarted — the mug is back in the menu bar"
 	else
-		ok "gestartet — der Krug hängt jetzt in der Menüleiste"
+		ok "started — the mug is in the menu bar now"
 	fi
 else
-	warn "BierMenu ist nicht angelaufen. Von Hand: open $TARGET"
+	warn "BierMenu did not come up. By hand: open $TARGET"
 fi
 
-# --- Bestand erfassen --------------------------------------------------
+# --- Record the inventory ----------------------------------------------
 
-say "Bestand dieses Macs erfassen"
+say "Recording this Mac's inventory"
 "$HERE/bin/bier" dump
 
-if ask "committen und zum Git-Server pushen?"; then
-	"$HERE/bin/bier" sync "$(hostname -s): Bestand erfasst"
+if ask "commit and push to the git server?"; then
+	"$HERE/bin/bier" sync "$(hostname -s): inventory recorded"
 else
-	ok "nicht gepusht — später mit 'bier sync'"
+	ok "not pushed — later with 'bier sync'"
 fi
 
-# --- Schluss -----------------------------------------------------------
+# --- Done --------------------------------------------------------------
 
 cat <<EOF
 
-== Fertig
+== Done
 
-   Ein Klick auf den Krug zeigt, was abweicht. Damit er nach jedem
-   Anmelden wieder da ist, im Menü einmal "Beim Anmelden starten"
-   anhaken — das kann nur die App selbst setzen, nicht dieses Skript.
+   A click on the mug shows what differs. So that it comes back after
+   every login, tick "Start at login" in the menu once — only the app
+   itself can set that, not this script.
 
-   bier status   zeigt, ob hier etwas nicht erfasst ist
-   bier list     zeigt, was die anderen Geräte zusätzlich haben
-   bier take     holt einzelne Einträge hierher oder nach main
+   bier status   shows whether anything here is unrecorded
+   bier list     shows what the other devices have on top
+   bier take     pulls single entries here or into main
 
 EOF

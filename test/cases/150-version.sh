@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
-# version nennt sich, und state meldet sie für die Menüleiste
+# version names itself, and state reports it for the menu bar
 
 bier mini version
 assert_contains "$OUT" "bier "
 assert_contains "$OUT" "Code    $WORK/code-mini"
-assert_contains "$OUT" "Daten   $WORK/mini"
-assert_contains "$OUT" "Gerät   mini"
+assert_contains "$OUT" "Data    $WORK/mini"
+assert_contains "$OUT" "Device  mini"
 
-# Die App vergleicht ihre eigene Nummer mit dieser Zeile, um zu merken,
-# dass sie veraltet ist.
+# The app compares its own number against this line to notice that it is
+# out of date.
 system mini <<'EOF'
 brew "wget"
 EOF
 bier mini state
 version=$(printf '%s\n' "$OUT" | sed -n 's/^VERSION'$'\t''//p')
 assert_eq "$(sed -nE 's/^BIER_VERSION=(.*)$/\1/p' "$REPO/bin/bier")" "$version" \
-	"state muss dieselbe Version melden, die im Skript steht"
+	"state has to report the same version the script carries"
 
-# app/build.sh holt dieselbe Nummer aus dem Skript ins App-Bündel.
-# Das hier prüft die Quelle, nicht das Bau-Artefakt — ein alter Build
-# im Arbeitsverzeichnis soll den Test nicht rot färben.
+# app/build.sh reads the same number out of the script into the app
+# bundle. This checks the source, not the build artefact — a stale build
+# in the working directory should not turn the test red.
 assert_contains "$(sed -n '/^VERSION=/p' "$REPO/app/build.sh")" "BIER_VERSION" \
-	"build.sh muss die Nummer aus bin/bier lesen"
+	"build.sh has to read the number from bin/bier"

@@ -1,9 +1,8 @@
-# Brewfiles sind Listen ohne Reihenfolge. Ändern zwei Macs sie
-# gleichzeitig, ist fast immer beides richtig — git soll die Seiten
-# dann zusammenführen, statt einen Konflikt zu hinterlassen, den
-# jemand von Hand auflösen müsste.
+# Brewfiles are lists without an order. When two Macs change them at the
+# same time, both sides are almost always right — git should merge them
+# instead of leaving behind a conflict for somebody to resolve by hand.
 #
-# Die Regel gilt dem Daten-Repo: install.sh legt diese Datei dort ab,
-# und das Harness baut damit seine Testwelt. Hier im Programm-Repo
-# liegen keine Brewfiles, hier tut sie nichts.
+# The rule is meant for the data repository: install.sh puts this file
+# there, and the test harness builds its world with it. Here in the
+# program repository there are no Brewfiles, so it does nothing.
 Brewfiles/* merge=union

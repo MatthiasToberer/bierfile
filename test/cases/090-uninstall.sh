@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# uninstall entfernt Cask und Tap, auch über den kurzen Namen
+# uninstall removes cask and tap, short name included
 #
-# Homebrew kennt Casks kurz, das Brewfile schreibt sie voll
-# qualifiziert. Und der kurze Name passt auf Tap wie Cask — daran ist
-# kind_of einmal gescheitert und hat den Tap statt des Casks geraten.
+# Homebrew knows casks by their short name, the Brewfile writes them
+# fully qualified. And the short name matches tap as well as cask — that
+# is what kind_of tripped over once, guessing the tap instead of the cask.
 
 seed_file mini Brewfiles/main <<'EOF'
 brew "wget"
@@ -18,12 +18,12 @@ EOF
 
 bier mini uninstall sikarugir sikarugir-app/sikarugir
 out=$OUT
-assert_contains "$out" "sikarugir (cask)" "der kurze Name muss den Cask treffen, nicht den Tap"
+assert_contains "$out" "sikarugir (cask)" "the short name has to hit the cask, not the tap"
 assert_contains "$out" "sikarugir-app/sikarugir (tap)"
 
 assert_file_lacks "$(bf mini main)" "sikarugir"
 assert_file_lacks "$(bf mini main)" "sikarugir-app/sikarugir"
 assert_file_has "$(bf mini main)" 'brew "wget"'
 
-# Und im System ist beides weg.
+# And both are gone from the system.
 assert_file_lacks "$WORK/sys-mini" "sikarugir"

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# install holt main und die eigene Gerätedatei aufs System
+# install brings main and the own device file onto the system
 #
-# Der Weg war lange ungetestet, weil er auf einem echten Mac Software
-# installiert. Gegen den Doppelgänger ist das harmlos.
+# This path went untested for a long time because on a real Mac it
+# installs software. Against the stand-in it is harmless.
 
 seed_file mini Brewfiles/main <<'EOF'
 brew "wget"
@@ -12,19 +12,19 @@ seed_file mini Brewfiles/mini <<'EOF'
 cask "font-meslo"
 EOF
 
-# Auf dem Mac ist noch nichts davon da.
+# None of it is on the Mac yet.
 system mini <<'EOF'
 EOF
 
 bier mini install
 out=$OUT
 
-assert_file_has "$WORK/sys-mini" 'brew "wget"' "main muss installiert werden"
-assert_file_has "$WORK/sys-mini" 'cask "font-meslo"' "die Gerätedatei auch"
+assert_file_has "$WORK/sys-mini" 'brew "wget"' "main has to be installed"
+assert_file_has "$WORK/sys-mini" 'cask "font-meslo"' "the device file too"
 
-# Danach deckt sich das System mit dem Erfassten.
+# Afterwards the system matches what is recorded.
 bier mini status
-assert_contains "$OUT" "deckt sich mit dem System"
+assert_contains "$OUT" "matches the system"
 
 bier mini state
 assert_contains "$OUT" "STATE"$'\t'"ok"

@@ -1,16 +1,16 @@
-// Das Bierglas als Menüleisten-Symbol — ein Krug mit Henkel.
+// The beer glass as a menu bar icon — a mug with a handle.
 //
-//   voll      Füllung bis zum Rand, Schaumkrone darüber
-//   leer      nackter Krug, keine Krone
-//   arbeitend der Füllstand senkt und hebt sich, die Krone schwimmt mit
+//   full     filled to the rim, a head of foam on top
+//   empty    bare mug, no head
+//   busy     the level sinks and rises, the head rides along
 //
-// Gezeichnet wird als Template-Bild: eine Farbe, die die Menüleiste je
-// nach Erscheinungsbild einfärbt. Weil es keine zweite Farbe gibt,
-// trennt eine Fuge den Schaum vom Bier und die Blasen sind Lücken,
-// keine hellen Punkte.
+// Drawn as a template image: one colour, which the menu bar tints
+// according to the appearance. Because there is no second colour, a
+// seam separates the foam from the beer and the bubbles are gaps,
+// not bright dots.
 //
-// Bewusst in einer eigenen Datei: so lässt es sich mit preview-icon.swift
-// einzeln rendern und ansehen, ohne die App zu starten.
+// Deliberately in a file of its own: that way preview-icon.swift can
+// render and show it on its own, without starting the app.
 
 import AppKit
 
@@ -21,11 +21,11 @@ enum Glass {
 		render(level: full ? 1.0 : 0.0, foam: full)
 	}
 
-	/// Ein Einzelbild der Arbeits-Animation: der Pegel schwingt zwischen
-	/// gut einem Drittel und fast voll. phase läuft endlos weiter.
+	/// One frame of the busy animation: the level swings between a good
+	/// third and nearly full. phase keeps running forever.
 	static func busy(phase: CGFloat) -> NSImage {
 		let t = phase.truncatingRemainder(dividingBy: 1.0)
-		let swing = (1 - cos(t * 2 * .pi)) / 2 // 0 … 1 … 0, weich
+		let swing = (1 - cos(t * 2 * .pi)) / 2 // 0 … 1 … 0, smooth
 		return render(level: 0.35 + 0.6 * swing, foam: true)
 	}
 
@@ -46,7 +46,7 @@ enum Glass {
 			NSColor.black.setFill()
 
 			// Der Absatz wird zweimal behandelt: gestrichelt sichtbar im
-			// leeren Krug, als Lücke im gefüllten.
+			// empty mug, as a gap in the filled one.
 			drawBase(left: left, right: right, bottom: bottom, erase: false)
 
 			if level > 0 {
@@ -57,16 +57,16 @@ enum Glass {
 				if foam { drawFoam(left: left, right: right, at: surface, rim: rim) }
 			}
 
-			// Kontur zuletzt, damit sie auf der Füllung sichtbar bleibt.
+			// Outline last, so it stays visible on top of the fill.
 			drawBody(left: left, right: right, bottom: bottom, rim: rim)
 			drawHandle(at: right, bottom: bottom, rim: rim)
 			return true
 		}
-		image.isTemplate = true // folgt hell/dunkel automatisch
+		image.isTemplate = true // follows light/dark automatically
 		return image
 	}
 
-	/// Korpus: oben offen, unten abgerundet, mit dem Absatz über dem Fuß.
+	/// Body: open at the top, rounded at the bottom, with the ridge above the foot.
 	private static func drawBody(left: CGFloat, right: CGFloat,
 	                             bottom: CGFloat, rim: CGFloat)
 	{
@@ -86,7 +86,7 @@ enum Glass {
 		body.stroke()
 	}
 
-	/// Der Absatz knapp über dem Boden, wie in der Vorlage.
+	/// The ridge just above the base, as in the original.
 	private static func drawBase(left: CGFloat, right: CGFloat,
 	                             bottom: CGFloat, erase: Bool)
 	{
@@ -119,7 +119,7 @@ enum Glass {
 	private static func drawBeer(left: CGFloat, right: CGFloat,
 	                             bottom: CGFloat, to surface: CGFloat)
 	{
-		// Bündig an die Innenkante der Kontur — ein eingerücktes Bier
+		// Flush with the inner edge of the outline — an inset beer
 		// sieht aus wie ein Rechteck, das im Krug schwebt.
 		let inset = line / 2 - 0.1
 		let beer = NSBezierPath(roundedRect: NSRect(
@@ -131,7 +131,7 @@ enum Glass {
 	}
 
 	/// Blasen sind aus dem Bier ausgestanzt — ein Template-Bild kennt
-	/// keine zweite Farbe, die Lücke ist die Blase.
+	/// no second colour, the gap is the bubble.
 	private static func drawBubbles(left: CGFloat, right: CGFloat,
 	                                bottom: CGFloat, below surface: CGFloat)
 	{
@@ -150,15 +150,15 @@ enum Glass {
 		NSGraphicsContext.current?.compositingOperation = .sourceOver
 	}
 
-	/// Schaumkrone: eine gefüllte Haube mit flachem Boden und bulliger
+	/// Head of foam: a filled dome with a flat bottom and a bulging
 	/// Oberkante. Zwischen Bier und Schaum bleibt eine Fuge — sonst
-	/// verschmelzen beide zu einer Fläche, weil ein Template-Bild nur
+	/// the two merge into one area, because a template image has only
 	/// eine Farbe kennt.
 	private static func drawFoam(left: CGFloat, right: CGFloat,
 	                             at surface: CGFloat, rim: CGFloat)
 	{
-		// Über den Rand quellen darf der Schaum nur, wenn er auch oben
-		// ankommt — sonst stünde er mitten im Krug durch die Wand.
+		// The foam may spill over the rim only if it reaches the top
+		// as well — otherwise it would stick through the mug's wall.
 		let reach = max(0, min(1, (surface - (rim - 2.0)) / 2.0))
 		let overhang = -line / 2 + (0.5 + line / 2) * reach
 		let a = left - overhang

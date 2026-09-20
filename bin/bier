@@ -1,31 +1,31 @@
 #!/usr/bin/env bash
 #
-# bier — Brewfile-Abgleich zwischen mehreren Macs.
+# bier — keeps Brewfiles in sync across several Macs.
 #
-# Code und Daten liegen in zwei Repos:
+# Code and data live in two repositories:
 #
-#   ROOT  das Programm — öffentlich, wird entwickelt
-#   DATA  die Brewfiles — privat, sie verraten, was auf den Macs läuft
+#   ROOT  the program — public, this is what gets developed
+#   DATA  the Brewfiles — private, they reveal what runs on the Macs
 #
-# Beides steht in ~/.config/bier/config. Git-Befehle gehen an DATA,
-# außer es geht ausdrücklich um den Code (bier update, bier version).
+# Both are recorded in ~/.config/bier/config. Git commands go to DATA
+# unless the code itself is meant (bier update, bier version).
 #
-# Brewfiles/main ist der gemeinsame Bestand, Brewfiles/<host> enthält nur,
-# was ein Mac zusätzlich dazu hat. Beides sind gültige Brewfiles; zusammen
-# ergeben sie den Sollstand eines Geräts.
+# Brewfiles/main is the shared inventory, Brewfiles/<host> holds only what
+# one Mac has on top of it. Both are valid Brewfiles; together they are
+# what a device is supposed to have.
 #
-# Das Delta kann nur addieren. Was auf einem Gerät ausdrücklich nicht
-# laufen soll, darf deshalb nicht in main stehen, sondern gehört in die
-# Gerätedatei des Macs, der es haben will.
+# A device file can only add, never subtract. Anything a device must not
+# run therefore cannot live in main — it belongs in the device file of
+# the Mac that wants it.
 
 set -euo pipefail
 
-# Eine Quelle für die Versionsnummer: build.sh holt sie hier heraus und
-# schreibt sie ins App-Bündel, bier state meldet sie, und BierMenu kann
-# so merken, dass es selbst veraltet ist.
-BIER_VERSION=0.10.0
+# One source for the version number: build.sh reads it from here and
+# writes it into the app bundle, bier state reports it, and that is how
+# BierMenu notices that it is out of date itself.
+BIER_VERSION=0.11.0
 
-# --- Umgebung ---------------------------------------------------------------
+# --- Environment ------------------------------------------------------------
 
 die() {
 	printf 'bier: %s\n' "$*" >&2
@@ -34,16 +34,17 @@ die() {
 
 info() { printf '%s\n' "$*"; }
 
-# "1 Eintrag" statt "1 Einträge".
+# "1 entry" rather than "1 entries".
 count_word() {
-	if [ "$1" = "1" ]; then printf '1 Eintrag'; else printf '%s Einträge' "$1"; fi
+	if [ "$1" = "1" ]; then printf '1 entry'; else printf '%s entries' "$1"; fi
 }
 
 CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/bier
 CONFIG_FILE=${BIER_CONFIG:-$CONFIG_DIR/config}
 
-# Wo das Repo liegt, wenn die Config nichts sagt: zwei Ebenen über diesem
-# Skript. Symlinks auflösen, readlink -f gibt es auf macOS nicht überall.
+# Where the program lives when the config says nothing: two levels above
+# this script. Resolve symlinks by hand, readlink -f is not everywhere on
+# macOS.
 script_root() {
 	local self=$0 link
 	while [ -L "$self" ]; do
@@ -56,8 +57,8 @@ script_root() {
 	(cd "$(dirname "$self")/.." && pwd)
 }
 
-# Einen Wert aus der Config lesen: Zeilen der Form  schlüssel = wert
-# Kommentare und Leerzeilen werden ignoriert, der letzte Treffer gewinnt.
+# Read one value from the config: lines of the form  key = value
+# Comments and blank lines are ignored, the last match wins.
 config_get() {
 	[ -f "$CONFIG_FILE" ] || return 0
 	sed -nE "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$CONFIG_FILE" |
@@ -68,43 +69,43 @@ config_get() {
 write_config() {
 	mkdir -p "$(dirname "$CONFIG_FILE")"
 	cat >"$CONFIG_FILE" <<EOF
-# Konfiguration für bier. Beim ersten Lauf angelegt.
+# Configuration for bier. Created on first run.
 
-# Wo das Programm liegt.
+# Where the program lives.
 root = $(script_root)
 
-# Wo deine Brewfiles liegen — ein eigenes, privates Repo. Sie verraten,
-# welche Software auf deinen Macs läuft, und gehören deshalb nicht in
-# das öffentliche Programm-Repo. Einrichten mit install.sh.
-# data = $HOME/bierdaten
+# Where your Brewfiles live — your own, private repository. They reveal
+# which software runs on your Macs and therefore do not belong in the
+# public program repository. Set it up with install.sh.
+# data = $HOME/bierdata
 
-# Gerätename, bestimmt welche Datei unter Brewfiles/ diesem Mac gehört.
+# Device name; decides which file under Brewfiles/ belongs to this Mac.
 host = $(hostname -s)
 EOF
-	info "Config angelegt: $CONFIG_FILE"
+	info "Config created: $CONFIG_FILE"
 }
 
 if [ ! -f "$CONFIG_FILE" ]; then
 	write_config
 fi
 
-# Vorrang: Umgebungsvariable, dann Config, dann Voreinstellung.
+# Precedence: environment variable, then config, then default.
 ROOT=${BIER_ROOT:-$(config_get root)}
 ROOT=${ROOT:-$(script_root)}
 case $ROOT in
 "~/"*) ROOT=$HOME/${ROOT#\~/} ;;
 esac
 
-# Wo die Brewfiles liegen.
+# Where the Brewfiles live.
 #
-# Kein Rückfall auf das Code-Verzeichnis: wer das öffentliche Repo
-# klont, bekäme sonst seinen Bestand dorthin geschrieben — und genau
-# den wollen wir nicht veröffentlichen. Leer heißt "noch nicht
-# eingerichtet", darüber stolpert need_repo mit einer Anleitung.
+# Deliberately no fallback to the code directory: whoever clones the
+# public repository would otherwise get their inventory written into it —
+# and that inventory is exactly what must not be published. Empty means
+# "not set up yet", and need_repo trips over it with instructions.
 #
-# Einzige Ausnahme ist eine alte Einrichtung, bei der Code und Daten
-# zusammenlagen; die erkennt man am vorhandenen Brewfiles-Ordner, den
-# ein frischer Klon nie hat.
+# The one exception is an older setup where code and data lived together;
+# that is recognisable by the Brewfiles folder, which a fresh clone never
+# has.
 DATA=${BIER_DATA:-$(config_get data)}
 if [ -z "$DATA" ] && [ -d "$ROOT/Brewfiles" ]; then
 	DATA=$ROOT
@@ -120,66 +121,65 @@ BREW_DIR=$DATA/Brewfiles
 HOST_FILE=$BREW_DIR/$HOST
 MAIN_FILE=$BREW_DIR/main
 
-# Temporäre Dateien: ein Verzeichnis für den ganzen Lauf, aufgeräumt beim
-# Beenden.
+# Temporary files: one directory for the whole run, cleaned up on exit.
 #
-# Zwei Fallen, in die ich hier getreten bin. Ein "trap ... RETURN" je
-# Funktion geht nicht: der Trap bleibt aktiv und feuert erneut, wenn die
-# aufrufende Funktion zurückkehrt — dann ist die lokale Variable weg und
-# set -u bricht ab. Und das Verzeichnis faul in tmpfile anzulegen geht
-# auch nicht: tmp=$(tmpfile) läuft in einer Subshell, die Zuweisung an
-# BIER_TMP verpufft dort und der EXIT-Trap löscht das Verzeichnis sofort
-# wieder. Also gleich hier, einmal pro Aufruf.
+# Two traps I have fallen into here. A "trap ... RETURN" per function does
+# not work: the trap stays armed and fires again when the *calling*
+# function returns — by then the local variable is gone and set -u aborts.
+# And creating the directory lazily inside tmpfile does not work either:
+# tmp=$(tmpfile) runs in a subshell, the assignment to BIER_TMP evaporates
+# there and the EXIT trap deletes the directory right away. So: here,
+# once per invocation.
 BIER_TMP=$(mktemp -d -t bier)
 trap 'rm -rf "$BIER_TMP"' EXIT
 tmpfile() { mktemp "$BIER_TMP/XXXXXX"; }
 
 need_brew() {
-	command -v brew >/dev/null 2>&1 || die "Homebrew nicht gefunden"
+	command -v brew >/dev/null 2>&1 || die "Homebrew not found"
 }
 
-# Schützt davor, dass ein falscher Eintrag irgendwo Ordner anlegt —
-# und fängt den Fall ab, dass jemand das Programm geklont hat, aber noch
-# kein eigenes Repo für seine Brewfiles besitzt. Die gehören nicht in
-# das öffentliche Programm-Repo: sie verraten, was auf den Macs liegt,
-# und wer das Programm klont, hat dort ohnehin kein Schreibrecht.
+# Guards against a wrong config entry creating folders somewhere — and
+# catches the case where somebody cloned the program but does not own a
+# repository for their Brewfiles yet. Those do not belong in the public
+# program repository: they reveal what is installed on the Macs, and a
+# person who cloned the program has no write access here anyway.
 need_repo() {
 	if [ -n "$DATA" ] && [ -d "$DATA/.git" ]; then
 		return 0
 	fi
 	if [ -z "$DATA" ] || [ "$DATA" = "$ROOT" ]; then
-		die "Noch kein eigenes Repo für deine Brewfiles eingerichtet.
+		die "No repository of your own set up for your Brewfiles yet.
 
-     Der Bestand deiner Macs gehört in ein privates Repo, das nur dir
-     gehört — nicht hierher, wo das Programm liegt.
+     The inventory of your Macs belongs in a private repository that is
+     yours — not here, where the program lives.
 
-     Einrichten:  $ROOT/install.sh"
+     Set it up:  $ROOT/install.sh"
 	fi
-	die "kein Git-Repo unter $DATA
+	die "no git repository at $DATA
 
-     Steht in $CONFIG_FILE unter \"data\" der richtige Pfad?
-     Neu einrichten:  $ROOT/install.sh"
+     Does \"data\" in $CONFIG_FILE point at the right path?
+     Set it up again:  $ROOT/install.sh"
 }
 
-# Für Befehle, die am Code arbeiten statt an den Daten.
+# For commands that work on the code rather than on the data.
 need_code() {
 	[ -d "$ROOT/.git" ] ||
-		die "kein Git-Repo unter $ROOT — root in $CONFIG_FILE prüfen"
+		die "no git repository at $ROOT — check \"root\" in $CONFIG_FILE"
 }
 
-# Einträge eines Brewfiles normalisiert ausgeben: 'typ "name"', sortiert.
-# Kommentarzeilen und Optionen (args:, id: …) fallen weg.
+# Print the entries of a Brewfile normalised: 'kind "name"', sorted.
+# Comment lines and options (args:, id: …) are dropped.
 entries() {
 	[ -f "$1" ] || return 0
-	# Kein Treffer ist kein Fehler — eine leere Datei ist ein gültiger
-	# Zustand. Ohne das || true reißt pipefail jede Zuweisung mit.
+	# No match is not an error — an empty file is a valid state. Without
+	# the || true, pipefail drags every assignment down with it.
 	{ grep -E '^[[:space:]]*(tap|brew|cask|mas|vscode)[[:space:]]+"' "$1" || true; } |
 		sed -E 's/^[[:space:]]*([a-z]+)[[:space:]]+"([^"]+)".*/\1 "\2"/' |
 		sort -u
 }
 
-# Sollstand eines Geräts: seine Gerätedatei plus main. Nur zusammen
-# ergeben die beiden, was auf dem Mac laufen soll.
+# What a device is supposed to have: its device file plus main. Only
+# together do the two describe what should run on that Mac.
 host_entries() {
 	{
 		entries "$BREW_DIR/$1"
@@ -189,7 +189,7 @@ host_entries() {
 
 own_entries() { host_entries "$HOST"; }
 
-# Alle Einträge, die irgendwo im Repo stehen — main und jedes Gerät.
+# Every entry recorded anywhere in the repository — main and each device.
 all_entries() {
 	local f
 	{
@@ -200,7 +200,7 @@ all_entries() {
 	} | sort -u
 }
 
-# Alle Geräte in Brewfiles/ — jede Datei außer main ist ein Gerät.
+# All devices in Brewfiles/ — every file except main is a device.
 host_list() {
 	[ -d "$BREW_DIR" ] || return 0
 	for f in "$BREW_DIR"/*; do
@@ -212,17 +212,17 @@ host_list() {
 	done
 }
 
-# --- Werkzeug ----------------------------------------------------------------
+# --- Helpers -----------------------------------------------------------------
 
-# Gibt die Einträge aus $1 aus, die nicht schon in $2 stehen — in ihrer
-# ursprünglichen Schreibweise samt Optionen (mas … id:, tap … URL).
-# Kommentare fallen weg: in einer Delta-Datei stünden sonst Beschreibungen
-# zu Paketen, die gar nicht mehr aufgeführt sind.
+# Print the entries of $1 that are not already in $2 — in their original
+# spelling, options included (mas … id:, tap … URL). Comments are dropped:
+# a delta file would otherwise carry descriptions of packages it no longer
+# lists.
 delta() {
 	local base_keys line key
-	# Beim ersten Dump gibt es die Gerätedatei noch nicht. Ohne diese
-	# Zeile klagt grep, und der erste Eindruck von bier ist eine
-	# Fehlermeldung.
+	# On the very first dump the device file does not exist yet. Without
+	# this line grep complains, and the first impression of bier is an
+	# error message.
 	[ -f "$1" ] || return 0
 	base_keys=$(entries "$2")
 	{ grep -E '^[[:space:]]*(tap|brew|cask|mas|vscode)[[:space:]]+"' "$1" || true; } |
@@ -235,27 +235,27 @@ delta() {
 		done
 }
 
-# Sonderzeichen in Paketnamen (python@3.12, gtk+) für einen regulären
-# Ausdruck entschärfen.
+# Defuse special characters in package names (python@3.12, gtk+) for use
+# in a regular expression.
 rx_quote() {
 	printf '%s' "$1" | sed -E 's/[][\.^$*+?(){}|]/\\&/g'
 }
 
-# Stand dieser Eintrag jemals in einem Brewfile? Dann ist er kein Neuzugang,
-# sondern eine Löschung vom anderen Gerät. Die Git-Historie ist der einzige
-# Ort, an dem dieser Unterschied festgehalten ist.
+# Was this entry ever in a Brewfile? Then it is not an addition but a
+# removal made on another device. The git history is the only place where
+# that difference is recorded.
 was_tracked() {
-	# Steht der Eintrag noch irgendwo im Repo, ist er nicht verwaist —
-	# er läuft dann eben auf einem anderen Gerät. Ohne diese Prüfung
-	# meldet bier ein Paket, das man sich vom anderen Mac abgeschaut
-	# hat, als "dort gelöscht".
+	# If the entry is still listed somewhere in the repository it is not
+	# orphaned — it simply runs on another device. Without this check,
+	# bier reports a package picked up from the other Mac as "removed
+	# elsewhere".
 	if all_entries | grep -qxF "$1"; then
 		return 1
 	fi
 	git -C "$DATA" log --format=%h -1 -S"$1" -- Brewfiles/ 2>/dev/null | grep -q .
 }
 
-# Teilt "installiert, aber nicht erfasst" in NEU und VERWAIST auf.
+# Splits "installed but not recorded" into NEW and STALE.
 classify_add() {
 	local entry
 	printf '%s\n' "$1" | while IFS= read -r entry; do
@@ -268,8 +268,8 @@ classify_add() {
 	done
 }
 
-# Entfernt einen Eintrag aus allen Brewfiles — samt der Kommentarzeile,
-# die "brew bundle dump" darüber schreibt.
+# Removes an entry from every Brewfile — including the comment line that
+# "brew bundle dump" writes above it.
 strip_entry() {
 	local kind=$1 name=$2 rx f tmp
 	rx="^[[:space:]]*$(rx_quote "$kind")[[:space:]]+\"([^\"]*/)?$(rx_quote "$name")\""
@@ -286,10 +286,10 @@ strip_entry() {
 	done
 }
 
-# Bestimmt, womit ein Paket installiert wurde. Die Reihenfolge ist der
-# Knackpunkt: "sikarugir" passt sowohl auf den Tap "sikarugir-app/sikarugir"
-# als auch auf den Cask "sikarugir-app/sikarugir/sikarugir". Deshalb erst
-# exakte Treffer, dann Homebrew fragen, und Taps zuletzt.
+# Works out how a package was installed. The order is the crux: a short
+# name like "sikarugir" matches both the tap "sikarugir-app/sikarugir" and
+# the cask "sikarugir-app/sikarugir/sikarugir". So: exact matches first,
+# then ask Homebrew, and taps last.
 kind_of() {
 	local name=$1 rx kind
 	rx="^[[:space:]]*(tap|brew|cask|mas|vscode)[[:space:]]+\"$(rx_quote "$name")\""
@@ -300,7 +300,8 @@ kind_of() {
 		return 0
 	fi
 
-	# Was tatsächlich installiert ist, weiß Homebrew genauer als die Datei.
+	# What is actually installed is something Homebrew knows better than
+	# the file does.
 	if brew list --formula --full-name 2>/dev/null | grep -qxF "$name"; then
 		printf 'brew'
 		return 0
@@ -314,14 +315,14 @@ kind_of() {
 		return 0
 	fi
 
-	# Zuletzt der Kurzname eines voll qualifizierten Eintrags, Taps außen vor.
+	# Last resort: the short name of a fully qualified entry, taps excluded.
 	rx="^[[:space:]]*(brew|cask|mas|vscode)[[:space:]]+\"[^\"]*/$(rx_quote "$name")\""
 	{ grep -hE "$rx" "$BREW_DIR"/* 2>/dev/null || true; } |
 		head -1 | sed -E 's/^[[:space:]]*([a-z]+).*/\1/' | tr -d '\n'
 }
 
-# Deinstalliert ein Paket. mas kann das nicht ohne Weiteres, das bleibt
-# Handarbeit — lieber sagen als so tun.
+# Uninstalls a package. mas cannot do that without help, so that stays
+# manual — better to say so than to pretend.
 uninstall_one() {
 	local kind=$1 name=$2
 	case $kind in
@@ -330,15 +331,15 @@ uninstall_one() {
 	tap) brew untap "$name" ;;
 	vscode) code --uninstall-extension "$name" ;;
 	mas)
-		info "  $name kommt aus dem App Store — bitte von Hand aus"
-		info "  /Applications entfernen. Aus den Brewfiles nehme ich es."
+		info "  $name came from the App Store — please remove it from"
+		info "  /Applications by hand. I will take it out of the Brewfiles."
 		;;
-	*) die "unbekannte Art für $name" ;;
+	*) die "unknown kind for $name" ;;
 	esac
 }
 
-# Die Originalzeile zu einem normalisierten Eintrag, damit Optionen wie
-# "id:" oder "trusted:" beim Verschieben nicht verlorengehen.
+# The original line behind a normalised entry, so that options such as
+# "id:" or "trusted:" survive being moved around.
 find_line() {
 	local key=$1 kind name rx f line
 	kind=${key%% *}
@@ -355,7 +356,7 @@ find_line() {
 	printf '%s\n' "$key"
 }
 
-# Auf welchen Geräten steht ein Eintrag?
+# Which devices list a given entry?
 hosts_with() {
 	local h out=""
 	for h in $(host_list); do
@@ -366,17 +367,17 @@ hosts_with() {
 	printf '%s' "${out# }"
 }
 
-# "1 3-5, 8" zu einzelnen, geprüften Nummern.
+# "1 3-5, 8" into single, validated numbers.
 expand_selection() {
 	local input=$1 max=$2 tok a b i
 	{
 		for tok in $(printf '%s' "$input" | tr ',' ' '); do
 			case $tok in
-			*[!0-9-]*) die "keine Nummer: $tok" ;;
+			*[!0-9-]*) die "not a number: $tok" ;;
 			*-*)
 				a=${tok%%-*}
 				b=${tok##*-}
-				if [ -z "$a" ] || [ -z "$b" ]; then die "ungültiger Bereich: $tok"; fi
+				if [ -z "$a" ] || [ -z "$b" ]; then die "invalid range: $tok"; fi
 				i=$a
 				while [ "$i" -le "$b" ]; do
 					printf '%s\n' "$i"
@@ -393,14 +394,14 @@ expand_selection() {
 	done
 }
 
-# Einträge zwischen main und den Gerätedateien verschieben.
+# Moves entries between main and the device files.
 #
-#   bier take               was andere Geräte extra haben, hierher oder nach main
-#   bier take --from-main   etwas aus main einem einzelnen Gerät zuschlagen
+#   bier take               what other devices have on top, to here or to main
+#   bier take --from-main   hand something from main to a single device
 #
-# Nach main heißt: rein in main und raus aus allen Gerätedateien, denn
-# main gilt für alle und doppelt wäre falsch. In die eigene Datei heißt:
-# nur hier dazu, die anderen behalten ihren Eintrag.
+# Into main means: added to main and removed from every device file,
+# because main applies to all and listing it twice would be wrong. Into
+# the own file means: added here only, the others keep their entry.
 cmd_take() {
 	need_repo
 	local from_main=no
@@ -423,17 +424,17 @@ cmd_take() {
 
 	if [ ! -s "$listing" ]; then
 		if [ "$from_main" = yes ]; then
-			info "Brewfiles/main ist leer."
+			info "Brewfiles/main is empty."
 		else
-			info "Kein anderes Gerät hat etwas zusätzlich zu main."
+			info "No other device has anything on top of main."
 		fi
 		return 0
 	fi
 
 	if [ "$from_main" = yes ]; then
-		info "In Brewfiles/main — auswählen, um es einem Gerät zuzuschlagen:"
+		info "In Brewfiles/main — pick one to hand it to a device:"
 	else
-		info "Was andere Geräte zusätzlich zu main haben:"
+		info "What other devices have on top of main:"
 	fi
 	info ""
 	n=0
@@ -447,54 +448,54 @@ cmd_take() {
 	done <"$listing"
 
 	info ""
-	printf 'Nummern (z.B. 1 3-5), leer = abbrechen: '
+	printf 'Numbers (e.g. 1 3-5), empty = cancel: '
 	read -r sel || sel=""
 	if [ -z "$sel" ]; then
-		info "Abgebrochen."
+		info "Cancelled."
 		return 0
 	fi
 	local picks
 	picks=$(expand_selection "$sel" "$n")
 	if [ -z "$picks" ]; then
-		info "Nichts ausgewählt."
+		info "Nothing selected."
 		return 0
 	fi
 
-	# Ziel bestimmen.
+	# Decide on the destination.
 	local target answer i
 	if [ "$from_main" = yes ]; then
 		if [ -z "$(host_list)" ]; then
-			die "es gibt noch keine Gerätedatei — erst 'bier dump' laufen lassen"
+			die "there is no device file yet — run 'bier dump' first"
 		fi
 		info ""
-		info "Welchem Gerät zuschlagen?"
+		info "Hand it to which device?"
 		i=0
 		for h in $(host_list); do
 			i=$((i + 1))
 			printf '  %2s  %s\n' "$i" "$h"
 		done
-		printf 'Nummer: '
+		printf 'Number: '
 		read -r answer || answer=""
 		target=$(host_list | sed -n "${answer}p")
-		[ -n "$target" ] || die "kein Gerät mit der Nummer $answer"
+		[ -n "$target" ] || die "no device with number $answer"
 	else
 		info ""
-		printf 'Wohin?  [m] nach main, gilt für alle   [h] nur %s   [a] abbrechen: ' "$HOST"
+		printf 'Where to?  [m] into main, for all devices   [h] only %s   [c] cancel: ' "$HOST"
 		read -r answer || answer=""
 		case $answer in
 		m | M) target=main ;;
 		h | H) target=$HOST ;;
 		*)
-			info "Abgebrochen."
+			info "Cancelled."
 			return 0
 			;;
 		esac
 	fi
 
-	# Vorhaben zeigen, bevor etwas passiert.
+	# Show the plan before anything happens.
 	local key line
 	info ""
-	info "Vorhaben:"
+	info "Plan:"
 	for i in $picks; do
 		key=$(sed -n "${i}p" "$listing")
 		info "  $key"
@@ -507,17 +508,17 @@ cmd_take() {
 				info "    - Brewfiles/$h"
 			done
 		else
-			info "    + Brewfiles/$target   (die anderen behalten ihren Eintrag)"
+			info "    + Brewfiles/$target   (the others keep their entry)"
 		fi
 	done
 
 	info ""
-	printf 'Übernehmen und pushen? [j/N] '
+	printf 'Apply and push? [y/N] '
 	read -r answer || answer=""
 	case $answer in
 	j | J | y | Y) ;;
 	*)
-		info "Abgebrochen."
+		info "Cancelled."
 		return 0
 		;;
 	esac
@@ -543,48 +544,48 @@ cmd_take() {
 	done
 
 	if [ "$from_main" = yes ]; then
-		publish "$HOST: $(count_word "$(wc -l <"$taken" | tr -d ' ')") von main nach $target"
+		publish "$HOST: $(count_word "$(wc -l <"$taken" | tr -d ' ')") from main to $target"
 	else
-		publish "$HOST: $(count_word "$(wc -l <"$taken" | tr -d ' ')") nach $target übernommen"
+		publish "$HOST: took $(count_word "$(wc -l <"$taken" | tr -d ' ')") into $target"
 	fi
 
-	# Installieren nur, wenn dieser Mac sie danach haben soll.
+	# Install only if this Mac is supposed to have them afterwards.
 	if [ "$target" = main ] || [ "$target" = "$HOST" ]; then
 		info ""
-		printf 'Jetzt installieren? [j/N] '
+		printf 'Install now? [y/N] '
 		read -r answer || answer=""
 		case $answer in
 		j | J | y | Y) brew bundle install --file "$taken" ;;
-		*) info "Nicht installiert — bier status meldet es als fehlend, bier install holt es." ;;
+		*) info "Not installed — bier status reports it as missing, bier install fetches it." ;;
 		esac
 	fi
 }
 
-# Holt vom Server und führt Konflikte selbst zusammen.
+# Fetches from the server and resolves conflicts on its own.
 #
-# .gitattributes lässt git Brewfiles vereinigen, das fängt den Normalfall
-# ab. Bleibt doch ein Konflikt stehen, machen wir dasselbe von Hand:
-# Brewfiles sind Listen, beide Seiten zu behalten ist richtig. Doppelte
-# Zeilen stören brew nicht und verschwinden beim nächsten Dump.
+# .gitattributes makes git union-merge the Brewfiles, which covers the
+# normal case. If a conflict survives anyway, we do the same by hand:
+# Brewfiles are lists, keeping both sides is right. Duplicate lines do not
+# bother brew and disappear with the next dump.
 #
-# Niemand soll git-Befehle kennen müssen, um seine Macs abzugleichen.
+# Nobody should have to know git commands to keep their Macs in step.
 resolve_union() {
-	local offen f
-	offen=$(git -C "$DATA" diff --name-only --diff-filter=U 2>/dev/null || true)
-	[ -n "$offen" ] || return 1
+	local open f
+	open=$(git -C "$DATA" diff --name-only --diff-filter=U 2>/dev/null || true)
+	[ -n "$open" ] || return 1
 
-	while [ -n "$offen" ]; do
-		# Nur Brewfiles führen wir ungefragt zusammen.
-		if printf '%s\n' "$offen" | grep -qv '^Brewfiles/'; then
+	while [ -n "$open" ]; do
+		# Only Brewfiles get merged without asking.
+		if printf '%s\n' "$open" | grep -qv '^Brewfiles/'; then
 			return 1
 		fi
-		printf '%s\n' "$offen" | while IFS= read -r f; do
+		printf '%s\n' "$open" | while IFS= read -r f; do
 			[ -n "$f" ] || continue
 			sed -i '' -e '/^<<<<<<< /d' -e '/^=======$/d' -e '/^>>>>>>> /d' "$DATA/$f"
 		done
 		git -C "$DATA" add Brewfiles
 		GIT_EDITOR=true git -C "$DATA" rebase --continue >/dev/null 2>&1 || return 1
-		offen=$(git -C "$DATA" diff --name-only --diff-filter=U 2>/dev/null || true)
+		open=$(git -C "$DATA" diff --name-only --diff-filter=U 2>/dev/null || true)
 	done
 	return 0
 }
@@ -597,37 +598,36 @@ fetch_rebase() {
 
 	if printf '%s' "$out" | grep -q 'CONFLICT'; then
 		if resolve_union; then
-			info "Beide Macs hatten Änderungen — zusammengeführt."
+			info "Both Macs had changes — merged."
 			return 0
 		fi
 	fi
 
-	# Nicht auflösbar: alles zurücknehmen, damit nichts halb fertig
-	# liegen bleibt.
+	# Not resolvable: roll everything back so nothing is left half done.
 	git -C "$DATA" rebase --abort 2>/dev/null || true
 	printf '%s\n' "$out" >&2
-	die "Abgleich mit dem Server fehlgeschlagen. Es wurde nichts verändert."
+	die "Syncing with the server failed. Nothing was changed."
 }
 
-# Committet, holt und pusht. Auch ohne eigene Änderung wird abgeglichen,
-# sonst verpasst man die Commits des anderen Geräts.
+# Commits, fetches and pushes. Even without local changes it syncs,
+# otherwise you miss the commits made on the other device.
 publish() {
-	# Nur die Brewfiles. "git add -A" würde auch Änderungen am Skript
-	# oder an der README mit einsammeln und unter einer Bestandsmeldung
-	# verstecken — das ist mir genau einmal passiert.
+	# Only the Brewfiles. "git add -A" would sweep up changes to the
+	# script or the README as well and hide them under an inventory
+	# message — that happened to me exactly once.
 	git -C "$DATA" add Brewfiles
 	if git -C "$DATA" diff --cached --quiet; then
-		info "Keine Änderungen zu committen."
+		info "Nothing to commit."
 	else
 		git -C "$DATA" commit -q -m "$1"
 		info "Commit: $1"
 	fi
 	fetch_rebase
 	git -C "$DATA" push --quiet
-	info "Mit origin abgeglichen."
+	info "In sync with origin."
 }
 
-# --- Befehle ----------------------------------------------------------------
+# --- Commands ----------------------------------------------------------------
 
 cmd_dump() {
 	need_brew
@@ -641,11 +641,10 @@ cmd_dump() {
 	tmp=$(tmpfile)
 	brew bundle dump --force --file "$tmp" >/dev/null
 
-	# Was auf einem anderen Mac gelöscht wurde, darf hier nicht
-	# stillschweigend in die Gerätedatei rutschen — sonst macht ein Dump
-	# aus der Löschung eine gerätespezifische Installation, und sie ist
-	# endgültig verloren. Solche Einträge bleiben draußen und damit
-	# weiter als "anderswo gelöscht" sichtbar.
+	# Whatever was removed on another Mac must not slip into the device
+	# file here — a dump would otherwise turn that removal into a
+	# device-specific installation and it would be lost for good. Such
+	# entries stay out and thus remain visible as "removed elsewhere".
 	local stale_now base
 	stale_now=$(classify_add "$(comm -23 <(entries "$tmp") <(own_entries) || true)" |
 		sed -n 's/^STALE'$'\t''//p')
@@ -656,49 +655,49 @@ cmd_dump() {
 		printf '%s\n' "$stale_now" >>"$base"
 	fi
 
-	# Was installiert ist und nicht schon in main steht.
-	local neu_lines keep_base alt_lines out
-	neu_lines=$(tmpfile)
-	delta "$tmp" "$base" >"$neu_lines"
+	# What is installed and not already in main.
+	local new_lines keep_base old_lines out
+	new_lines=$(tmpfile)
+	delta "$tmp" "$base" >"$new_lines"
 
-	# Was hier schon erfasst war, aber (noch) nicht installiert ist,
-	# bleibt stehen. Sonst würde ein Dump wegwerfen, was man sich mit
-	# "bier take" bewusst vorgenommen hat. Wirklich los wird man einen
-	# Eintrag mit "bier uninstall" oder "bier prune".
+	# What was already recorded here but is not (yet) installed stays.
+	# Otherwise a dump would throw away what you deliberately picked with
+	# "bier take". An entry really goes away only through "bier uninstall"
+	# or "bier prune".
 	keep_base=$(tmpfile)
-	cat "$base" "$neu_lines" >"$keep_base"
-	alt_lines=$(tmpfile)
-	delta "$HOST_FILE" "$keep_base" >"$alt_lines"
+	cat "$base" "$new_lines" >"$keep_base"
+	old_lines=$(tmpfile)
+	delta "$HOST_FILE" "$keep_base" >"$old_lines"
 
 	out=$(tmpfile)
 	{
-		printf '# %s — was dieser Mac zusätzlich zu Brewfiles/main hat.\n' "$HOST"
-		printf '# Geschrieben von "bier dump", nicht von Hand pflegen.\n\n'
-		cat "$neu_lines" "$alt_lines"
+		printf '# %s — what this Mac has on top of Brewfiles/main.\n' "$HOST"
+		printf '# Written by "bier dump", do not edit by hand.\n\n'
+		cat "$new_lines" "$old_lines"
 	} >"$out"
 	mv "$out" "$HOST_FILE"
 
 	local n m
 	n=$(entries "$HOST_FILE" | wc -l | tr -d ' ')
 	m=$(entries "$MAIN_FILE" | wc -l | tr -d ' ')
-	info "Brewfiles/$HOST geschrieben: $n zusätzlich zu $m in main"
+	info "Brewfiles/$HOST written: $n on top of $m in main"
 
 	if [ -n "$stale_now" ]; then
 		if [ "$adopt" = no ]; then
 			info ""
-			info "Nicht übernommen, weil anderswo gelöscht (bier prune):"
+			info "Not adopted, because removed elsewhere (bier prune):"
 			printf '%s\n' "$stale_now" | sed 's/^/  ~ /'
-			info "Wenn es hier bleiben soll: bier dump --adopt"
+			info "To keep it here: bier dump --adopt"
 		else
-			info "Übernommen, obwohl anderswo gelöscht:"
+			info "Adopted although removed elsewhere:"
 			printf '%s\n' "$stale_now" | sed 's/^/  + /'
 		fi
 	fi
 }
 
-# Legt Brewfiles/main aus dem Bestand dieses Macs an und schreibt alle
-# Gerätedateien als Delta darauf um. Kein Dump, sondern ein Umbau —
-# deshalb ein eigener Befehl.
+# Creates Brewfiles/main from this Mac's inventory and rewrites every
+# device file as a delta against it. Not a dump but a rebuild — hence a
+# command of its own.
 cmd_main() {
 	need_brew
 	need_repo
@@ -707,95 +706,95 @@ cmd_main() {
 	local push=yes
 	if [ "${1:-}" = "--no-push" ]; then push=no; fi
 
-	# Erst in eine Kopie dumpen: nur so lässt sich vorher sagen, was aus
-	# main herausfällt.
-	local kommend existing lost
-	kommend=$(tmpfile)
-	brew bundle dump --force --file "$kommend" >/dev/null
+	# Dump into a copy first: only that way can we say beforehand what
+	# would drop out of main.
+	local incoming existing lost
+	incoming=$(tmpfile)
+	brew bundle dump --force --file "$incoming" >/dev/null
 
 	existing=$(entries "$MAIN_FILE" | wc -l | tr -d ' ')
 	if [ "$existing" != "0" ]; then
-		info "Brewfiles/main hat $(count_word "$existing") und wird durch den"
-		info "Bestand von $HOST ersetzt. Was andere Geräte zusätzlich haben,"
-		info "bleibt in deren Gerätedatei."
+		info "Brewfiles/main holds $(count_word "$existing") and will be replaced"
+		info "by the inventory of $HOST. What other devices have on top of it"
+		info "stays in their device file."
 
-		# Einträge, die in main stehen, hier aber nicht installiert sind,
-		# verschwinden aus dem Repo — auch wenn ein anderer Mac sie hat.
-		# Das ist der gefährliche Teil und gehört vor die Rückfrage.
-		lost=$(comm -23 <(entries "$MAIN_FILE") <(entries "$kommend") || true)
+		# Entries that are in main but not installed here disappear from
+		# the repository — even if another Mac still has them. That is
+		# the dangerous part and belongs before the question.
+		lost=$(comm -23 <(entries "$MAIN_FILE") <(entries "$incoming") || true)
 		if [ -n "$lost" ]; then
 			info ""
-			info "Fällt dabei ersatzlos aus main heraus, weil auf $HOST nicht"
-			info "installiert — auch wenn ein anderes Gerät es noch hat:"
+			info "Will drop out of main for good, because it is not installed"
+			info "on $HOST — even if another device still has it:"
 			printf '%s\n' "$lost" | sed 's/^/  - /'
 			info ""
-			info "Wer das behalten will, schlägt es vorher einem Gerät zu:"
+			info "To keep it, hand it to a device first:"
 			info "  bier take --from-main"
 		fi
 
 		info ""
-		printf 'Fortfahren? [j/N] '
+		printf 'Continue? [y/N] '
 		read -r answer || answer=""
 		case $answer in
 		j | J | y | Y) ;;
-		*) die "abgebrochen" ;;
+		*) die "cancelled" ;;
 		esac
 	fi
 
-	cp "$kommend" "$MAIN_FILE"
-	info "Brewfiles/main: Bestand von $HOST, $(count_word "$(entries "$MAIN_FILE" | wc -l | tr -d ' ')")"
+	cp "$incoming" "$MAIN_FILE"
+	info "Brewfiles/main: inventory of $HOST, $(count_word "$(entries "$MAIN_FILE" | wc -l | tr -d ' ')")"
 
-	# Jede Gerätedatei auf den neuen Stand von main beziehen.
+	# Rebase every device file onto the new main.
 	local host file tmp
 	for host in $(host_list); do
 		file=$BREW_DIR/$host
 		tmp=$(tmpfile)
 		{
-			printf '# %s — was dieser Mac zusätzlich zu Brewfiles/main hat.\n' "$host"
-			printf '# Geschrieben von "bier dump", nicht von Hand pflegen.\n\n'
+			printf '# %s — what this Mac has on top of Brewfiles/main.\n' "$host"
+			printf '# Written by "bier dump", do not edit by hand.\n\n'
 			delta "$file" "$MAIN_FILE"
 		} >"$tmp"
 		mv "$tmp" "$file"
-		info "  $host: $(entries "$file" | wc -l | tr -d ' ') Einträge übrig"
+		info "  $host: $(entries "$file" | wc -l | tr -d ' ') entries left"
 	done
 
 	if [ "$push" = yes ]; then
-		publish "main: Bestand von $HOST als gemeinsame Grundlage"
+		publish "main: inventory of $HOST as the shared baseline"
 	else
-		info "Nicht gepusht — später mit 'bier sync'."
+		info "Not pushed — later with 'bier sync'."
 	fi
 }
 
-# Deinstalliert Pakete, nimmt sie aus allen Brewfiles und pusht das.
-# Löschen wird damit eine Handlung, statt aus einem Dump erraten zu werden.
+# Uninstalls packages, takes them out of every Brewfile and pushes that.
+# Removal becomes an action instead of something guessed from a dump.
 cmd_uninstall() {
 	need_brew
 	need_repo
-	[ $# -ge 1 ] || die "Aufruf: bier uninstall <paket> [...]"
+	[ $# -ge 1 ] || die "usage: bier uninstall <package> [...]"
 
 	local name kind done_any=no
 	for name in "$@"; do
 		kind=$(kind_of "$name")
-		[ -n "$kind" ] || die "$name ist hier weder installiert noch in den Brewfiles"
+		[ -n "$kind" ] || die "$name is neither installed here nor in the Brewfiles"
 		info "$name ($kind)"
 		if uninstall_one "$kind" "$name"; then
 			strip_entry "$kind" "$name"
 			done_any=yes
 		else
-			info "  bleibt in den Brewfiles, solange es installiert ist"
+			info "  stays in the Brewfiles as long as it is installed"
 		fi
 	done
 
 	if [ "$done_any" = no ]; then
-		info "Nichts entfernt."
+		info "Nothing removed."
 		return 0
 	fi
 	cmd_dump
-	publish "$HOST: $* entfernt"
+	publish "$HOST: removed $*"
 }
 
-# Entfernt, was hier noch installiert ist, aber auf einem anderen Gerät
-# gelöscht wurde. Die Git-Historie unterscheidet das von Neuzugängen.
+# Removes what is still installed here but was deleted on another device.
+# The git history is what tells that apart from a new addition.
 cmd_prune() {
 	need_brew
 	need_repo
@@ -807,24 +806,24 @@ cmd_prune() {
 	stale=$(classify_add "$(comm -23 <(entries "$tmp") <(own_entries) || true)" |
 		sed -n 's/^STALE'$'\t''//p')
 	if [ -z "$stale" ]; then
-		info "Nichts Verwaistes: hier ist nichts installiert, was anderswo gelöscht wurde."
+		info "Nothing stale: nothing is installed here that was removed elsewhere."
 		return 0
 	fi
 
-	info "Woanders gelöscht, hier noch installiert:"
+	info "Removed elsewhere, still installed here:"
 	printf '%s\n' "$stale" | sed 's/^/  /'
-	printf 'Deinstallieren? [j/N] '
+	printf 'Uninstall? [y/N] '
 	read -r answer || answer=""
 	case $answer in
 	j | J | y | Y) ;;
 	*)
-		info "Abgebrochen."
+		info "Cancelled."
 		return 0
 		;;
 	esac
 
-	# Taps zuletzt: brew verweigert das Untappen, solange noch etwas
-	# aus dem Tap installiert ist.
+	# Taps last: brew refuses to untap while something from the tap is
+	# still installed.
 	local ordered
 	ordered=$({ printf '%s\n' "$stale" | grep -v '^tap ' || true
 		printf '%s\n' "$stale" | grep '^tap ' || true; })
@@ -835,38 +834,38 @@ cmd_prune() {
 		name=$(printf '%s' "$entry" | sed -E 's/^[a-z]+ "([^"]+)"$/\1/')
 		info ""
 		info "-> $kind $name"
-		uninstall_one "$kind" "$name" || info "  fehlgeschlagen, bleibt vorerst"
+		uninstall_one "$kind" "$name" || info "  failed, stays for now"
 	done
 
 	cmd_dump
-	publish "$HOST: anderswo gelöschte Pakete entfernt"
+	publish "$HOST: removed packages deleted elsewhere"
 
-	# Was die Deinstallation überlebt hat, muss sichtbar bleiben.
+	# Whatever survived the uninstall has to stay visible.
 	local rest
 	rest=$(cmd_state | sed -n 's/^STALE'$'\t''//p' || true)
 	if [ -n "$rest" ]; then
 		info ""
-		info "Nicht entfernt worden und weiter gemeldet:"
+		info "Not removed and still reported:"
 		printf '%s\n' "$rest" | sed 's/^/  ~ /'
 	fi
 }
 
-# Übersicht über alle Geräte. Gehört ins Terminal und nicht in die
-# Menüleiste: bei zehn Macs wäre das dort eine Wand.
+# Overview of all devices. Belongs in the terminal, not in the menu bar:
+# with ten Macs it would be a wall up there.
 cmd_list() {
 	need_repo
 	local h count all entry hosts text
 
-	# Alles erst sammeln, dann in einem Stück ausgeben. Zeile für Zeile
-	# zu schreiben dauert hier lange (pro Eintrag ein Vergleich je
-	# Gerät) — wer die Ausgabe in "head" leitet, bekäme sonst einen
-	# Broken Pipe zu sehen, sobald head sich vorher verabschiedet.
-	text="Brewfiles/main: $(entries "$MAIN_FILE" | wc -l | tr -d ' ') Einträge, gilt für alle Geräte"$'\n'
-	text=$text$'\n'"Gerät                zusätzlich"$'\n'
+	# Collect everything first, then print it in one go. Writing line by
+	# line takes a while here (one comparison per entry per device) — and
+	# whoever pipes the output into "head" would see a broken pipe as
+	# soon as head bows out.
+	text="Brewfiles/main: $(entries "$MAIN_FILE" | wc -l | tr -d ' ') entries, applies to every device"$'\n'
+	text=$text$'\n'"Device               on top"$'\n'
 	for h in $(host_list); do
 		count=$(entries "$BREW_DIR/$h" | wc -l | tr -d ' ')
 		if [ "$h" = "$HOST" ]; then
-			text=$text$(printf '  %-20s %5s   (dieser Mac)' "$h" "$count")$'\n'
+			text=$text$(printf '  %-20s %5s   (this Mac)' "$h" "$count")$'\n'
 		else
 			text=$text$(printf '  %-20s %5s' "$h" "$count")$'\n'
 		fi
@@ -874,11 +873,11 @@ cmd_list() {
 
 	all=$(for h in $(host_list); do entries "$BREW_DIR/$h"; done | sort -u)
 	if [ -z "$all" ]; then
-		printf '%s\nKein Gerät hat etwas zusätzlich zu main.\n' "$text"
+		printf '%s\nNo device has anything on top of main.\n' "$text"
 		return 0
 	fi
 
-	text=$text$'\n'"Zusätzlich zu main, und wo:"$'\n'
+	text=$text$'\n'"On top of main, and where:"$'\n'
 	while IFS= read -r entry; do
 		hosts=""
 		for h in $(host_list); do
@@ -908,18 +907,18 @@ cmd_status() {
 	stale=$(classify_add "$drift_add" | sed -n 's/^STALE'$'\t''//p')
 
 	if [ -z "$drift_add" ] && [ -z "$drift_gone" ]; then
-		info "$HOST: Brewfile deckt sich mit dem System."
+		info "$HOST: Brewfile matches the system."
 	else
 		if [ -n "$fresh" ]; then
-			info "Auf $HOST installiert, aber nicht erfasst (bier dump):"
+			info "Installed on $HOST but not recorded (bier dump):"
 			printf '%s\n' "$fresh" | sed 's/^/  + /'
 		fi
 		if [ -n "$stale" ]; then
-			info "Auf einem anderen Gerät gelöscht, hier noch da (bier prune):"
+			info "Removed on another device, still here (bier prune):"
 			printf '%s\n' "$stale" | sed 's/^/  ~ /'
 		fi
 		if [ -n "$drift_gone" ]; then
-			info "Erfasst, aber auf $HOST nicht installiert (bier install):"
+			info "Recorded but not installed on $HOST (bier install):"
 			printf '%s\n' "$drift_gone" | sed 's/^/  - /'
 		fi
 	fi
@@ -937,11 +936,11 @@ cmd_diff() {
 	else
 		others=$(host_list | grep -v "^$HOST$" || true)
 	fi
-	[ -n "$others" ] || die "kein anderes Gerät in Brewfiles/ gefunden"
+	[ -n "$others" ] || die "no other device found in Brewfiles/"
 
 	for other in $others; do
 		local other_file=$BREW_DIR/$other
-		[ -f "$other_file" ] || die "Brewfiles/$other fehlt"
+		[ -f "$other_file" ] || die "Brewfiles/$other is missing"
 
 		info "== $HOST  vs.  $other =="
 		local only_here only_there
@@ -949,13 +948,13 @@ cmd_diff() {
 		only_there=$(comm -13 <(own_entries) <(host_entries "$other") || true)
 
 		if [ -z "$only_here" ] && [ -z "$only_there" ]; then
-			info "  identisch"
+			info "  identical"
 		else
 			if [ -n "$only_here" ]; then
-				printf '%s\n' "$only_here" | sed "s/^/  nur $HOST:  /"
+				printf '%s\n' "$only_here" | sed "s/^/  only $HOST:  /"
 			fi
 			if [ -n "$only_there" ]; then
-				printf '%s\n' "$only_there" | sed "s/^/  nur $other:  /"
+				printf '%s\n' "$only_there" | sed "s/^/  only $other:  /"
 			fi
 		fi
 		info ""
@@ -971,71 +970,71 @@ cmd_install() {
 	if [ -f "$HOST_FILE" ]; then
 		brew bundle install --file "$HOST_FILE"
 	fi
-	info "Bestand von $HOST ist installiert."
+	info "The inventory of $HOST is installed."
 }
 
-# Gleicht die Brewfiles mit dem privaten Server ab: Offenes erfassen,
-# Eigenes hochschieben, Fremdes holen. Kein eigener Befehl — publish holt
-# vor jedem Push ohnehin, und update braucht es hier.
+# Syncs the Brewfiles with the private server: record what is pending,
+# push what is ours, fetch what is theirs. Not a command of its own —
+# publish fetches before every push anyway, and update needs it here.
 sync_data() {
 	if [ -n "$(git -C "$DATA" status --porcelain -- Brewfiles)" ]; then
-		info "Nicht erfasste Brewfile-Änderungen — nehme ich mit."
-		publish "$HOST: Bestand aktualisiert"
+		info "Unrecorded Brewfile changes — taking them along."
+		publish "$HOST: inventory updated"
 		return 0
 	fi
 
-	local before after ausgehend neue
+	local before after outgoing incoming
 	before=$(git -C "$DATA" rev-parse HEAD)
 	fetch_rebase
 	after=$(git -C "$DATA" rev-parse HEAD)
 
-	ausgehend=$(git -C "$DATA" log --oneline '@{u}..HEAD' 2>/dev/null || true)
-	if [ -n "$ausgehend" ]; then
+	outgoing=$(git -C "$DATA" log --oneline '@{u}..HEAD' 2>/dev/null || true)
+	if [ -n "$outgoing" ]; then
 		git -C "$DATA" push --quiet
-		info "Eigene Bestandsänderungen hochgeschoben."
+		info "Pushed our own inventory changes."
 	fi
 
 	if [ "$before" != "$after" ]; then
-		neue=$(git -C "$DATA" diff --stat "$before..$after" -- Brewfiles 2>/dev/null || true)
-		if [ -n "$neue" ]; then
-			info "Neuer Bestand vom anderen Mac:"
-			printf '%s\n' "$neue" | sed 's/^/  /'
+		incoming=$(git -C "$DATA" diff --stat "$before..$after" -- Brewfiles 2>/dev/null || true)
+		if [ -n "$incoming" ]; then
+			info "New inventory from the other Mac:"
+			printf '%s\n' "$incoming" | sed 's/^/  /'
 		fi
 	fi
 }
 
-# Sieht nach, ob es eine neue Fassung des Programms gibt. Rückgabe 0
-# heißt: es gibt etwas, das gebaut werden will.
+# Looks whether a newer version of the program exists. Returning 0 means:
+# there is something that wants building.
 check_code() {
 	need_code
 	git -C "$ROOT" fetch --quiet 2>/dev/null ||
-		die "Code-Server nicht erreichbar — steckt das Netz?"
+		die "code server unreachable — is the network plugged in?"
 
-	local here there anzahl
+	local here there count
 	here=$(git -C "$ROOT" rev-parse HEAD)
 	there=$(git -C "$ROOT" rev-parse '@{u}' 2>/dev/null || true)
 	if [ -z "$there" ]; then
-		info "Der Code-Branch hat kein Gegenstück auf dem Server."
+		info "The code branch has no counterpart on the server."
 		return 1
 	fi
 	if [ "$here" = "$there" ]; then
-		info "Programm ist aktuell: $(git -C "$ROOT" log --oneline -1)"
+		info "Program is up to date: $(git -C "$ROOT" log --oneline -1)"
 		return 1
 	fi
 
-	anzahl=$(git -C "$ROOT" log --oneline "$here..$there" | wc -l | tr -d ' ')
+	count=$(git -C "$ROOT" log --oneline "$here..$there" | wc -l | tr -d ' ')
 	info ""
-	if [ "$anzahl" = "1" ]; then
-		info "1 neuer Commit am Programm:"
+	if [ "$count" = "1" ]; then
+		info "1 new commit to the program:"
 	else
-		info "$anzahl neue Commits am Programm:"
+		info "$count new commits to the program:"
 	fi
 	git -C "$ROOT" log --oneline "$here..$there" | sed 's/^/  /'
 	return 0
 }
 
-# Gleicht beides ab: die Brewfiles mit dem privaten Server, das Programm
-# mit dem Code-Server. Fragt nichts.
+# Syncs both: the Brewfiles with the private server, the program with the
+# code server. Asks nothing.
 cmd_update() {
 	need_repo
 
@@ -1044,58 +1043,59 @@ cmd_update() {
 	--force | -f) force=yes ;;
 	esac
 
-	info "Gleiche den Bestand ab …"
+	info "Syncing the inventory …"
 	sync_data
 
 	info ""
-	info "Sehe nach dem Programm …"
-	local neu=no
-	if check_code; then neu=yes; fi
-	if [ "$neu" = no ] && [ "$force" = no ]; then
-		info "Trotzdem neu bauen: bier update --force"
+	info "Checking the program …"
+	local fresh=no
+	if check_code; then fresh=yes; fi
+	if [ "$fresh" = no ] && [ "$force" = no ]; then
+		info "Rebuild anyway: bier update --force"
 		return 0
 	fi
 
 	info ""
-	# Der Pull überschreibt dieses Skript, während es noch läuft — bash
-	# liest es stückweise nach und würde über die geänderte Datei
-	# stolpern. Deshalb ab hier ein neuer Prozess, dessen Befehle im
-	# Speicher stehen und nicht aus einer Datei nachgelesen werden.
+	# The pull overwrites this very script while it is still running —
+	# bash reads it in chunks and would stumble over the changed file.
+	# So from here on a new process, whose commands live in memory
+	# instead of being read back from a file.
 	exec /bin/bash -c '
 		set -eu
 		root=$1
 		git -C "$root" pull --rebase --autostash --quiet
-		printf "Stand: %s\n" "$(git -C "$root" log --oneline -1)"
+		printf "Now at: %s\n" "$(git -C "$root" log --oneline -1)"
 		exec "$root/install.sh" --yes
 	' bier "$ROOT"
 }
 
-# Committet die Brewfiles und schiebt sie zum Server.
+# Commits the Brewfiles and pushes them to the server.
 cmd_push() {
 	need_repo
-	publish "${1:-$HOST: Bestand aktualisiert}"
+	publish "${1:-$HOST: inventory updated}"
 }
 
 cmd_sync() {
-	local msg=${1:-"$HOST: Bestand aktualisiert"}
+	local msg=${1:-"$HOST: inventory updated"}
 	cmd_dump
 	publish "$msg"
 }
 
-# Maschinenlesbarer Zustand für die Menüleisten-App. Tab-getrennte Zeilen:
-#   STATE  ok|drift        Glas voll oder leer
+# Machine-readable state for the menu bar app. Tab-separated lines:
+#   STATE  ok|drift        glass full or empty
 #   HOST   <name>
-#   VERSION <nummer>      damit BierMenu merkt, wenn es selbst alt ist
-#   REPO   <pfad>         fürs Info-Menü
-#   COMMIT <kurz> <datum> fürs Info-Menü
-#   NEW    brew "htop"     hier installiert, noch nicht erfasst
-#   STALE  brew "ghidra"   anderswo gelöscht, hier noch installiert
-#   GONE   brew "wget"     erfasst, aber hier nicht installiert
+#   VERSION <number>      so BierMenu notices that it is old itself
+#   REPO   <path>         for the info menu
+#   COMMIT <short> <date> for the info menu
+#   NEW    brew "htop"     installed here, not recorded yet
+#   STALE  brew "ghidra"   removed elsewhere, still installed here
+#   GONE   brew "wget"     recorded but not installed here
 #   GIT    <ahead> <behind> <dirty>
 #
-# Was andere Geräte mehr oder weniger haben, steht hier bewusst nicht:
-# es sagt nichts darüber, ob auf diesem Mac etwas zu tun ist, und in der
-# Menüleiste wäre es ab ein paar Geräten nur Lärm. Dafür ist "bier list".
+# What other devices have more or less of is deliberately absent: it says
+# nothing about whether there is anything to do on *this* Mac, and in the
+# menu bar it would be noise past a couple of devices. That is what
+# "bier list" is for.
 cmd_state() {
 	need_brew
 	need_repo
@@ -1118,8 +1118,8 @@ cmd_state() {
 	counts=$(git -C "$DATA" rev-list --left-right --count HEAD...@{u} 2>/dev/null || echo "0	0")
 	ahead=$(printf '%s' "$counts" | awk '{print $1}')
 	behind=$(printf '%s' "$counts" | awk '{print $2}')
-	# Auch hier nur die Brewfiles: an der README zu schreiben ist kein
-	# Grund, das Glas zu leeren.
+	# Only the Brewfiles here too: editing the README is no reason to
+	# empty the glass.
 	if [ -n "$(git -C "$DATA" status --porcelain -- Brewfiles)" ]; then
 		dirty=1
 	else
@@ -1144,23 +1144,23 @@ cmd_state() {
 	printf 'GIT\t%s\t%s\t%s\n' "$ahead" "$behind" "$dirty"
 }
 
-# Version, Herkunft und die geltenden Pfade — die erste Frage bei jedem
-# Fehlerbericht.
+# Version, origin and the paths in effect — the first question in any bug
+# report.
 cmd_version() {
 	info "bier $BIER_VERSION"
 	if [ -d "$ROOT/.git" ]; then
-		local commit datum
+		local commit date
 		commit=$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo "?")
-		datum=$(git -C "$ROOT" log -1 --format=%cs 2>/dev/null || echo "?")
-		info "  Commit  $commit vom $datum"
+		date=$(git -C "$ROOT" log -1 --format=%cs 2>/dev/null || echo "?")
+		info "  Commit  $commit of $date"
 	fi
 	info "  Code    $ROOT"
 	if [ -n "$DATA" ]; then
-		info "  Daten   $DATA"
+		info "  Data    $DATA"
 	else
-		info "  Daten   noch nicht eingerichtet"
+		info "  Data    not set up yet"
 	fi
-	info "  Gerät   $HOST"
+	info "  Device  $HOST"
 
 	local app
 	for app in /Applications/BierMenu.app "$HOME/Applications/BierMenu.app"; do
@@ -1171,68 +1171,69 @@ cmd_version() {
 	done
 }
 
-# Zeigt, welche Werte nach Config und Umgebung tatsächlich gelten.
+# Shows which values are actually in effect, config and environment
+# combined.
 cmd_config() {
-	info "Datei:  $CONFIG_FILE"
-	info "root  = $ROOT   (das Programm)"
+	info "File:   $CONFIG_FILE"
+	info "root  = $ROOT   (the program)"
 	if [ -n "$DATA" ]; then
-		info "data  = $DATA   (deine Brewfiles)"
+		info "data  = $DATA   (your Brewfiles)"
 	else
-		info "data  = noch nicht eingerichtet — $ROOT/install.sh"
+		info "data  = not set up yet — $ROOT/install.sh"
 	fi
 	info "host  = $HOST"
 	info ""
 	if [ -z "$DATA" ]; then
-		info "Ohne Daten-Repo kann bier nichts erfassen und nichts abgleichen."
+		info "Without a data repository bier can neither record nor sync anything."
 	elif [ -d "$BREW_DIR" ]; then
-		info "Geräte in Brewfiles/: $(host_list | tr '\n' ' ')"
+		info "Devices in Brewfiles/: $(host_list | tr '\n' ' ')"
 	else
-		info "Brewfiles/ fehlt unter $DATA"
+		info "Brewfiles/ is missing under $DATA"
 	fi
 }
 
 cmd_help() {
 	cat <<'EOF'
-bier — Brewfile-Abgleich zwischen Macs
+bier — keeps Brewfiles in sync across Macs
 
-  bier dump [--adopt]    erfassen, was dieser Mac zusätzlich zu main hat;
-                         anderswo Gelöschtes bleibt draußen, --adopt holt es
-  bier main [--no-push]  Brewfiles/main aus diesem Mac anlegen und alle
-                         Gerätedateien darauf beziehen (committet + pusht)
-  bier status            System gegen Brewfile prüfen (was fehlt, was ist neu)
-  bier diff [host...]    Bestand mit anderen Geräten vergleichen
-  bier install           main + eigenen Brewfile installieren
-  bier uninstall <paket> deinstallieren, aus allen Brewfiles nehmen, pushen
-  bier prune             entfernen, was anderswo gelöscht wurde
-  bier list              Übersicht über alle Geräte
-  bier take              Einträge anderer Geräte nach main oder hierher holen
-  bier take --from-main  einen Eintrag aus main einem Gerät zuschlagen
-  bier push [nachricht]  Brewfiles committen und zum Server schieben
-  bier sync [nachricht]  dump, dann push — der Alltagsbefehl
-  bier update [--force]  alles abgleichen: Eigenes hochschieben, Neues
-                         holen, Konflikte zusammenführen, neu bauen
-  bier config            zeigt, welche Einstellungen gelten
-  bier state [--fetch]   Zustand maschinenlesbar (für die Menüleisten-App)
-  bier version           Version, Commit und die geltenden Pfade
-  bier help              diese Übersicht
+  bier dump [--adopt]     record what this Mac has on top of main; things
+                          removed elsewhere stay out, --adopt takes them in
+  bier main [--no-push]   create Brewfiles/main from this Mac and rebase
+                          every device file onto it (commits + pushes)
+  bier status             check the system against the Brewfiles
+  bier diff [host...]     compare the inventory with other devices
+  bier install            install main + this device's own Brewfile
+  bier uninstall <pkg>    uninstall, drop from every Brewfile, push
+  bier prune              remove what was deleted on another device
+  bier list               overview of all devices
+  bier take               pull entries from other devices into main or here
+  bier take --from-main   hand an entry from main to a single device
+  bier push [message]     commit the Brewfiles and push them
+  bier sync [message]     dump, then push — the everyday command
+  bier update [--force]   sync everything: push ours, fetch theirs, merge
+                          conflicts, rebuild if the program changed
+  bier config             show which settings are in effect
+  bier state [--fetch]    machine-readable state (for the menu bar app)
+  bier version            version, commit and the paths in effect
+  bier help               this overview
 
-Brewfiles/main ist der gemeinsame Bestand, Brewfiles/<host> nur das, was
-ein Mac zusätzlich hat. Was nicht überall hingehört, gehört nicht in main.
+Brewfiles/main is the shared inventory, Brewfiles/<host> only what one Mac
+has on top. Anything that does not belong everywhere does not belong in main.
 
-Code und Daten liegen in zwei Repos: "root" ist das Programm, "data" das
-private Repo mit deinen Brewfiles. Sie verraten, was auf deinen Macs
-läuft, und gehören deshalb nicht ins öffentliche Programm-Repo.
-Eingerichtet wird beides von install.sh.
+Code and data live in two repositories: "root" is the program, "data" the
+private repository holding your Brewfiles. They reveal what runs on your
+Macs and therefore do not belong in the public program repository.
+install.sh sets up both.
 
-Die Config liegt in ~/.config/bier/config und wird beim ersten Lauf angelegt.
-Sie kennt "root", "data" und "host" (Gerätename).
+The config lives in ~/.config/bier/config and is created on first run.
+It knows "root", "data" and "host" (the device name).
 
-Umgebung: BIER_CONFIG (andere Config-Datei), BIER_ROOT, BIER_DATA und
-BIER_HOST (überschreiben die jeweiligen Config-Werte für einen Aufruf).
+Environment: BIER_CONFIG (a different config file), BIER_ROOT, BIER_DATA
+and BIER_HOST (override the matching config values for one invocation).
 EOF
 }
 
-# --- Einstieg ---------------------------------------------------------------
+# --- Entry point -------------------------------------------------------------
 
 cmd=${1:-help}
 if [ $# -gt 0 ]; then
@@ -1241,8 +1242,8 @@ fi
 
 case $cmd in
 dump)
-	# "bier dump --main" ist die Schreibweise, die sich anbietet —
-	# gemeint ist aber der Umbau, nicht der Dump.
+	# "bier dump --main" is the spelling that suggests itself — but what
+	# is meant is the rebuild, not the dump.
 	if [ "${1:-}" = "--main" ]; then
 		shift
 		cmd_main "$@"
@@ -1265,5 +1266,5 @@ state) cmd_state "$@" ;;
 config) cmd_config ;;
 version | --version | -V) cmd_version ;;
 help | -h | --help) cmd_help ;;
-*) die "unbekannter Befehl: $cmd (bier help)" ;;
+*) die "unknown command: $cmd (bier help)" ;;
 esac

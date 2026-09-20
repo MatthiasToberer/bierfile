@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 #
-# Testlauf für bier.
+# Test run for bier.
 #
-#   test/run              alle Fälle
-#   test/run take         nur Fälle, deren Name "take" enthält
-#   test/run -v           Ausgabe der Fälle mitzeigen
+#   test/run              every case
+#   test/run take         only cases whose name contains "take"
+#   test/run -v           show the output of each case
 #
-# Jeder Fall läuft in einer eigenen Welt: eigener Git-Server, zwei
-# simulierte Macs, ein Homebrew-Doppelgänger. Das echte System und das
-# echte Repo werden nicht angefasst.
+# Every case runs in a world of its own: its own git servers, two
+# simulated Macs, a Homebrew stand-in. The real system and the real
+# repository are never touched.
 
 set -uo pipefail
 
@@ -24,11 +24,11 @@ for arg in "$@"; do
 	esac
 done
 
-# Die Doppelgänger müssen vor dem echten Homebrew liegen.
+# The stand-ins have to come before the real Homebrew.
 export PATH="$REPO/test/stubs:$PATH"
 
-# bier soll nie den Konfigurations- oder Repo-Pfad des echten Rechners
-# erwischen, falls ein Fall etwas zu setzen vergisst.
+# bier must never pick up the real machine's config or repository path,
+# should a case forget to set something.
 unset BIER_ROOT BIER_HOST BIER_CONFIG 2>/dev/null || true
 
 TOTAL=0
@@ -45,16 +45,16 @@ for case_file in "$REPO"/test/cases/*.sh; do
 	TOTAL=$((TOTAL + 1))
 
 	WORK=$(mktemp -d -t biertest)
-	# stdout und stderr des Falls gehören beide ins Protokoll, sonst
-	# scheitert ein Fall schweigend.
+	# Both stdout and stderr of a case belong in the log, otherwise a
+	# case fails silently.
 	out=$(
 		{
 			export WORK
 			# shellcheck source=/dev/null
 			source "$REPO/test/lib/harness.sh"
 			set -eE
-			# Bricht set -e den Fall ab, muss zu sehen sein, woran.
-			trap 'printf "    ABBRUCH bei: %s\n" "$BASH_COMMAND" >&2' ERR
+			# If set -e aborts the case, it must be visible where.
+			trap 'printf "    ABORTED AT: %s\n" "$BASH_COMMAND" >&2' ERR
 			world
 			# shellcheck source=/dev/null
 			source "$case_file"
@@ -68,7 +68,7 @@ for case_file in "$REPO"/test/cases/*.sh; do
 		printf '  ok    %s — %s\n' "$name" "$title"
 		[ "$VERBOSE" = no ] || printf '%s\n' "$out" | sed 's/^/        /'
 	else
-		printf '  FEHL  %s — %s\n' "$name" "$title"
+		printf '  FAIL  %s — %s\n' "$name" "$title"
 		printf '%s\n' "$out" | sed 's/^/        /'
 		BAD=$((BAD + 1))
 		FAILED_NAMES+=("$name")
@@ -77,8 +77,8 @@ done
 
 echo
 if [ "$BAD" = 0 ]; then
-	printf '%s Fälle, alle bestanden.\n' "$TOTAL"
+	printf '%s cases, all passed.\n' "$TOTAL"
 	exit 0
 fi
-printf '%s von %s Fällen gescheitert: %s\n' "$BAD" "$TOTAL" "${FAILED_NAMES[*]}"
+printf '%s of %s cases failed: %s\n' "$BAD" "$TOTAL" "${FAILED_NAMES[*]}"
 exit 1

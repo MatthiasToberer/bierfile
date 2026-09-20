@@ -1,30 +1,30 @@
-// BierMenu — Bierglas in der Menüleiste.
+// BierMenu — a beer glass in the menu bar.
 //
-// Volles Glas: System und Brewfile sind sich einig. Leeres Glas:
-// irgendwas weicht ab. Klick zeigt was, und bietet an, es aufzulösen.
+// Full glass: system and Brewfile agree. Empty glass: something
+// differs. A click shows what, and offers to sort it out.
 //
-// Es geht hier ausschließlich um diesen Mac. Was auf anderen Geräten
-// mehr oder weniger installiert ist, steht bewusst nicht im Menü —
-// das gehört ins Terminal ("bier list") und sagt nichts darüber, ob
-// hier etwas zu tun ist.
+// This is about *this* Mac and nothing else. What other devices have
+// more or less of is deliberately absent from the menu — that belongs
+// in the terminal ("bier list") and says nothing about whether there
+// is anything to do here.
 //
-// Die App rechnet nichts selbst — sie ruft "bier state" auf und stellt
-// dessen Ausgabe dar.
+// The app computes nothing itself — it calls "bier state" and renders
+// its output.
 
 import AppKit
 import ServiceManagement
 
-// MARK: - Zustand
+// MARK: - State
 
 struct BierState {
 	var ok = false
 	var host = ""
-	var fresh: [String] = [] // hier installiert, noch nicht erfasst
-	var stale: [String] = [] // anderswo gelöscht, hier noch installiert
-	var gone: [String] = [] // erfasst, aber hier nicht installiert
-	var version = "" // Version des Skripts, für den Veraltet-Hinweis
-	var repo = "" // Pfad zum Repo, fürs Info-Menü
-	var commit = "" // Kurz-Hash und Datum, fürs Info-Menü
+	var fresh: [String] = [] // installed here, not recorded yet
+	var stale: [String] = [] // removed elsewhere, still installed here
+	var gone: [String] = [] // recorded, but not installed here
+	var version = "" // the script's version, for the out-of-date hint
+	var repo = "" // path to the repository, for the info menu
+	var commit = "" // short hash and date, for the info menu
 	var ahead = 0
 	var behind = 0
 	var dirty = false
@@ -36,14 +36,14 @@ struct BierState {
 	}
 }
 
-// MARK: - bier aufrufen
+// MARK: - Calling bier
 
 enum Bier {
-	/// GUI-Programme erben den PATH der Shell nicht. Homebrew und die
-	/// Command Line Tools müssen deshalb explizit dazu.
+	/// GUI programs do not inherit the shell's PATH. Homebrew and the
+	/// Command Line Tools therefore have to be added explicitly.
 	static let path = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-	/// Sucht das bier-Skript: erst über root aus der Config, dann im PATH.
+	/// Finds the bier script: via root from the config, then on PATH.
 	static func executable() -> String? {
 		let config = ("~/.config/bier/config" as NSString).expandingTildeInPath
 		if let text = try? String(contentsOfFile: config, encoding: .utf8) {
@@ -69,12 +69,12 @@ enum Bier {
 		return nil
 	}
 
-	/// Führt bier aus und liefert (Ausgabe, Fehlertext, Erfolg).
+	/// Runs bier and returns (output, error text, success).
 	@discardableResult
 	static func run(_ args: [String]) -> (out: String, err: String, ok: Bool) {
 		guard let exe = executable() else {
-			return ("", "bier nicht gefunden — liegt das Repo noch unter dem Pfad "
-				+ "aus ~/.config/bier/config?", false)
+			return ("", "bier not found — is the repository still at the path "
+				+ "from ~/.config/bier/config?", false)
 		}
 		let task = Process()
 		task.executableURL = URL(fileURLWithPath: exe)
@@ -90,7 +90,7 @@ enum Bier {
 		do {
 			try task.run()
 		} catch {
-			return ("", "bier ließ sich nicht starten: \(error.localizedDescription)", false)
+			return ("", "bier could not be started: \(error.localizedDescription)", false)
 		}
 		let out = String(data: outPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
 		let err = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
@@ -98,12 +98,12 @@ enum Bier {
 		return (out, err, task.terminationStatus == 0)
 	}
 
-	/// Liest den Zustand. Die Zeilen sind tab-getrennt, siehe "bier state".
+	/// Reads the state. The lines are tab-separated, see "bier state".
 	static func state(fetch: Bool) -> BierState {
 		var s = BierState()
 		let r = run(fetch ? ["state", "--fetch"] : ["state"])
 		guard r.ok else {
-			s.error = r.err.trimmed.isEmpty ? "bier state schlug fehl" : r.err.trimmed
+			s.error = r.err.trimmed.isEmpty ? "bier state failed" : r.err.trimmed
 			return s
 		}
 		for line in r.out.split(separator: "\n") {
@@ -115,7 +115,7 @@ enum Bier {
 			case "VERSION": if f.count > 1 { s.version = f[1] }
 			case "REPO": if f.count > 1 { s.repo = f[1] }
 			case "COMMIT":
-				if f.count > 2 { s.commit = "\(f[1]) vom \(f[2])" }
+				if f.count > 2 { s.commit = "\(f[1]) of \(f[2])" }
 			case "NEW": if f.count > 1 { s.fresh.append(f[1]) }
 			case "STALE": if f.count > 1 { s.stale.append(f[1]) }
 			case "GONE": if f.count > 1 { s.gone.append(f[1]) }
@@ -131,8 +131,8 @@ enum Bier {
 		return s
 	}
 
-	/// Lange Läufe, die nachfragen können, gehören ins Terminal — nicht
-	/// stumm in eine Menüleisten-App.
+	/// Long runs that may ask questions belong in the terminal — not
+	/// silently inside a menu bar app.
 	static func runInTerminal(_ args: [String]) {
 		guard let exe = executable() else { return }
 		let command = ([exe] + args).map { "'\($0)'" }.joined(separator: " ")
@@ -174,7 +174,7 @@ class Controller: NSObject, NSMenuDelegate {
 		statusItem.menu = menu
 
 		refresh(fetch: false)
-		// Alle 15 Minuten nachsehen, plus bei jedem Öffnen des Menüs.
+		// Check every 15 minutes, plus whenever the menu opens.
 		let t = Timer(timeInterval: 900, repeats: true) { [weak self] _ in
 			self?.refresh(fetch: true)
 		}
@@ -194,18 +194,18 @@ class Controller: NSObject, NSMenuDelegate {
 				self.lastCheck = Date()
 				self.checking = false
 				self.statusItem.button?.toolTip = s.error ?? (s.ok
-					? "Alles abgeglichen"
-					: "Es gibt Abweichungen")
+					? "Everything in sync"
+					: "There are differences")
 				self.endBusy()
 				self.build(self.statusItem.menu!)
 			}
 		}
 	}
 
-	// MARK: Schaum, solange etwas läuft
+	// MARK: Foam while something is running
 
-	/// Mehrere Läufe können sich überlappen, deshalb gezählt statt
-	/// geschaltet — der Schaum hört erst auf, wenn der letzte fertig ist.
+	/// Several runs can overlap, so counted rather than toggled — the
+	/// foam only settles once the last one has finished.
 	private func beginBusy() {
 		busyCount += 1
 		guard animation == nil else { return }
@@ -214,7 +214,7 @@ class Controller: NSObject, NSMenuDelegate {
 			phase += 0.055
 			statusItem.button?.image = Glass.busy(phase: phase)
 		}
-		// .common, damit die Blasen auch bei offenem Menü weitersteigen.
+		// .common so the bubbles keep rising while the menu is open.
 		RunLoop.main.add(t, forMode: .common)
 		animation = t
 	}
@@ -231,11 +231,11 @@ class Controller: NSObject, NSMenuDelegate {
 		statusItem.button?.image = (state.ok && state.error == nil) ? full : empty
 	}
 
-	// MARK: Menü
+	// MARK: Menu
 
 	func menuWillOpen(_ menu: NSMenu) {
 		build(menu)
-		refresh(fetch: true) // baut sich nach, sobald die Antwort da ist
+		refresh(fetch: true) // rebuilds itself once the answer arrives
 	}
 
 	private func header(_ title: String) -> NSMenuItem {
@@ -264,25 +264,25 @@ class Controller: NSObject, NSMenuDelegate {
 		return i
 	}
 
-	/// Höchstens ein paar Einträge zeigen, der Rest wird gezählt.
+	/// Show a handful of entries at most, the rest is counted.
 	private func listing(_ items: [String], into menu: NSMenu, limit: Int = 8) {
 		for entry in items.prefix(limit) {
 			menu.addItem(detail(readable(entry)))
 		}
 		if items.count > limit {
-			menu.addItem(detail("und \(items.count - limit) weitere"))
+			menu.addItem(detail("and \(items.count - limit) more"))
 		}
 	}
 
-	/// 'brew "htop"' liest sich in einem Menü besser als 'htop (Formel)'.
+	/// 'brew "htop"' reads better in a menu as 'htop (formula)'.
 	private func readable(_ entry: String) -> String {
 		let parts = entry.split(separator: " ", maxSplits: 1).map(String.init)
 		guard parts.count == 2 else { return entry }
 		let name = parts[1].trimmingCharacters(in: CharacterSet(charactersIn: "\""))
 		let kind: String
 		switch parts[0] {
-		case "brew": kind = "Formel"
-		case "cask": kind = "App"
+		case "brew": kind = "formula"
+		case "cask": kind = "app"
 		case "mas": kind = "App Store"
 		case "vscode": kind = "VS Code"
 		case "tap": kind = "Tap"
@@ -295,7 +295,7 @@ class Controller: NSObject, NSMenuDelegate {
 		menu.removeAllItems()
 
 		if let error = state.error {
-			menu.addItem(header("Fehler"))
+			menu.addItem(header("Error"))
 			menu.addItem(detail(error))
 			menu.addItem(.separator())
 			addFooter(menu)
@@ -303,51 +303,51 @@ class Controller: NSObject, NSMenuDelegate {
 		}
 
 		if state.ok {
-			menu.addItem(header("Alles abgeglichen"))
+			menu.addItem(header("Everything in sync"))
 		} else {
-			// Hier installiert, noch nicht erfasst: schnell und ungefährlich.
+			// Installed here, not recorded yet: quick and harmless.
 			if !state.fresh.isEmpty {
-				menu.addItem(header("\(state.fresh.count) installiert, aber nicht erfasst"))
+				menu.addItem(header("\(state.fresh.count) installed but not recorded"))
 				listing(state.fresh, into: menu)
-				menu.addItem(action("Einschenken: erfassen und pushen",
+				menu.addItem(action("Pour a round: record and push",
 				                    #selector(doSync)))
 				menu.addItem(.separator())
 			}
 
-			// Auf einem anderen Mac gelöscht. Das entfernt Software,
-			// gehört also ins Terminal und nicht hinter einen Klick.
+			// Removed on another Mac. This uninstalls software, so it
+			// belongs in the terminal and not behind a single click.
 			if !state.stale.isEmpty {
-				menu.addItem(header("\(state.stale.count) anderswo gelöscht, hier noch da"))
+				menu.addItem(header("\(state.stale.count) removed elsewhere, still here"))
 				listing(state.stale, into: menu)
-				menu.addItem(action("Entfernen … (im Terminal)",
+				menu.addItem(action("Remove … (in Terminal)",
 				                    #selector(doPrune)))
 				menu.addItem(.separator())
 			}
 
-			// Erfasst, aber nicht installiert.
+			// Recorded but not installed.
 			if !state.gone.isEmpty {
-				menu.addItem(header("\(state.gone.count) erfasst, aber nicht installiert"))
+				menu.addItem(header("\(state.gone.count) recorded but not installed"))
 				listing(state.gone, into: menu)
-				menu.addItem(action("Nachinstallieren … (im Terminal)",
+				menu.addItem(action("Install missing … (in Terminal)",
 				                    #selector(doInstall)))
 				menu.addItem(.separator())
 			}
 
-			// Git hängt.
+			// Git is lagging.
 			if state.dirty {
-				menu.addItem(header("Änderungen sind nicht committet"))
-				menu.addItem(action("Einschenken: erfassen und pushen",
+				menu.addItem(header("Changes are not committed"))
+				menu.addItem(action("Pour a round: record and push",
 				                    #selector(doSync)))
 				menu.addItem(.separator())
 			}
 			if state.behind > 0 {
-				menu.addItem(header("origin ist \(state.behind) Commits voraus"))
-				menu.addItem(action("Holen (git pull)", #selector(doPull)))
+				menu.addItem(header("origin is \(state.behind) commits ahead"))
+				menu.addItem(action("Fetch (git pull)", #selector(doPull)))
 				menu.addItem(.separator())
 			}
 			if state.ahead > 0, !state.dirty {
-				menu.addItem(header("\(state.ahead) Commits nicht gepusht"))
-				menu.addItem(action("Pushen", #selector(doPush)))
+				menu.addItem(header("\(state.ahead) commits not pushed"))
+				menu.addItem(action("Push", #selector(doPush)))
 				menu.addItem(.separator())
 			}
 		}
@@ -355,19 +355,19 @@ class Controller: NSObject, NSMenuDelegate {
 		addFooter(menu)
 	}
 
-	/// Was diese App beim Bauen als Version eingetragen bekam.
+	/// The version this app was stamped with when it was built.
 	private var ownVersion: String {
 		Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
 	}
 
-	/// Läuft hier noch eine alte App, während das Skript schon weiter
-	/// ist? Das ist genau dann passiert, wenn eine Installation die
-	/// laufende Fassung nicht ersetzt hat — und es fällt sonst nicht auf.
+	/// Is an old app still running while the script has moved on? That
+	/// happens exactly when an install failed to replace the running
+	/// build — and it would otherwise go unnoticed.
 	private func addVersionHint(_ menu: NSMenu) {
 		guard !state.version.isEmpty, state.version != ownVersion else { return }
 		menu.addItem(.separator())
-		menu.addItem(header("Diese App ist \(ownVersion), bier ist \(state.version)"))
-		menu.addItem(action("Aktualisieren … (im Terminal)", #selector(doUpdate)))
+		menu.addItem(header("This app is \(ownVersion), bier is \(state.version)"))
+		menu.addItem(action("Update … (in Terminal)", #selector(doUpdate)))
 	}
 
 	private func addFooter(_ menu: NSMenu) {
@@ -376,9 +376,9 @@ class Controller: NSObject, NSMenuDelegate {
 			menu.addItem(.separator())
 		}
 
-		menu.addItem(action("Jetzt prüfen", #selector(doCheck)))
+		menu.addItem(action("Check now", #selector(doCheck)))
 
-		let login = NSMenuItem(title: "Beim Anmelden starten",
+		let login = NSMenuItem(title: "Start at login",
 		                       action: #selector(toggleLogin), keyEquivalent: "")
 		login.target = self
 		login.state = SMAppService.mainApp.status == .enabled ? .on : .off
@@ -386,23 +386,23 @@ class Controller: NSObject, NSMenuDelegate {
 
 		addInfo(menu)
 
-		// Wann zuletzt nachgesehen wurde, gehört unter die Handlungen —
-		// oben nimmt es die Stelle ein, an der man eine erwartet.
+		// When we last looked belongs below the actions — at the top it
+		// occupies the spot where one expects something to click.
 		if checking {
-			menu.addItem(detail("prüfe …"))
+			menu.addItem(detail("checking …"))
 		} else if let last = lastCheck {
 			let f = DateFormatter()
 			f.dateFormat = "HH:mm"
-			menu.addItem(detail("zuletzt geprüft \(f.string(from: last))"
+			menu.addItem(detail("last checked \(f.string(from: last))"
 					+ (state.host.isEmpty ? "" : " · \(state.host)")))
 		}
 
-		// Beenden abgesetzt, wie auf macOS üblich.
+		// Quit set apart, as is customary on macOS.
 		menu.addItem(.separator())
-		menu.addItem(action("Beenden", #selector(doQuit)))
+		menu.addItem(action("Quit", #selector(doQuit)))
 	}
 
-	/// Herkunft und Doku. Als Untermenü, damit das Hauptmenü kurz bleibt.
+	/// Origin and docs. A submenu, to keep the main menu short.
 	private func addInfo(_ menu: NSMenu) {
 		let item = NSMenuItem(title: "Info", action: nil, keyEquivalent: "")
 		let sub = NSMenu()
@@ -413,7 +413,7 @@ class Controller: NSObject, NSMenuDelegate {
 			sub.addItem(detail("Commit \(state.commit)"))
 		}
 		if !state.host.isEmpty {
-			sub.addItem(detail("Gerät \(state.host)"))
+			sub.addItem(detail("Device \(state.host)"))
 		}
 		if !state.repo.isEmpty {
 			sub.addItem(detail(state.repo))
@@ -421,23 +421,23 @@ class Controller: NSObject, NSMenuDelegate {
 
 		if !state.repo.isEmpty {
 			sub.addItem(.separator())
-			sub.addItem(action("Anleitung öffnen", #selector(doDocs)))
-			sub.addItem(action("Ordner im Finder zeigen", #selector(doReveal)))
+			sub.addItem(action("Open the guide", #selector(doDocs)))
+			sub.addItem(action("Show folder in Finder", #selector(doReveal)))
 		}
 
 		item.submenu = sub
 		menu.addItem(item)
 	}
 
-	// MARK: Aktionen
+	// MARK: Actions
 
 	@objc private func doCheck() { refresh(fetch: true) }
 
-	@objc private func doSync() { runQuietly(["sync"], "Erfassen und pushen") }
+	@objc private func doSync() { runQuietly(["sync"], "Recording and pushing") }
 
-	@objc private func doPull() { runQuietly(["state", "--fetch"], "Holen") }
+	@objc private func doPull() { runQuietly(["state", "--fetch"], "Fetching") }
 
-	@objc private func doPush() { runQuietly(["sync"], "Pushen") }
+	@objc private func doPush() { runQuietly(["sync"], "Pushing") }
 
 	@objc private func doInstall() { Bier.runInTerminal(["install"]) }
 
@@ -445,12 +445,12 @@ class Controller: NSObject, NSMenuDelegate {
 
 	@objc private func doUpdate() { Bier.runInTerminal(["update"]) }
 
-	/// ANLEITUNG.md führt Schritt für Schritt, README.md gibt den
-	/// Überblick. Fehlt beides, lieber den Ordner zeigen als nichts tun.
+	/// GUIDE.md walks through it step by step, README.md gives the
+	/// overview. If both are missing, show the folder rather than nothing.
 	@objc private func doDocs() {
 		guard !state.repo.isEmpty else { return }
 		let root = URL(fileURLWithPath: state.repo)
-		for name in ["ANLEITUNG.md", "README.md"] {
+		for name in ["GUIDE.md", "README.md"] {
 			let file = root.appendingPathComponent(name)
 			if FileManager.default.fileExists(atPath: file.path) {
 				NSWorkspace.shared.open(file)
@@ -465,8 +465,8 @@ class Controller: NSObject, NSMenuDelegate {
 		NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: state.repo)
 	}
 
-	/// Kurze, ungefährliche Läufe ohne Terminal. Fehler werden gezeigt,
-	/// Erfolge nur am wieder vollen Glas erkennbar.
+	/// Short, harmless runs without a terminal. Failures are shown,
+	/// success is visible only as the glass filling up again.
 	private func runQuietly(_ args: [String], _ what: String) {
 		beginBusy()
 		DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -475,7 +475,7 @@ class Controller: NSObject, NSMenuDelegate {
 				self?.endBusy()
 				if !r.ok {
 					let alert = NSAlert()
-					alert.messageText = "\(what) schlug fehl"
+					alert.messageText = "\(what) failed"
 					alert.informativeText = r.err.trimmed.isEmpty ? r.out.trimmed : r.err.trimmed
 					alert.alertStyle = .warning
 					alert.runModal()
@@ -494,7 +494,7 @@ class Controller: NSObject, NSMenuDelegate {
 			}
 		} catch {
 			let alert = NSAlert()
-			alert.messageText = "Start beim Anmelden ließ sich nicht ändern"
+			alert.messageText = "Could not change \"Start at login\""
 			alert.informativeText = error.localizedDescription
 			alert.runModal()
 		}
@@ -504,7 +504,7 @@ class Controller: NSObject, NSMenuDelegate {
 }
 
 let app = NSApplication.shared
-app.setActivationPolicy(.accessory) // kein Dock-Symbol
+app.setActivationPolicy(.accessory) // no dock icon
 let controller = Controller()
 controller.start()
 app.run()

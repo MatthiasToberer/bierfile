@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# dump übernimmt Gelöschtes nicht, --adopt schon
+# dump does not adopt what was removed elsewhere, --adopt does
 #
-# Ohne das zementiert ein Dump auf dem zweiten Mac die verlorene
-# Löschung als gerätespezifische Installation.
+# Without this, a dump on the second Mac cements the lost removal as a
+# device-specific installation.
 
 seed_file mini Brewfiles/main <<'EOF'
 brew "wget"
@@ -20,10 +20,10 @@ EOF
 
 bier mini dump
 out=$OUT
-assert_contains "$out" "Nicht übernommen, weil anderswo gelöscht"
+assert_contains "$out" "Not adopted, because removed elsewhere"
 assert_file_lacks "$(bf mini mini)" 'brew "ghidra"'
 
 bier mini dump --adopt
 out=$OUT
-assert_contains "$out" "Übernommen, obwohl anderswo gelöscht"
+assert_contains "$out" "Adopted although removed elsewhere"
 assert_file_has "$(bf mini mini)" 'brew "ghidra"'

@@ -1,13 +1,13 @@
 #!/bin/sh
 #
-# Läuft vor jedem Push.
+# Runs before every push.
 #
-# Brewfile-Änderungen gehen ungeprüft durch — das ist der Alltagsfall
-# und hat mit dem Code nichts zu tun. Wird dagegen Code gepusht, müssen
-# die Tests grün sein: der andere Mac holt sich diesen Stand beim
-# nächsten "bier update" und baut ihn.
+# Brewfile changes pass unchecked — that is the everyday case and has
+# nothing to do with the code. If code is pushed, on the other hand, the
+# tests have to be green: the other Mac picks this state up on its next
+# "bier update" and builds it.
 #
-# Umgehen im Notfall: git push --no-verify
+# Bypass in an emergency: git push --no-verify
 
 set -eu
 
@@ -20,13 +20,13 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
 	esac
 	case $remote_sha in
 	0000000000000000000000000000000000000000)
-		# Neuer Branch auf dem Server: sicherheitshalber prüfen.
+		# A new branch on the server: check it to be safe.
 		changed="$changed
-alles-neu"
+all-new"
 		;;
 	*)
 		changed="$changed
-$(git diff --name-only "$remote_sha" "$local_sha" 2>/dev/null || echo alles-neu)"
+$(git diff --name-only "$remote_sha" "$local_sha" 2>/dev/null || echo all-new)"
 		;;
 	esac
 done
@@ -36,13 +36,13 @@ if [ -z "$code" ]; then
 	exit 0
 fi
 
-printf 'pre-push: Code geändert, Tests laufen …\n'
+printf 'pre-push: code changed, running tests …\n'
 if out=$("$ROOT/test/run" 2>&1); then
 	printf 'pre-push: %s\n' "$(printf '%s' "$out" | tail -1)"
 	exit 0
 fi
 
 printf '%s\n' "$out"
-printf '\npre-push: Push abgebrochen, die Tests sind rot.\n'
-printf 'Trotzdem pushen: git push --no-verify\n'
+printf '\npre-push: push aborted, the tests are red.\n'
+printf 'Push anyway: git push --no-verify\n'
 exit 1
