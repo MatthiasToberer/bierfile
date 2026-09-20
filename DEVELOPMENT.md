@@ -21,8 +21,9 @@ anyway. Both paths are recorded as `root` and `data` in
 `~/.config/bier/config`; `install.sh` writes them.
 
 Every git command that `bier` issues on its own goes to `data`. Only
-`bier update` also touches `root`, to fetch and build a newer version of
-the program.
+`bier upgrade` also touches `root`, to fetch and build a newer version of
+the program. That split is why the two are separate commands: `sync` is
+about the Macs, `upgrade` about the program.
 
 There is no fallback from `data` to `root`. A fresh clone would otherwise
 write its inventory into the public repository — precisely what is to be
@@ -58,7 +59,7 @@ count. It says nothing about whether there is anything to do on *this*
 Mac, and it does not scale beyond two or three devices. That is what
 `bier list` is for.
 
-**`bier update` asks nothing** and resolves conflicts itself. Nobody
+**`bier sync` asks nothing** and resolves conflicts itself. Nobody
 should have to know git commands to keep their Macs in step.
 
 **Only `Brewfiles/` gets committed.** A `git add -A` once hid a source
@@ -105,8 +106,8 @@ All of them are covered by tests — reintroduce one and you get caught.
 - After stopping the app, `install.sh` must not guess a second but has to
   wait — otherwise `open` finds the old instance alive and merely
   activates it, and the old code keeps running.
-- `bier update` overwrites the running script with the pull, and bash
-  reads it in chunks. So `update` hands over to a new process **before**
+- `bier upgrade` overwrites the running script with the pull, and bash
+  reads it in chunks. So `upgrade` hands over to a new process **before**
   the pull, one whose commands live in memory.
 - During the split into two repositories `cmd_push` vanished along with
   the function next to it, while its line in the dispatch table stayed.
@@ -163,7 +164,7 @@ changing it should repeat that.
 ### Before pushing
 
 `.githooks/pre-push` requires green tests before code reaches the server
-— the other Mac picks that state up on its next `bier update` and builds
+— the other Mac picks that state up on its next `bier upgrade` and builds
 it. If a case is red, the push is aborted.
 
     pre-push: code changed, running tests …
@@ -186,8 +187,40 @@ emergency: `git push --no-verify`.
 `BIER_VERSION` appears in exactly one place, in `bin/bier`.
 `app/build.sh` reads it from there into the app bundle, `bier state`
 reports it. That is how BierMenu notices that it is older than the script
-and offers an update in the menu. **Bump it on behavioural changes** — an
+and offers an upgrade in the menu. **Bump it on behavioural changes** — an
 old app quietly running on after an install has happened before.
+
+## Releases
+
+A release is a tag, and the tag is what `bier upgrade` follows:
+
+```sh
+git tag -a v0.13.0 -m "what changed"
+git push origin v0.13.0
+gh release create v0.13.0 --notes "what changed"    # optional
+```
+
+The tag has to match `BIER_VERSION`, because that is the number the
+installed copy compares itself against. GitHub builds the download for
+every tag on its own — `archive/refs/tags/v0.13.0.tar.gz` exists without
+anyone uploading anything. `gh release create` only adds the release page
+with the notes on it.
+
+`check_code` fetches the tags, takes the highest one (`--sort=-v:refname`)
+and holds it against `BIER_VERSION`. The comparison runs through
+`sort -V`, because a string comparison would call 0.9.1 newer than
+0.13.0. If the release is higher, `bier upgrade` checks that tag out
+detached — it lands on the release, not on whatever the branch has
+drifted to since.
+
+**A server without tags keeps working as before**: `check_code` then
+falls back to comparing the branch with its counterpart. That is how the
+private server is used during development, where every push is meant to
+arrive right away, without cutting a release for it.
+
+`bier state --fetch` fetches the tags as well and prints `NEWCODE <version>`
+when one is waiting. BierMenu shows it and offers the upgrade — otherwise
+nobody would ever learn that a release is out.
 
 ## Looking at the icon
 

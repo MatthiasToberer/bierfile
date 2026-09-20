@@ -8,7 +8,7 @@
 #   DATA  the Brewfiles — private, they reveal what runs on the Macs
 #
 # Both are recorded in ~/.config/bier/config. Git commands go to DATA
-# unless the code itself is meant (bier update, bier version).
+# unless the code itself is meant (bier upgrade, bier version).
 #
 # Brewfiles/main is the shared inventory, Brewfiles/<host> holds only what
 # one Mac has on top of it. Both are valid Brewfiles; together they are
@@ -23,7 +23,11 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.11.0
+BIER_VERSION=0.13.0
+
+# Set by check_code, read by cmd_upgrade: the release tag to move to.
+# Empty means "follow the branch" — see check_code for when that applies.
+UPGRADE_TAG=""
 
 # --- Environment ------------------------------------------------------------
 
@@ -977,9 +981,10 @@ cmd_install() {
 # push what is ours, fetch what is theirs. Not a command of its own —
 # publish fetches before every push anyway, and update needs it here.
 sync_data() {
+	local msg=${1:-"$HOST: inventory updated"}
+
 	if [ -n "$(git -C "$DATA" status --porcelain -- Brewfiles)" ]; then
-		info "Unrecorded Brewfile changes — taking them along."
-		publish "$HOST: inventory updated"
+		publish "$msg"
 		return 0
 	fi
 
@@ -1003,13 +1008,46 @@ sync_data() {
 	fi
 }
 
+# The newest release published on the code server, without the leading
+# "v". Empty when nobody has tagged one — which is the normal state of a
+# server that is only ever pushed to, such as the private one during
+# development.
+latest_release() {
+	git -C "$ROOT" tag -l 'v*' --sort=-v:refname 2>/dev/null | head -1 | sed 's/^v//'
+}
+
+# Is $2 a higher version than $1? "sort -V" is what gets 0.9.1 < 0.11.0
+# right; comparing the strings would call 0.9.1 the newer one.
+newer_version() {
+	[ "$1" != "$2" ] &&
+		[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" = "$2" ]
+}
+
 # Looks whether a newer version of the program exists. Returning 0 means:
 # there is something that wants building.
 check_code() {
 	need_code
-	git -C "$ROOT" fetch --quiet 2>/dev/null ||
+	git -C "$ROOT" fetch --tags --quiet 2>/dev/null ||
 		die "code server unreachable — is the network plugged in?"
 
+	UPGRADE_TAG=""
+
+	# A tagged server publishes releases, and then the version decides.
+	local release
+	release=$(latest_release)
+	if [ -n "$release" ]; then
+		if ! newer_version "$BIER_VERSION" "$release"; then
+			info "Program is up to date: $BIER_VERSION"
+			return 1
+		fi
+		UPGRADE_TAG="v$release"
+		info ""
+		info "bier $release is out — this one is $BIER_VERSION."
+		return 0
+	fi
+
+	# No release anywhere: that is a working copy which is pushed to
+	# rather than released from, so follow the branch as before.
 	local here there count
 	here=$(git -C "$ROOT" rev-parse HEAD)
 	there=$(git -C "$ROOT" rev-parse '@{u}' 2>/dev/null || true)
@@ -1033,40 +1071,48 @@ check_code() {
 	return 0
 }
 
-# Syncs both: the Brewfiles with the private server, the program with the
-# code server. Asks nothing.
-cmd_update() {
-	need_repo
-
+# Lifts the program itself onto a newer version. Touches no Brewfile —
+# that is what "bier sync" is for. Asks nothing.
+cmd_upgrade() {
 	local force=no
 	case ${1:-} in
 	--force | -f) force=yes ;;
 	esac
 
-	info "Syncing the inventory …"
-	sync_data
-
-	info ""
 	info "Checking the program …"
 	local fresh=no
 	if check_code; then fresh=yes; fi
 	if [ "$fresh" = no ] && [ "$force" = no ]; then
-		info "Rebuild anyway: bier update --force"
+		info "Rebuild anyway: bier upgrade --force"
 		return 0
 	fi
 
+	# Nothing newer, but --force was given: rebuild what is here instead
+	# of moving anywhere. Without this a forced rebuild would try to pull
+	# a branch that a released install is not even on.
+	local move=yes
+	if [ "$fresh" = no ]; then move=no; fi
+
 	info ""
-	# The pull overwrites this very script while it is still running —
+	# The checkout overwrites this very script while it is still running —
 	# bash reads it in chunks and would stumble over the changed file.
 	# So from here on a new process, whose commands live in memory
 	# instead of being read back from a file.
 	exec /bin/bash -c '
 		set -eu
-		root=$1
-		git -C "$root" pull --rebase --autostash --quiet
-		printf "Now at: %s\n" "$(git -C "$root" log --oneline -1)"
+		root=$1 tag=$2 move=$3
+		if [ "$move" = yes ]; then
+			if [ -n "$tag" ]; then
+				# Land on the release, not on whatever the branch has
+				# drifted to since it was cut.
+				git -C "$root" checkout --quiet --detach "$tag"
+			else
+				git -C "$root" pull --rebase --autostash --quiet
+			fi
+			printf "Now at: %s\n" "$(git -C "$root" log --oneline -1)"
+		fi
 		exec "$root/install.sh" --yes
-	' bier "$ROOT"
+	' bier "$ROOT" "$UPGRADE_TAG" "$move"
 }
 
 # Commits the Brewfiles and pushes them to the server.
@@ -1075,16 +1121,29 @@ cmd_push() {
 	publish "${1:-$HOST: inventory updated}"
 }
 
+# The everyday command: record what changed here, then bring this Mac and
+# the server into line — in both directions.
 cmd_sync() {
-	local msg=${1:-"$HOST: inventory updated"}
+	need_repo
 	cmd_dump
-	publish "$msg"
+	sync_data "${1:-$HOST: inventory updated}"
+}
+
+# Until 0.12.0 "update" did both jobs under one word, and nobody could say
+# which of the two they had just asked for. Both have their own word now,
+# so the old one points at them instead of guessing.
+cmd_update() {
+	die "\"bier update\" did two jobs at once and was split in 0.12.0.
+
+     Sync the Macs:        bier sync
+     Upgrade the program:  bier upgrade"
 }
 
 # Machine-readable state for the menu bar app. Tab-separated lines:
 #   STATE  ok|drift        glass full or empty
 #   HOST   <name>
 #   VERSION <number>      so BierMenu notices that it is old itself
+#   NEWCODE <number>      a newer release waits on the code server
 #   REPO   <path>         for the info menu
 #   COMMIT <short> <date> for the info menu
 #   NEW    brew "htop"     installed here, not recorded yet
@@ -1102,6 +1161,9 @@ cmd_state() {
 
 	if [ "${1:-}" = "--fetch" ]; then
 		git -C "$DATA" fetch --quiet 2>/dev/null || true
+		# The program as well, so the menu bar can say that a release is
+		# out instead of waiting for someone to type "bier upgrade".
+		git -C "$ROOT" fetch --tags --quiet 2>/dev/null || true
 	fi
 
 	local tmp
@@ -1134,6 +1196,11 @@ cmd_state() {
 	fi
 	printf 'HOST\t%s\n' "$HOST"
 	printf 'VERSION\t%s\n' "$BIER_VERSION"
+	local release
+	release=$(latest_release)
+	if [ -n "$release" ] && newer_version "$BIER_VERSION" "$release"; then
+		printf 'NEWCODE\t%s\n' "$release"
+	fi
 	printf 'REPO\t%s\n' "$ROOT"
 	printf 'COMMIT\t%s\t%s\n' \
 		"$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo '?')" \
@@ -1209,9 +1276,8 @@ bier — keeps Brewfiles in sync across Macs
   bier take               pull entries from other devices into main or here
   bier take --from-main   hand an entry from main to a single device
   bier push [message]     commit the Brewfiles and push them
-  bier sync [message]     dump, then push — the everyday command
-  bier update [--force]   sync everything: push ours, fetch theirs, merge
-                          conflicts, rebuild if the program changed
+  bier sync [message]     record, fetch, merge, push — the everyday command
+  bier upgrade [--force]  install a newer release of bier itself
   bier config             show which settings are in effect
   bier state [--fetch]    machine-readable state (for the menu bar app)
   bier version            version, commit and the paths in effect
@@ -1260,8 +1326,9 @@ diff) cmd_diff "$@" ;;
 install) cmd_install "$@" ;;
 take) cmd_take "$@" ;;
 push) cmd_push "$@" ;;
-update) cmd_update ;;
 sync) cmd_sync "$@" ;;
+upgrade) cmd_upgrade "$@" ;;
+update) cmd_update ;;
 state) cmd_state "$@" ;;
 config) cmd_config ;;
 version | --version | -V) cmd_version ;;

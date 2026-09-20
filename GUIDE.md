@@ -60,8 +60,7 @@ bier sync
 **Everyday use:**
 
 ```sh
-bier sync             # after installing something: record and upload
-bier update           # fetch what happened on the other Macs
+bier sync             # record here, fetch there — after every install
 bier status           # what differs here?
 bier list             # what do the others have on top?
 bier take             # adopt some of it
@@ -253,21 +252,24 @@ different amounts:
 - *removed elsewhere, still here* — something was removed on another Mac.
   "Remove" clears it out here too.
 
-In the terminal you really only need two commands:
+In the terminal you really only need one command:
 
 ```sh
 bier sync
 ```
 
-After every installation. Records what is new and uploads it.
+After every installation. It records what is new here, fetches what
+happened on the other Macs, merges and uploads. It asks nothing and
+resolves conflicts on its own.
+
+The program itself is a separate matter, and a rarer one:
 
 ```sh
-bier update
+bier upgrade
 ```
 
-Fetches everything that happened on the other Macs, and rebuilds `bier`
-itself if there is a newer version. It asks nothing and resolves
-conflicts on its own.
+That one never touches your lists. It only looks whether a newer `bier`
+is out and puts it in place.
 
 ### Step 4: When the Macs should differ
 
@@ -391,17 +393,13 @@ again.
 The next day at the MacBook `macbook`:
 
 ```sh
-bier update
+bier sync
 ```
 
 ```
-Syncing the inventory …
+Brewfiles/macbook written: 0 on top of 138 in main
 New inventory from the other Mac:
   Brewfiles/main | 1 +
-
-Checking the program …
-Program is up to date: a1333cd bier: take handles ranges
-Rebuild anyway: bier update --force
 ```
 
 The glass on the MacBook empties and reports "1 recorded but not
@@ -440,7 +438,7 @@ inventory. That is exactly what the two drawers are for.
 
 If it later turns out that macbook's font belongs everywhere after all,
 you type `bier take` on any Mac, pick it and answer `m`. From the next
-`bier update` onwards all three fetch it.
+`bier sync` onwards all three fetch it.
 
 ### Getting rid of something everywhere
 

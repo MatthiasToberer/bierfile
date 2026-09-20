@@ -27,7 +27,7 @@ die() {
 	exit 1
 }
 
-# --yes answers every question with yes. "bier update" relies on that:
+# --yes answers every question with yes. "bier upgrade" relies on that:
 # there a single command has to be enough.
 YES=no
 DATA_ARG=""

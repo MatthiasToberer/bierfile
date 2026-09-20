@@ -45,8 +45,9 @@ home; your lists live in a repository that belongs to you.
 - **Carry removals across.** A plain "what is installed" snapshot cannot
   do that. `bier` uses the git history to tell whether a program was
   newly added or removed elsewhere — and treats the two differently.
-- **Work without git knowledge.** `bier update` fetches, pushes, merges
-  and rebuilds. It asks nothing and demands nothing.
+- **Work without git knowledge.** `bier sync` fetches, pushes and merges;
+  `bier upgrade` puts a newer program in place. Neither asks anything nor
+  demands anything.
 - **Sit in the menu bar.** One glance tells you whether this Mac differs.
 
 ## How it works
@@ -115,24 +116,24 @@ Step by step and assuming nothing: **[GUIDE.md](GUIDE.md)**.
 ## Everyday use
 
 ```sh
-bier sync              # after installing something: record and upload
-bier update            # fetch what happened on the other Macs
+bier sync              # record here, fetch there — after every install
 bier status            # what differs here?
 bier list              # what do the others have on top?
 bier take              # adopt some of it
 bier uninstall ghidra  # get rid of it everywhere
 bier prune             # remove here what was deleted elsewhere
+bier upgrade           # put a newer bier in place
 ```
 
-Most of the time you only need the first two.
+Most of the time you only need the first one.
 
 ## Commands
 
 | Command | what it does |
 | --- | --- |
 | `bier dump [--adopt]` | record what this Mac has on top of `main` |
-| `bier sync [message]` | `dump`, commit, upload — the everyday command |
-| `bier update [--force]` | sync everything and rebuild if needed |
+| `bier sync [message]` | `dump`, commit, fetch, upload — the everyday command |
+| `bier upgrade [--force]` | install a newer release of `bier` itself |
 | `bier status` | check the system against the lists |
 | `bier list` | overview of all devices |
 | `bier diff [host…]` | compare the inventory with other devices |
@@ -222,7 +223,7 @@ and whenever the menu is opened.
 Lists of packages have no order, and almost always *both* sides are
 right. `bier` therefore sets `merge=union` for the lists: git merges
 simultaneous changes itself instead of leaving a conflict behind. Should
-one survive anyway, `bier update` resolves it by the same rule — keep
+one survive anyway, `bier sync` resolves it by the same rule — keep
 both sides, carry on. Duplicate lines do not bother Homebrew and
 disappear with the next `bier sync`.
 

@@ -23,6 +23,7 @@ struct BierState {
 	var stale: [String] = [] // removed elsewhere, still installed here
 	var gone: [String] = [] // recorded, but not installed here
 	var version = "" // the script's version, for the out-of-date hint
+	var release = "" // a newer release on the code server, empty if none
 	var repo = "" // path to the repository, for the info menu
 	var commit = "" // short hash and date, for the info menu
 	var ahead = 0
@@ -113,6 +114,7 @@ enum Bier {
 			case "STATE": s.ok = f.count > 1 && f[1] == "ok"
 			case "HOST": if f.count > 1 { s.host = f[1] }
 			case "VERSION": if f.count > 1 { s.version = f[1] }
+			case "NEWCODE": if f.count > 1 { s.release = f[1] }
 			case "REPO": if f.count > 1 { s.repo = f[1] }
 			case "COMMIT":
 				if f.count > 2 { s.commit = "\(f[1]) of \(f[2])" }
@@ -364,10 +366,18 @@ class Controller: NSObject, NSMenuDelegate {
 	/// happens exactly when an install failed to replace the running
 	/// build — and it would otherwise go unnoticed.
 	private func addVersionHint(_ menu: NSMenu) {
+		// A release waiting on the server is the hint worth showing first:
+		// nobody would otherwise learn that it exists.
+		if !state.release.isEmpty {
+			menu.addItem(.separator())
+			menu.addItem(header("bier \(state.release) is out — this is \(state.version)"))
+			menu.addItem(action("Upgrade … (in Terminal)", #selector(doUpgrade)))
+			return
+		}
 		guard !state.version.isEmpty, state.version != ownVersion else { return }
 		menu.addItem(.separator())
 		menu.addItem(header("This app is \(ownVersion), bier is \(state.version)"))
-		menu.addItem(action("Update … (in Terminal)", #selector(doUpdate)))
+		menu.addItem(action("Upgrade … (in Terminal)", #selector(doUpgrade)))
 	}
 
 	private func addFooter(_ menu: NSMenu) {
@@ -443,7 +453,7 @@ class Controller: NSObject, NSMenuDelegate {
 
 	@objc private func doPrune() { Bier.runInTerminal(["prune"]) }
 
-	@objc private func doUpdate() { Bier.runInTerminal(["update"]) }
+	@objc private func doUpgrade() { Bier.runInTerminal(["upgrade"]) }
 
 	/// GUIDE.md walks through it step by step, README.md gives the
 	/// overview. If both are missing, show the folder rather than nothing.

@@ -5,7 +5,7 @@
 # Brewfile changes pass unchecked — that is the everyday case and has
 # nothing to do with the code. If code is pushed, on the other hand, the
 # tests have to be green: the other Mac picks this state up on its next
-# "bier update" and builds it.
+# "bier upgrade" and builds it.
 #
 # Bypass in an emergency: git push --no-verify
 

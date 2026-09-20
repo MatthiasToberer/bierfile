@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# update merges simultaneous changes without asking
+# sync merges simultaneous changes without asking
 
 seed_file mini Brewfiles/main <<'EOF'
 brew "wget"
@@ -18,7 +18,7 @@ brew "wget"
 EOF
 
 answer
-bier mini update
+bier mini sync
 out=$OUT
 assert_not_contains "$out" "CONFLICT"
 assert_not_contains "$out" "failed"
