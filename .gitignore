@@ -1,5 +1,8 @@
 .DS_Store
 app/build/
 
-# Working document for Claude, stays in the private repository.
+# Nothing below belongs to the published project. Notes, scratch files
+# and the working document for Claude live here and stay out of the
+# public repository.
+work/
 CLAUDE.md
