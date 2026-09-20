@@ -9,12 +9,18 @@ system mini <<'SYS'
 brew "wget"
 SYS
 
+# Whatever this build calls itself — hard-coding it here would go stale
+# with the next bump.
+version=$(grep -m1 '^BIER_VERSION=' "$WORK/code-mini/bin/bier" | cut -d= -f2)
+
 # Nothing tagged: no release is announced, and upgrade falls back to the
 # branch, which is level.
 assert_ok bier mini state --fetch
 assert_not_contains "$OUT" "NEWCODE" "an untagged server announces nothing"
 assert_ok bier mini upgrade
 assert_contains "$OUT" "up to date" "a level branch is up to date"
+assert_contains "$OUT" "$version" \
+	"even without a release the version has to be named, not just the commit"
 
 # A release older than this build is not an upgrade.
 git -C "$WORK/code.git" tag -a v0.1.0 -m v0.1.0
@@ -22,6 +28,7 @@ assert_ok bier mini state --fetch
 assert_not_contains "$OUT" "NEWCODE" "an older release is not an upgrade"
 assert_ok bier mini upgrade
 assert_contains "$OUT" "up to date" "and upgrade says so rather than moving"
+assert_contains "$OUT" "$version" "with the version named"
 
 # The string trap: 0.9.1 must not beat 0.13.0.
 git -C "$WORK/code.git" tag -a v0.9.1 -m v0.9.1
