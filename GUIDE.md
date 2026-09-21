@@ -51,6 +51,10 @@ git clone git@github.com:MatthiasToberer/bierfile.git ~/bierfile
 bier main
 ```
 
+If `bier` answers `command not found` afterwards, the installer has put
+it on the PATH but **this** shell does not know yet. Open a new terminal,
+or type `exec zsh`.
+
 **On every further Mac:**
 
 ```sh

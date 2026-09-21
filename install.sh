@@ -253,6 +253,10 @@ if [ "$DRY" = yes ]; then
 	else
 		ok "link       $LINK -> $HERE/bin/bier"
 	fi
+	case ":$PATH:" in
+	*":$BIN_DIR:"*) ok "PATH       $BIN_DIR is on it" ;;
+	*) ok "PATH       would offer to add $BIN_DIR to your shell profile" ;;
+	esac
 	if [ "$(git -C "$HERE" config core.hooksPath 2>/dev/null)" = ".githooks" ]; then
 		ok "hook       pre-push — already set"
 	else
@@ -300,8 +304,31 @@ case ":$PATH:" in
 	ok "$BIN_DIR is on the PATH"
 	;;
 *)
-	warn "$BIN_DIR is not on the PATH. Add this line to ~/.zshrc:"
-	printf '\n       export PATH="%s:$PATH"\n' "$BIN_DIR"
+	# Warning about it was not enough. On a fresh Mac ~/.local/bin is
+	# never on the PATH, the warning drowns in the rest of the output,
+	# and what the user meets afterwards is "zsh: command not found".
+	PROFILE=$HOME/.zshrc
+	case ${SHELL##*/} in
+	bash) PROFILE=$HOME/.bash_profile ;;
+	esac
+	if [ "$DRY" = yes ]; then
+		ok "would add $BIN_DIR to the PATH in $PROFILE"
+	elif ask "$BIN_DIR is not on the PATH. Add it to $PROFILE?"; then
+		if [ -f "$PROFILE" ] && grep -qF "$BIN_DIR" "$PROFILE"; then
+			ok "$PROFILE mentions it already"
+		else
+			printf '\n# added by bier\nexport PATH="%s:$PATH"\n' \
+				"$BIN_DIR" >>"$PROFILE"
+			ok "added to $PROFILE"
+		fi
+		PATH=$BIN_DIR:$PATH
+		export PATH
+		warn "this shell does not know it yet — open a new terminal,"
+		warn "or type:  exec $(basename "${SHELL:-zsh}")"
+	else
+		warn "then bier only works by its full path: $LINK"
+		printf '\n       export PATH="%s:$PATH"\n' "$BIN_DIR"
+	fi
 	;;
 esac
 
