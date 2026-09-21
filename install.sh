@@ -190,6 +190,41 @@ need git    git    "comes with the Command Line Tools:  xcode-select --install"
 need swiftc swiftc "comes with the Command Line Tools:  xcode-select --install"
 need brew   brew   "/bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
 
+# git refuses to commit without a name and an address, and bier commits
+# on your behalf -- for the scaffolding, and at every sync. A fresh Mac
+# has neither, and the message git gives instead arrives much later, in
+# the middle of something else.
+GIT_NAME=$(git config --get user.name 2>/dev/null || true)
+GIT_MAIL=$(git config --get user.email 2>/dev/null || true)
+if [ -n "$GIT_NAME" ] && [ -n "$GIT_MAIL" ]; then
+	printf '   %-10s ok         %s <%s>\n' "identity" "$GIT_NAME" "$GIT_MAIL"
+elif [ "$DRY" = yes ] || [ "$YES" = yes ] || [ ! -t 0 ]; then
+	printf '   %-10s MISSING\n' "identity"
+	printf '                git config --global user.name "Your Name"\n'
+	printf '                git config --global user.email "you@example.com"\n'
+	MISSING=$((MISSING + 1))
+else
+	printf '   %-10s git needs a name and an address to commit with\n' "identity"
+	[ -n "$GIT_NAME" ] || {
+		printf '                your name:  '
+		read -r GIT_NAME || GIT_NAME=""
+	}
+	[ -n "$GIT_MAIL" ] || {
+		printf '                your email: '
+		read -r GIT_MAIL || GIT_MAIL=""
+	}
+	if [ -n "$GIT_NAME" ] && [ -n "$GIT_MAIL" ]; then
+		git config --global user.name "$GIT_NAME"
+		git config --global user.email "$GIT_MAIL"
+		printf '   %-10s set        %s <%s>\n' "identity" "$GIT_NAME" "$GIT_MAIL"
+	else
+		printf '                nothing entered — set it yourself:\n'
+		printf '                git config --global user.name "Your Name"\n'
+		printf '                git config --global user.email "you@example.com"\n'
+		MISSING=$((MISSING + 1))
+	fi
+fi
+
 # gpg is not a prerequisite: without a vault nobody needs it, and with
 # Homebrew there it installs itself in a second.
 if command -v gpg >/dev/null 2>&1; then
@@ -203,8 +238,12 @@ else
 fi
 
 if [ "$MISSING" -gt 0 ]; then
-	die "$MISSING of them are missing. Install them with the lines above,
-     then run $0 again. Nothing has been changed so far."
+	if [ "$MISSING" = 1 ]; then
+		die "one thing is missing. The line above puts it right, then run
+     $0 again. Nothing has been changed so far."
+	fi
+	die "$MISSING things are missing. The lines above put them right, then
+     run $0 again. Nothing has been changed so far."
 fi
 
 if [ "$DRY" = yes ]; then

@@ -121,6 +121,17 @@ Afterwards this has to answer:
 swiftc --version
 ```
 
+**A name and an address for git.** git refuses to commit without them,
+and `bier` commits on your behalf — when it sets your repository up, and
+at every `bier sync`. A fresh Mac has neither, and git's complaint
+arrives much later, in the middle of something else. `install.sh` asks
+for them; you can also set them yourself:
+
+```sh
+git config --global user.name "Your Name"
+git config --global user.email "you@example.com"
+```
+
 **An SSH key for your repository.** A fresh Mac has none, and the server
 has to be told about this one before anything can be fetched from it.
 
