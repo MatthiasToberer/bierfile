@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.18.0
+BIER_VERSION=0.18.1
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -1230,14 +1230,32 @@ vault_pass_works() {
 	return 0
 }
 
-# Asks, checks, remembers. Never echoes what is typed.
+# Asks and hands back what was typed. Never echoes it.
+#
+# The prompt goes to stderr, and that is not cosmetic: this runs inside
+# $(...), so anything written to stdout ends up inside the passphrase.
+# It did. What was stored was "Passphrase: " with the answer glued
+# behind it -- consistent enough to look like it worked, and wrong
+# enough that gpg by hand could never have opened the file.
 vault_ask() {
 	local pass
-	printf '%s' "$1"
+	printf '%s' "$1" >&2
 	read -rs pass || pass=""
-	printf '\n'
+	printf '\n' >&2
 	[ -n "$pass" ] || die "no passphrase given"
 	printf '%s' "$pass"
+}
+
+# Twice, whenever there is nothing to check the answer against. A typo
+# in the first passphrase of an empty vault encrypts everything with
+# something nobody will ever type again, and nothing would notice.
+vault_ask_twice() {
+	local first second
+	first=$(vault_ask "$1")
+	second=$(vault_ask "Again: ")
+	[ "$first" = "$second" ] ||
+		die "the two do not match — nothing has been changed"
+	printf '%s' "$first"
 }
 
 # ~/.config/nvim/init.lua  <->  dot_config/nvim/init.lua
@@ -1575,7 +1593,13 @@ cmd_vault() {
 		info "these Macs -- your password manager, or a note in a drawer."
 		info "Do that first; this is not the place to invent one."
 		info ""
-		pass=$(vault_ask "Passphrase: ")
+		# With files in the safe the answer is checked against them, so
+		# once is enough. With an empty safe there is nothing to check.
+		if [ -n "$(find "$SAFE_DIR" -name '*.gpg' -print -quit 2>/dev/null)" ]; then
+			pass=$(vault_ask "Passphrase: ")
+		else
+			pass=$(vault_ask_twice "Passphrase: ")
+		fi
 		vault_pass_works "$pass" ||
 			die "that passphrase does not open the vault that is already there"
 		vault_pass_store "$pass"
@@ -1586,7 +1610,7 @@ cmd_vault() {
 		need_gpg
 		pass=$(vault_pass)
 		[ -n "$pass" ] || die "no passphrase set yet -- bier vault --init"
-		new=$(vault_ask "New passphrase: ")
+		new=$(vault_ask_twice "New passphrase: ")
 		vault_reseal "$pass" "$new"
 		vault_pass_store "$new"
 		info "Changed, and everything re-encrypted."
