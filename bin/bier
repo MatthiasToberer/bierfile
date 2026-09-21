@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.21.0
+BIER_VERSION=0.21.1
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -1203,8 +1203,16 @@ vault_pass() {
 
 vault_pass_store() {
 	[ -z "${BIER_VAULT_PASS:-}" ] || return 0
-	security add-generic-password -s bier-vault -a vault -w "$1" -U 2>/dev/null ||
-		die "could not write the passphrase to the keychain"
+	local why
+	# Say what security said. Swallowing it left "could not write the
+	# passphrase to the keychain" and no way to find out why.
+	why=$(security add-generic-password -s bier-vault -a vault -w "$1" -U 2>&1) ||
+		die "the keychain would not take the passphrase:
+     $why
+
+     A locked or missing login keychain is the usual reason. Unlock it
+     in Keychain Access, or work without it for now by putting the
+     passphrase in BIER_VAULT_PASS."
 }
 
 vault_encrypt() {
@@ -1543,15 +1551,46 @@ vault_link() {
 	info "linked: $target"
 }
 
-# vault -> Safe, encrypting only what really changed.# vault -> Safe, encrypting only what really changed. gpg writes
+# Two different questions, and putting them in one answer cost a whole
+# test to find.
+#
+# What has to be sealed: everything except the README, which explains
+# the folder and is the same on every Mac. .groups does travel -- a
+# group changed on a Mac with no files of its own would otherwise never
+# leave it, and would be overwritten by the old version on the way back.
+vault_sealable() {
+	[ -d "$VAULT" ] || return 0
+	local f rel
+	find "$VAULT" -type f -print 2>/dev/null | while IFS= read -r f; do
+		rel=${f#"$VAULT"/}
+		[ "$rel" != "README.txt" ] || continue
+		printf '%s\n' "$rel"
+	done
+}
+
+# What belongs to the user, for counting out loud. bier's own files are
+# none of their business.
+vault_own_files() {
+	[ -d "$VAULT" ] || return 0
+	local f rel
+	find "$VAULT" -type f -print 2>/dev/null | while IFS= read -r f; do
+		rel=${f#"$VAULT"/}
+		vault_is_meta "$rel" && continue
+		printf '%s\n' "$rel"
+	done
+}
+
+# vault -> Safe, encrypting only what really changed. gpg writes
 # different bytes every time, so re-encrypting everything would make a
 # commit out of every single run.
 vault_seal() {
 	local pass f rel enc old
 	[ -d "$VAULT" ] || return 0
 	# An empty vault asks for nothing. Demanding a passphrase from
-	# somebody who never put a file in would be absurd.
-	[ -n "$(find "$VAULT" -type f -print -quit 2>/dev/null)" ] || return 0
+	# somebody who never put a file in would be absurd -- and since
+	# install.sh leaves a README in there, "empty" has to mean "nothing
+	# of yours", not "no files at all".
+	[ -n "$(vault_sealable)" ] || return 0
 	pass=$(vault_pass)
 	[ -n "$pass" ] || die "the vault holds files but no passphrase is set.
      bier vault --init"
@@ -1728,8 +1767,7 @@ EOF
 		;;
 	esac
 
-	n=0
-	[ ! -d "$SAFE_DIR" ] || n=$(find "$SAFE_DIR" -name '*.gpg' | wc -l | tr -d ' ')
+	n=$(vault_own_files | wc -l | tr -d ' ')
 	info "Vault:  $VAULT"
 	info "Safe:   $SAFE_DIR"
 	info "  $(count_word "$n") in it"

@@ -64,3 +64,21 @@ assert_eq "no" \
 assert_ok bier macbook sync
 assert_eq "no" "$([ -e "$WORK/home-macbook/README.txt" ] && echo yes || echo no)" \
 	"and must not be linked into anyone's home"
+
+# A vault holding nothing but bier's own README is empty as far as
+# anybody cares, and must not demand a passphrase for it.
+rm -rf "$WORK/home-macbook/.bierfilevault"
+mkdir -p "$WORK/home-macbook/.bierfilevault"
+printf 'erklaerung\n' >"$WORK/home-macbook/.bierfilevault/README.txt"
+BIER_VAULT_PASS="" assert_ok bier macbook vault
+assert_contains "$OUT" "0 entries" "a vault with only the README is empty"
+
+# And the case that broke a real installation: syncing with nothing but
+# the README in the vault demanded a passphrase for files that are not
+# there. install.sh leaves that README behind, so every fresh Mac hit it.
+rm -rf "$WORK/home-mini/.bierfilevault" "$WORK/mini/Safe"
+mkdir -p "$WORK/home-mini/.bierfilevault"
+printf 'erklaerung\n' >"$WORK/home-mini/.bierfilevault/README.txt"
+BIER_VAULT_PASS="" assert_ok bier mini sync
+assert_not_contains "$OUT" "no passphrase is set" \
+	"a vault holding only the README must not ask for anything"
