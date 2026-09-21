@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.18.1
+BIER_VERSION=0.19.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -1938,6 +1938,7 @@ cmd_update() {
 #   HOST   <name>
 #   VERSION <number>      so BierMenu notices that it is old itself
 #   NEWCODE <number>      a newer release waits on the code server
+#   OFFLINE <which>       a server could not be reached: data, code, or both
 #   REPO   <path>         for the info menu
 #   COMMIT <short> <date> for the info menu
 #   NEW    brew "htop"     installed here, not recorded yet
@@ -1953,11 +1954,19 @@ cmd_state() {
 	need_brew
 	need_repo
 
+	local offline=""
 	if [ "${1:-}" = "--fetch" ]; then
-		git -C "$DATA" fetch --quiet 2>/dev/null || true
+		# Two things a fetch must not do when the server is away: hang,
+		# and pass unnoticed. Without the timeout the menu bar waits on
+		# it; without noticing, the glass looks full while nothing has
+		# been heard for days.
+		local ssh_quick="ssh -o ConnectTimeout=5 -o BatchMode=yes"
+		GIT_SSH_COMMAND=$ssh_quick \
+			git -C "$DATA" fetch --quiet 2>/dev/null || offline="$offline data"
 		# The program as well, so the menu bar can say that a release is
 		# out instead of waiting for someone to type "bier upgrade".
-		git -C "$ROOT" fetch --tags --quiet 2>/dev/null || true
+		GIT_SSH_COMMAND=$ssh_quick \
+			git -C "$ROOT" fetch --tags --quiet 2>/dev/null || offline="$offline code"
 	fi
 
 	local tmp
@@ -2003,6 +2012,7 @@ cmd_state() {
 	if [ -n "$stale" ]; then printf '%s\n' "$stale" | sed 's/^/STALE'$'\t''/'; fi
 	if [ -n "$gone" ]; then printf '%s\n' "$gone" | sed 's/^/GONE'$'\t''/'; fi
 	printf 'GIT\t%s\t%s\t%s\n' "$ahead" "$behind" "$dirty"
+	[ -z "$offline" ] || printf 'OFFLINE\t%s\n' "${offline# }"
 }
 
 # Version, origin and the paths in effect — the first question in any bug

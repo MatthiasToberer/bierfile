@@ -24,6 +24,7 @@ struct BierState {
 	var gone: [String] = [] // recorded, but not installed here
 	var version = "" // the script's version, for the out-of-date hint
 	var release = "" // a newer release on the code server, empty if none
+	var offline = "" // servers that could not be reached: data, code, both
 	var repo = "" // path to the repository, for the info menu
 	var commit = "" // short hash and date, for the info menu
 	var ahead = 0
@@ -76,6 +77,12 @@ enum Bier {
 		return nil
 	}
 
+	/// Nothing here may block for ever. git can sit on an unreachable
+	/// server, and "brew bundle dump" calls mas, which hangs when the
+	/// App Store is away -- and the menu bar would foam until the next
+	/// login, because the run it is waiting for never comes back.
+	static let runLimit: TimeInterval = 45
+
 	/// Runs bier and returns (output, error text, success).
 	@discardableResult
 	static func run(_ args: [String]) -> (out: String, err: String, ok: Bool) {
@@ -99,8 +106,23 @@ enum Bier {
 		} catch {
 			return ("", "bier could not be started: \(error.localizedDescription)", false)
 		}
+
+		var timedOut = false
+		let watchdog = DispatchWorkItem {
+			if task.isRunning {
+				timedOut = true
+				task.terminate()
+			}
+		}
+		DispatchQueue.global().asyncAfter(deadline: .now() + runLimit, execute: watchdog)
+		defer { watchdog.cancel() }
 		let out = String(data: outPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
 		let err = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+		task.waitUntilExit()
+		if timedOut {
+			return ("", "bier did not answer within \(Int(runLimit)) seconds "
+				+ "— is a server or the App Store unreachable?", false)
+		}
 		task.waitUntilExit()
 		return (out, err, task.terminationStatus == 0)
 	}
@@ -121,6 +143,7 @@ enum Bier {
 			case "HOST": if f.count > 1 { s.host = f[1] }
 			case "VERSION": if f.count > 1 { s.version = f[1] }
 			case "NEWCODE": if f.count > 1 { s.release = f[1] }
+			case "OFFLINE": if f.count > 1 { s.offline = f[1] }
 			case "REPO": if f.count > 1 { s.repo = f[1] }
 			case "COMMIT":
 				if f.count > 2 { s.commit = "\(f[1]) of \(f[2])" }
@@ -319,6 +342,20 @@ class Controller: NSObject, NSMenuDelegate {
 			menu.addItem(.separator())
 			addFooter(menu)
 			return
+		}
+
+		// Say it before anything else. What follows is the last state
+		// that could be fetched, and without this line it reads as the
+		// current one.
+		if !state.offline.isEmpty {
+			let what = state.offline == "data code"
+				? "Neither server could be reached"
+				: state.offline == "code"
+					? "The code server could not be reached"
+					: "The inventory server could not be reached"
+			menu.addItem(header(what))
+			menu.addItem(detail("what follows is the last state it knows"))
+			menu.addItem(.separator())
 		}
 
 		if state.ok {
