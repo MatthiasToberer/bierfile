@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.16.0
+BIER_VERSION=0.17.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -85,6 +85,11 @@ root = $(script_root)
 
 # Device name; decides which file under Brewfiles/ belongs to this Mac.
 host = $(hostname -s)
+
+# Where the plain files of the vault live. Outside any repository, so
+# that nothing can commit them by accident. Only the encrypted copies
+# under Safe/ in the data repository ever leave this Mac.
+vault = $HOME/.bierfilevault
 EOF
 	info "Config created: $CONFIG_FILE"
 }
@@ -127,6 +132,16 @@ HOST=${BIER_HOST:-$(config_get host)}
 HOST=${HOST:-$(hostname -s)}
 
 BREW_DIR=$DATA/Brewfiles
+
+# Everything that is not a Brewfile. The plain files live outside any
+# repository on purpose: a .gitignore is a rule that can be got wrong,
+# a different directory is a fact. Only the encrypted copies travel.
+VAULT=${BIER_VAULT:-$(config_get vault)}
+VAULT=${VAULT:-$HOME/.bierfilevault}
+case $VAULT in
+"~/"*) VAULT=$HOME/${VAULT#\~/} ;;
+esac
+SAFE_DIR=$DATA/Safe
 HOST_FILE=$BREW_DIR/$HOST
 MAIN_FILE=$BREW_DIR/main
 
@@ -670,6 +685,7 @@ publish() {
 	# script or the README as well and hide them under an inventory
 	# message — that happened to me exactly once.
 	git -C "$DATA" add Brewfiles
+	[ ! -d "$SAFE_DIR" ] || git -C "$DATA" add Safe
 	if git -C "$DATA" diff --cached --quiet; then
 		info "Nothing to commit."
 	else
@@ -949,6 +965,17 @@ cmd_status() {
 	need_brew
 	need_repo
 
+	local trouble
+	trouble=$(vault_trouble)
+	if [ -n "$trouble" ]; then
+		printf '%s\n' "$trouble" | sed -n 's/^DEAD\t/  ! link points nowhere: /p'
+		printf '%s\n' "$trouble" | sed -n 's/^MISSING\t/  ! link points nowhere, the file is gone: /p'
+		printf '%s\n' "$trouble" | sed -n 's/^GONE\t/  ! link is missing: /p'
+		printf '%s\n' "$trouble" | sed -n 's/^LOOSE\t/  ! no longer a link: /p'
+		info "    bier vault --restore puts the links back."
+		info ""
+	fi
+
 	# Say it here as well. Aborting only at install time would mean the
 	# line sits in the file for weeks without anybody being told.
 	local f bad
@@ -1051,7 +1078,10 @@ cmd_install() {
 sync_data() {
 	local msg=${1:-"$HOST: inventory updated"}
 
-	if [ -n "$(git -C "$DATA" status --porcelain -- Brewfiles)" ]; then
+	# Safe as well as Brewfiles. A run in which only a vault file
+	# changed would otherwise fall through here and never be committed
+	# at all -- which is exactly what happened the first time.
+	if [ -n "$(git -C "$DATA" status --porcelain -- Brewfiles Safe)" ]; then
 		publish "$msg"
 		return 0
 	fi
@@ -1140,6 +1170,584 @@ check_code() {
 	fi
 	git -C "$ROOT" log --oneline "$here..$there" | sed 's/^/  /'
 	return 0
+}
+
+# --- The vault ---------------------------------------------------------
+#
+# Files that are not Brewfiles: dotfiles, notes, whatever belongs on
+# every Mac. They are encrypted symmetrically with one passphrase that
+# every Mac knows, so a new Mac needs nothing but that passphrase --
+# no key to carry over, nobody else's machine to ask.
+#
+# Brewfiles stay readable. Encrypting them was tried and measured: a
+# union merge glues two ciphertexts together and the file is quietly
+# ruined, and "removed elsewhere" stops working because it searches the
+# history for the entry.
+
+need_gpg() {
+	command -v gpg >/dev/null 2>&1 ||
+		die "gpg is missing, and the vault is encrypted with it.
+     Install it:  brew install gnupg"
+}
+
+# The passphrase. It lives in this Mac's own keychain, not in iCloud:
+# a working copy, not a place to keep it. BIER_VAULT_PASS overrides it
+# for tests and for anyone scripting this.
+vault_pass() {
+	if [ -n "${BIER_VAULT_PASS:-}" ]; then
+		printf '%s' "$BIER_VAULT_PASS"
+		return 0
+	fi
+	security find-generic-password -s bier-vault -a vault -w 2>/dev/null || true
+}
+
+vault_pass_store() {
+	[ -z "${BIER_VAULT_PASS:-}" ] || return 0
+	security add-generic-password -s bier-vault -a vault -w "$1" -U 2>/dev/null ||
+		die "could not write the passphrase to the keychain"
+}
+
+vault_encrypt() {
+	printf '%s' "$2" | gpg --batch --yes --quiet --passphrase-fd 0 \
+		--pinentry-mode loopback -c --cipher-algo AES256 -o "$3" "$1"
+}
+
+vault_decrypt() {
+	printf '%s' "$2" | gpg --batch --yes --quiet --passphrase-fd 0 \
+		--pinentry-mode loopback -d -o "$3" "$1" 2>/dev/null
+}
+
+# Does this passphrase open what is already there? An empty safe cannot
+# say, and then anything is as good as anything else.
+vault_pass_works() {
+	local f probe
+	for f in "$SAFE_DIR"/*.gpg; do
+		[ -f "$f" ] || return 0
+		probe=$(tmpfile)
+		vault_decrypt "$f" "$1" "$probe" && return 0
+		return 1
+	done
+	return 0
+}
+
+# Asks, checks, remembers. Never echoes what is typed.
+vault_ask() {
+	local pass
+	printf '%s' "$1"
+	read -rs pass || pass=""
+	printf '\n'
+	[ -n "$pass" ] || die "no passphrase given"
+	printf '%s' "$pass"
+}
+
+# ~/.config/nvim/init.lua  <->  dot_config/nvim/init.lua
+#
+# The name carries the destination, so there is no list to keep in step
+# with reality -- the idea is chezmoi's and it is a good one.
+vault_name() {
+	printf '%s' "${1#"$HOME"/}" | sed -e 's#^\.#dot_#' -e 's#/\.#/dot_#g'
+}
+
+vault_target() {
+	printf '%s/%s' "$HOME" \
+		"$(vault_strip_scope "$1" | sed -e 's#^dot_#.#' -e 's#/dot_#/.#g')"
+}
+
+# A path in the vault may start with a scope: @laptops/dot_zshrc goes to
+# the Macs in that group, @mini/dot_zshrc only to that one. A device name
+# is simply a group of one, so there is nothing extra to declare for it.
+#
+# Anything whose name begins with a dot is bier's own -- .groups is not
+# a file anybody asked to have in their home.
+vault_scope() {
+	case $1 in
+	@*/*) printf '%s' "${1%%/*}" | cut -c2- ;;
+	*) printf '' ;;
+	esac
+}
+
+vault_strip_scope() {
+	case $1 in
+	@*/*) printf '%s' "${1#*/}" ;;
+	*) printf '%s' "$1" ;;
+	esac
+}
+
+vault_is_meta() {
+	case $(basename "$1") in
+	.*) return 0 ;;
+	esac
+	case $1 in
+	.*) return 0 ;;
+	esac
+	return 1
+}
+
+# Who is in a group. Reads the file in the vault, which travels
+# encrypted like everything else.
+group_members() {
+	[ -f "$VAULT/.groups" ] || return 0
+	sed -nE "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$VAULT/.groups" |
+		tail -1
+}
+
+group_list() {
+	[ -f "$VAULT/.groups" ] || return 0
+	sed -nE 's/^[[:space:]]*([A-Za-z0-9_-]+)[[:space:]]*=.*/\1/p' "$VAULT/.groups"
+}
+
+# Does this Mac get the file?
+vault_wanted() {
+	local scope=$(vault_scope "$1") m
+	[ -n "$scope" ] || return 0
+	[ "$scope" != "$HOST" ] || return 0
+	for m in $(group_members "$scope"); do
+		[ "$m" != "$HOST" ] || return 0
+	done
+	return 1
+}
+
+cmd_group() {
+	local name=${1:-} line rest
+	[ $# -eq 0 ] || shift
+
+	case $name in
+	"")
+		if [ ! -f "$VAULT/.groups" ]; then
+			info "No groups. Everything in the vault goes to every Mac."
+			info "  bier vault group laptops mini macbook"
+			return 0
+		fi
+		for line in $(group_list); do
+			rest=$(group_members "$line")
+			if printf '%s\n' $rest | grep -qx "$HOST"; then
+				info "  $line = $rest   (this Mac)"
+			else
+				info "  $line = $rest"
+			fi
+		done
+		return 0
+		;;
+	--drop)
+		[ $# -gt 0 ] || die "which group? bier vault group --drop laptops"
+		[ -f "$VAULT/.groups" ] || die "no groups at all"
+		sed -i '' -E "/^[[:space:]]*$1[[:space:]]*=/d" "$VAULT/.groups"
+		info "Group $1 is gone. Files under @$1/ go to nobody until"
+		info "the group exists again — bier vault drop removes them."
+		return 0
+		;;
+	esac
+
+	[ $# -gt 0 ] || die "which Macs? bier vault group laptops mini macbook"
+	mkdir -p "$VAULT"
+	touch "$VAULT/.groups"
+	for line in "$@"; do
+		host_list | grep -qx "$line" ||
+			info "Note: no Mac called $line has recorded anything yet."
+	done
+	sed -i '' -E "/^[[:space:]]*$name[[:space:]]*=/d" "$VAULT/.groups"
+	printf '%s = %s\n' "$name" "$*" >>"$VAULT/.groups"
+	info "$name = $*"
+}
+
+# Moves the file into the vault and leaves a link behind, so it goes on
+# living where the program that reads it expects it.
+vault_add() {
+	local src=$1 scope=${2:-} name dest
+	case $src in
+	"$HOME"/*) ;;
+	*) die "only files below $HOME can go into the vault: $src" ;;
+	esac
+	[ -e "$src" ] || die "$src does not exist"
+	[ ! -L "$src" ] || die "$src is already a link -- in the vault already?"
+	if [ -d "$src" ]; then
+		local f
+		# A directory is taken in file by file. Moving it whole would
+		# leave the link on the folder, and anything written into it
+		# later would silently stay outside the vault.
+		find "$src" -type f -print | while IFS= read -r f; do
+			vault_add "$f" "$scope"
+		done
+		return 0
+	fi
+	[ -f "$src" ] || die "$src is neither a file nor a directory"
+
+	name=$(vault_name "$src")
+	[ -z "$scope" ] || name=@$scope/$name
+	dest=$VAULT/$name
+	[ ! -e "$dest" ] || die "$name is already in the vault"
+
+	mkdir -p "$(dirname "$dest")"
+	mv "$src" "$dest"
+	ln -s "$dest" "$src"
+	info "$name   <-  $src"
+}
+
+# Takes it back out: the real file returns to its place, and the
+# encrypted copy goes. The file stays on this Mac -- that is the whole
+# difference to drop.
+vault_forget() {
+	local src=$1 name dest
+	name=$(vault_name "$src")
+	dest=$VAULT/$name
+	[ -e "$dest" ] || die "$name is not in the vault"
+	rm -f "$src"
+	mv "$dest" "$src"
+	rm -f "$SAFE_DIR/$name.gpg"
+	info "$src is a plain file again"
+}
+
+# Gone everywhere: out of the vault, out of the safe, and the link at
+# the destination goes too. Unlike forget, this does not leave a file
+# behind -- so it asks first.
+vault_drop() {
+	local src=$1 name dest answer
+	name=$(vault_name "$src")
+	dest=$VAULT/$name
+	[ -e "$dest" ] || die "$name is not in the vault"
+
+	info "This deletes $name everywhere: here, in the safe, and on every"
+	info "other Mac at its next sync. git history keeps the encrypted"
+	info "copies, but nothing else will."
+	printf 'Delete it? [y/N] '
+	read -r answer || answer=""
+	case $answer in
+	j | J | y | Y) ;;
+	*)
+		info "Cancelled."
+		return 0
+		;;
+	esac
+
+	rm -f "$dest" "$SAFE_DIR/$name.gpg"
+	[ ! -L "$src" ] || rm -f "$src"
+	git -C "$DATA" rm -q --ignore-unmatch "Safe/$name.gpg" >/dev/null 2>&1 || true
+	info "$name is gone."
+}
+
+# What is wrong with the links. Both sides have to be walked: a dead
+# link is precisely the case where the vault file is gone, so looking
+# only at the vault would find nothing to complain about. And a dead
+# link is the dangerous one -- zsh falls back to its defaults and you
+# notice in three weeks.
+vault_trouble() {
+	local rel target
+	{
+		[ ! -d "$SAFE_DIR" ] ||
+			find "$SAFE_DIR" -name '*.gpg' -type f -print 2>/dev/null |
+			sed -e "s#^$SAFE_DIR/##" -e 's#\.gpg$##'
+		[ ! -d "$VAULT" ] ||
+			find "$VAULT" -type f -print 2>/dev/null | sed -e "s#^$VAULT/##"
+	} | sort -u | while IFS= read -r rel; do
+		[ -n "$rel" ] || continue
+		vault_is_meta "$rel" && continue
+		vault_wanted "$rel" || continue
+		target=$(vault_target "$rel")
+		if [ ! -f "$VAULT/$rel" ]; then
+			printf 'MISSING\t%s\n' "$target"
+		elif [ -L "$target" ]; then
+			[ -e "$target" ] || printf 'DEAD\t%s\n' "$target"
+		elif [ -e "$target" ]; then
+			printf 'LOOSE\t%s\n' "$target"
+		else
+			printf 'GONE\t%s\n' "$target"
+		fi
+	done
+}
+
+# Next to the data, not only in a manual that may not be there any more.
+vault_recovery_note() {
+	cat >"$SAFE_DIR/README-recovery.txt" <<'NOTE'
+These files were encrypted by bier with plain gpg, symmetric, AES-256.
+
+You do not need bier to get them back. With the passphrase:
+
+    gpg -d dot_zshrc.gpg > ~/.zshrc
+
+The name says where the file belongs: dot_ stands for a leading dot, and
+directories are mirrored, so dot_config/nvim/init.lua is
+~/.config/nvim/init.lua.
+
+Earlier versions are in the git history of this repository.
+
+Nothing can recover the passphrase itself. If it is lost, so are these
+files.
+NOTE
+}
+
+# vault -> Safe, encrypting only what really changed. gpg writes
+# different bytes every time, so re-encrypting everything would make a
+# commit out of every single run.
+vault_seal() {
+	local pass f rel enc old
+	[ -d "$VAULT" ] || return 0
+	# An empty vault asks for nothing. Demanding a passphrase from
+	# somebody who never put a file in would be absurd.
+	[ -n "$(find "$VAULT" -type f -print -quit 2>/dev/null)" ] || return 0
+	pass=$(vault_pass)
+	[ -n "$pass" ] || die "the vault holds files but no passphrase is set.
+     bier vault --init"
+	need_gpg
+
+	mkdir -p "$SAFE_DIR"
+	vault_recovery_note
+
+	find "$VAULT" -type f -print | while IFS= read -r f; do
+		rel=${f#"$VAULT"/}
+		enc=$SAFE_DIR/$rel.gpg
+		mkdir -p "$(dirname "$enc")"
+		if [ -f "$enc" ]; then
+			old=$(mktemp "${TMPDIR:-/tmp}/bier.XXXXXX")
+			if vault_decrypt "$enc" "$pass" "$old" && cmp -s "$f" "$old"; then
+				rm -f "$old"
+				continue
+			fi
+			rm -f "$old"
+		fi
+		vault_encrypt "$f" "$pass" "$enc"
+	done
+}
+
+# Safe -> vault, and a link at the destination for anything that has
+# none yet.
+vault_open() {
+	local pass f rel out target
+	[ -d "$SAFE_DIR" ] || return 0
+	[ -n "$(find "$SAFE_DIR" -name '*.gpg' -type f -print -quit 2>/dev/null)" ] || return 0
+	pass=$(vault_pass)
+	if [ -z "$pass" ]; then
+		info "The safe holds files, but this Mac has no passphrase yet."
+		info "  bier vault --init"
+		return 0
+	fi
+	need_gpg
+
+	# The groups first, and on their own: everything after this asks
+	# them whether it belongs here, and find gives no order worth
+	# relying on.
+	if [ -f "$SAFE_DIR/.groups.gpg" ]; then
+		mkdir -p "$VAULT"
+		vault_decrypt "$SAFE_DIR/.groups.gpg" "$pass" "$VAULT/.groups" || {
+			rm -f "$VAULT/.groups"
+			die "the safe will not open with the remembered passphrase.
+     Changed on another Mac?  bier vault --init"
+		}
+	fi
+
+	find "$SAFE_DIR" -name '*.gpg' -type f -print | while IFS= read -r f; do
+		rel=${f#"$SAFE_DIR"/}
+		rel=${rel%.gpg}
+		# Not ours: another group's file. It stays in the safe, it just
+		# never gets decrypted here.
+		vault_wanted "$rel" || continue
+		out=$VAULT/$rel
+		mkdir -p "$(dirname "$out")"
+		vault_decrypt "$f" "$pass" "$out" || {
+			rm -f "$out"
+			die "the safe will not open with the remembered passphrase.
+     Changed on another Mac?  bier vault --init"
+		}
+		# bier's own files have no home to be linked into.
+		vault_is_meta "$rel" && continue
+		target=$(vault_target "$rel")
+		if [ ! -e "$target" ] && [ ! -L "$target" ]; then
+			mkdir -p "$(dirname "$target")"
+			ln -s "$out" "$target"
+			info "linked: $target"
+		fi
+	done
+}
+
+cmd_vault() {
+	need_repo
+	local pass new n
+
+	case ${1:-} in
+	--init)
+		need_gpg
+		if [ -n "$(vault_pass)" ]; then
+			info "This Mac already knows a passphrase."
+			info "To change it everywhere:  bier vault --passphrase"
+			info ""
+		fi
+		info "The passphrase is the only thing protecting the vault, and"
+		info "nothing can recover it. Keep a copy somewhere that is not"
+		info "these Macs -- your password manager, or a note in a drawer."
+		info "Do that first; this is not the place to invent one."
+		info ""
+		pass=$(vault_ask "Passphrase: ")
+		vault_pass_works "$pass" ||
+			die "that passphrase does not open the vault that is already there"
+		vault_pass_store "$pass"
+		info "Remembered on this Mac."
+		return 0
+		;;
+	--passphrase)
+		need_gpg
+		pass=$(vault_pass)
+		[ -n "$pass" ] || die "no passphrase set yet -- bier vault --init"
+		new=$(vault_ask "New passphrase: ")
+		vault_reseal "$pass" "$new"
+		vault_pass_store "$new"
+		info "Changed, and everything re-encrypted."
+		info "Every other Mac will ask for the new one on its next sync."
+		return 0
+		;;
+	group)
+		shift
+		cmd_group "$@"
+		return 0
+		;;
+	add)
+		need_gpg
+		shift
+		local scope=""
+		case ${1:-} in
+		--for)
+			scope=${2:-}
+			[ -n "$scope" ] || die "--for what? a group or a device name"
+			shift 2
+			;;
+		esac
+		[ $# -gt 0 ] || die "which file? bier vault add ~/.zshrc"
+		for pass in "$@"; do vault_add "$pass" "$scope"; done
+		return 0
+		;;
+	--unlink)
+		# Every link becomes the file it points at. The vault and the
+		# safe are left alone: the other Macs still need them, and this
+		# is what uninstalling does before it tidies up.
+		local rel target n=0
+		[ -d "$VAULT" ] || return 0
+		while IFS= read -r rel; do
+			[ -n "$rel" ] || continue
+			vault_is_meta "$rel" && continue
+			target=$(vault_target "$rel")
+			[ -L "$target" ] || continue
+			rm -f "$target"
+			cp "$VAULT/$rel" "$target"
+			n=$((n + 1))
+		done <<EOF
+$([ ! -d "$VAULT" ] || find "$VAULT" -type f -print | sed -e "s#^$VAULT/##")
+EOF
+		info "$(count_word "$n") turned back into plain files."
+		return 0
+		;;
+	seal)
+		vault_seal
+		return 0
+		;;
+	open | --restore)
+		vault_open
+		return 0
+		;;
+	drop)
+		shift
+		[ $# -gt 0 ] || die "which file? bier vault drop ~/.zshrc"
+		for pass in "$@"; do vault_drop "$pass"; done
+		return 0
+		;;
+	forget)
+		shift
+		[ $# -gt 0 ] || die "which file? bier vault forget ~/.zshrc"
+		for pass in "$@"; do vault_forget "$pass"; done
+		return 0
+		;;
+	esac
+
+	n=0
+	[ ! -d "$SAFE_DIR" ] || n=$(find "$SAFE_DIR" -name '*.gpg' | wc -l | tr -d ' ')
+	info "Vault:  $VAULT"
+	info "Safe:   $SAFE_DIR"
+	info "  $(count_word "$n") in it"
+	if [ -n "$(vault_pass)" ]; then
+		info "  the passphrase is remembered on this Mac"
+	else
+		info "  no passphrase yet -- bier vault --init"
+	fi
+}
+
+# Re-encrypts everything from one passphrase to another. Writes to a
+# temporary place first: a passphrase change that dies halfway through
+# would otherwise leave half the safe unreadable with either of them.
+vault_reseal() {
+	local old=$1 new=$2 f plain staging
+	[ -d "$SAFE_DIR" ] || return 0
+	ls "$SAFE_DIR"/*.gpg >/dev/null 2>&1 || return 0
+
+	staging=$(mktemp -d "${TMPDIR:-/tmp}/bier-reseal.XXXXXX")
+	for f in "$SAFE_DIR"/*.gpg; do
+		plain=$(tmpfile)
+		vault_decrypt "$f" "$old" "$plain" ||
+			die "the remembered passphrase does not open $(basename "$f") -- nothing changed"
+		vault_encrypt "$plain" "$new" "$staging/$(basename "$f")"
+	done
+	for f in "$staging"/*.gpg; do
+		mv "$f" "$SAFE_DIR/$(basename "$f")"
+	done
+	rmdir "$staging" 2>/dev/null || true
+}
+
+# Takes a Mac out of the fleet: the one that broke, was lost, or was
+# wiped before anybody thought of uninstalling. Run it on a Mac that is
+# still there.
+#
+# Its own files under @<name>/ are reported but not deleted. Throwing
+# somebody's files away as a side effect of tidying up the device list
+# would be a surprise, and the encrypted copies cost nothing to keep.
+cmd_retire() {
+	need_repo
+	local name=${1:-} own answer g
+	if [ "$name" = "--self" ]; then
+		# What install.sh --uninstall calls. Taking yourself out is
+		# allowed; doing it by name from the same Mac is a slip.
+		name=$HOST
+	else
+		[ -n "$name" ] || die "which Mac? bier retire mini"
+		[ "$name" != "$HOST" ] ||
+			die "that is this Mac. To take it out from here:
+     $ROOT/install.sh --uninstall"
+	fi
+	[ -f "$BREW_DIR/$name" ] ||
+		die "no Mac called $name has ever recorded anything"
+
+	info "$name has $(count_word "$(entries "$BREW_DIR/$name" | wc -l | tr -d ' ')") of its own."
+	for g in $(group_list); do
+		# No "&&" here: when the Mac is in no group at all the compound
+		# returns 1 and set -e takes the whole command down with it.
+		if printf '%s\n' $(group_members "$g") | grep -qx "$name"; then
+			info "  in group $g"
+		fi
+	done
+	own=0
+	[ ! -d "$SAFE_DIR/@$name" ] ||
+		own=$(find "$SAFE_DIR/@$name" -name '*.gpg' | wc -l | tr -d ' ')
+	[ "$own" = 0 ] ||
+		info "  $(count_word "$own") in the vault only for it — those stay"
+
+	printf 'Take %s out? [y/N] ' "$name"
+	read -r answer || answer=""
+	case $answer in
+	j | J | y | Y) ;;
+	*)
+		info "Cancelled."
+		return 0
+		;;
+	esac
+
+	rm -f "$BREW_DIR/$name"
+	if [ -f "$VAULT/.groups" ]; then
+		local g rest
+		for g in $(group_list); do
+			rest=$(printf '%s\n' $(group_members "$g") | grep -vx "$name" | tr '\n' ' ')
+			rest=${rest% }
+			sed -i '' -E "/^[[:space:]]*$g[[:space:]]*=/d" "$VAULT/.groups"
+			[ -z "$rest" ] || printf '%s = %s\n' "$g" "$rest" >>"$VAULT/.groups"
+		done
+		vault_seal
+	fi
+	publish "$HOST: $name taken out"
+	info "$name is out. Its inventory is gone; the git history still has it."
 }
 
 # Releases can be verified against a key that is published somewhere
@@ -1286,7 +1894,9 @@ cmd_push() {
 cmd_sync() {
 	need_repo
 	cmd_dump
+	vault_seal
 	sync_data "${1:-$HOST: inventory updated}"
+	vault_open
 }
 
 # Until 0.12.0 "update" did both jobs under one word, and nobody could say
@@ -1340,9 +1950,9 @@ cmd_state() {
 	counts=$(git -C "$DATA" rev-list --left-right --count HEAD...@{u} 2>/dev/null || echo "0	0")
 	ahead=$(printf '%s' "$counts" | awk '{print $1}')
 	behind=$(printf '%s' "$counts" | awk '{print $2}')
-	# Only the Brewfiles here too: editing the README is no reason to
-	# empty the glass.
-	if [ -n "$(git -C "$DATA" status --porcelain -- Brewfiles)" ]; then
+	# The Brewfiles and the safe: editing the README is no reason to
+	# empty the glass, but an unsynced vault file is.
+	if [ -n "$(git -C "$DATA" status --porcelain -- Brewfiles Safe)" ]; then
 		dirty=1
 	else
 		dirty=0
@@ -1438,6 +2048,10 @@ bier — keeps Brewfiles in sync across Macs
   bier push [message]     commit the Brewfiles and push them
   bier sync [message]     record, fetch, merge, push — the everyday command
   bier upgrade [--force]  install a newer release of bier itself
+  bier retire <name>      take a Mac out of the fleet — the one that
+                          broke, or was wiped without uninstalling
+  bier vault [--init]     files that are not Brewfiles, encrypted
+       [--passphrase]     with one passphrase all your Macs share
   bier trust [url]        verify releases against a key published
                           elsewhere; no url shows what is trusted
   bier config             show which settings are in effect
@@ -1456,7 +2070,8 @@ install.sh sets up both.
 The config lives in ~/.config/bier/config and is created on first run.
 It knows "root", "data" and "host" (the device name).
 
-Environment: BIER_CONFIG (a different config file), BIER_ROOT, BIER_DATA
+Environment: BIER_CONFIG (a different config file), BIER_ROOT, BIER_DATA,
+BIER_VAULT
 and BIER_HOST (override the matching config values for one invocation).
 EOF
 }
@@ -1494,6 +2109,8 @@ update) cmd_update ;;
 state) cmd_state "$@" ;;
 config) cmd_config ;;
 trust) cmd_trust "$@" ;;
+vault) cmd_vault "$@" ;;
+retire) cmd_retire "$@" ;;
 version | --version | -V) cmd_version ;;
 help | -h | --help) cmd_help ;;
 *) die "unknown command: $cmd (bier help)" ;;

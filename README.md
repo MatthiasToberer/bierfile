@@ -127,6 +127,40 @@ bier upgrade           # put a newer bier in place
 
 Most of the time you only need the first one.
 
+## Files, not only packages
+
+Packages are half of what makes a Mac yours. The other half is the
+files: `.zshrc`, an editor's configuration, notes you want everywhere.
+
+```sh
+bier vault add ~/.zshrc
+```
+
+The file moves into the vault and a symlink stays behind, so it goes on
+living where the program that reads it expects it. `bier sync` encrypts
+it and uploads it; the next `bier sync` on another Mac decrypts it and
+puts the link there. Editing it on either Mac edits the same file.
+
+Encrypted with gpg, AES-256, under **one passphrase your Macs share**.
+A new Mac needs nothing but that passphrase. The plain files live in
+`~/.bierfilevault`, outside every repository, so nothing can commit
+them by accident.
+
+Not everything belongs on every Mac:
+
+```sh
+bier vault group laptops mini macbook
+bier vault add --for laptops ~/.zshrc
+```
+
+A Mac outside the group still receives the encrypted copy. It simply
+never opens it.
+
+**The passphrase cannot be recovered.** Keep a copy where you keep your
+other passwords, before you put anything in the vault. `Safe/`
+carries an unencrypted note explaining how to get the files back with
+`gpg` alone, without bier.
+
 ## Commands
 
 | Command | what it does |
@@ -144,6 +178,9 @@ Most of the time you only need the first one.
 | `bier uninstall <pkg>` | uninstall and drop from every list |
 | `bier prune` | remove what was deleted on another Mac |
 | `bier push [message]` | commit the lists and upload them |
+| `bier vault add <path>` | take a file or folder into the vault |
+| `bier vault group` | which Macs a vault file is meant for |
+| `bier retire <name>` | take a Mac out of the fleet |
 | `bier trust [url]` | verify releases against a key published elsewhere |
 | `bier config` | show which settings are in effect |
 | `bier version` | version, commit and paths |

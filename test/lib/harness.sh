@@ -103,6 +103,10 @@ world() {
 	git -C "$seed" remote add origin "$WORK/data.git"
 	git -C "$seed" push -q -u origin main
 
+	# See the note in bier(): this has to be a short path.
+	GPGHOME=$(mktemp -d /tmp/biergpg.XXXXXX)
+	chmod 700 "$GPGHOME"
+
 	# --- Code ---
 	seed=$WORK/seed-code
 	mkdir -p "$seed/bin"
@@ -124,6 +128,7 @@ world() {
 			git -C "$d" config user.email "$host@example.com"
 			git -C "$d" config user.name "$host"
 		done
+		mkdir -p "$WORK/home-$host"
 		: >"$WORK/sys-$host"
 		: >"$WORK/.in"
 		mkdir -p "$WORK/config-$host/bier"
@@ -186,8 +191,14 @@ bier() {
 	# data deliberately comes from the config, not from the environment:
 	# otherwise the "no data repository yet" case could not be staged at
 	# all.
+	# A home of its own, or "vault add" would reach into the real one.
+	# GNUPGHOME has to be short: gpg builds its agent socket from it,
+	# and $WORK is deep enough that the path stops fitting.
 	BIER_ROOT=$WORK/code-$host \
 		BIER_HOST=$host \
+		HOME=$WORK/home-$host \
+		GNUPGHOME=$GPGHOME \
+		BIER_VAULT=$WORK/home-$host/.bierfilevault \
 		BIER_TEST_SYSTEM=$WORK/sys-$host \
 		XDG_CONFIG_HOME=$WORK/config-$host \
 		"$WORK/code-$host/bin/bier" "$@" <"$WORK/.in" >"$WORK/.out" 2>&1 || rc=$?

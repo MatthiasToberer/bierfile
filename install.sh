@@ -30,6 +30,7 @@ die() {
 # --yes answers every question with yes. "bier upgrade" relies on that:
 # there a single command has to be enough.
 YES=no
+UNINSTALL=no
 DATA_ARG=""
 prev=""
 for arg in "$@"; do
@@ -38,6 +39,7 @@ for arg in "$@"; do
 	esac
 	case $arg in
 	--yes | -y) YES=yes ;;
+	--uninstall) UNINSTALL=yes ;;
 	--data=*) DATA_ARG=${arg#--data=} ;;
 	esac
 	prev=$arg
@@ -123,11 +125,60 @@ fi
 
 # --- Prerequisites -----------------------------------------------------
 
+if [ "$UNINSTALL" = yes ]; then
+	say "Taking bier off this Mac"
+
+	# The files first. Every link points into the vault, and removing
+	# bier without this would leave a home full of dead links and no
+	# .zshrc at all.
+	if [ -x "$HERE/bin/bier" ]; then
+		"$HERE/bin/bier" vault --unlink 2>/dev/null ||
+			warn "could not put the vault files back — check by hand"
+		if [ -t 0 ]; then
+			"$HERE/bin/bier" retire --self ||
+				warn "this Mac is still listed; take it out elsewhere with 'bier retire'"
+		else
+			warn "not on a terminal — take this Mac out elsewhere with 'bier retire'"
+		fi
+	fi
+
+	TARGET=$(app_target)
+	stop_app && ok "stopped BierMenu"
+	if [ -d "$TARGET" ]; then
+		rm -rf "$TARGET"
+		ok "removed: $TARGET"
+	fi
+	if [ -L "$LINK" ]; then
+		rm -f "$LINK"
+		ok "removed: $LINK"
+	fi
+	security delete-generic-password -s bier-vault -a vault >/dev/null 2>&1 &&
+		ok "the vault passphrase is out of the keychain" || true
+
+	cat <<EOF
+
+   bier is off this Mac. Nothing of yours was deleted:
+
+     the Brewfiles and the safe are still in the data repository
+     the vault files are still where they were, now as plain files
+     $HOME/.config/bier/config is still there
+
+   Remove those by hand if you want them gone.
+
+EOF
+	exit 0
+fi
+
 say "Prerequisites"
 [ "$(uname)" = "Darwin" ] || die "runs on macOS only"
 [ -d "$HERE/.git" ] || die "$HERE is not a git repository — clone it first"
 command -v git >/dev/null 2>&1 || die "git is missing"
 command -v brew >/dev/null 2>&1 || die "Homebrew is missing — see https://brew.sh"
+if ! command -v gpg >/dev/null 2>&1; then
+	ok "gpg is missing — installing gnupg, the vault is encrypted with it"
+	brew install gnupg >/dev/null 2>&1 ||
+		warn "could not install gnupg; 'bier vault' will say so again"
+fi
 command -v swiftc >/dev/null 2>&1 ||
 	die "swiftc is missing — run 'xcode-select --install' and try again"
 ok "macOS, git, Homebrew and swiftc are present"
@@ -265,6 +316,21 @@ if [ ! -f "$DATA/.gitattributes" ]; then
 	git -C "$DATA" add .gitattributes Brewfiles
 	git -C "$DATA" commit -qm "bier: scaffolding" || true
 	ok "scaffolding created in the data repository"
+fi
+
+# --- The vault ---------------------------------------------------------
+
+say "Vault"
+if [ -z "$(find "$DATA/Safe" -name '*.gpg' -type f -print -quit 2>/dev/null)" ]; then
+	ok "nothing in it yet — 'bier vault add ~/.zshrc' puts something there"
+elif "$HERE/bin/bier" vault 2>/dev/null | grep -q 'remembered on this Mac'; then
+	ok "the passphrase is already known here"
+elif [ "$YES" = yes ] || [ ! -t 0 ]; then
+	# --yes cannot invent a passphrase, and guessing is not an option.
+	warn "the vault holds files — run 'bier vault --init' to unlock them"
+else
+	"$HERE/bin/bier" vault --init ||
+		warn "not unlocked; run 'bier vault --init' when you have the passphrase"
 fi
 
 # --- Build and install the app -----------------------------------------

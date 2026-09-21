@@ -61,6 +61,7 @@ bier sync
 
 ```sh
 bier sync             # record here, fetch there — after every install
+bier vault add ~/.zshrc   # a file, not only packages
 bier status           # what differs here?
 bier list             # what do the others have on top?
 bier take             # adopt some of it
@@ -330,7 +331,78 @@ You need that when something ended up in `main` that does not belong
 there. Remember the rule behind it: **anything that does not belong
 everywhere must not be in `main`.**
 
-### Step 5: Getting rid of something
+### Step 5: Files, not only packages
+
+A new Mac with all your programs is still not your Mac. The `.zshrc` is
+missing, the editor knows none of your settings. Those go into the
+vault.
+
+```sh
+bier vault add ~/.zshrc
+```
+
+Look at what happened:
+
+```sh
+ls -l ~/.zshrc
+```
+
+```
+~/.zshrc -> ~/.bierfilevault/dot_zshrc
+```
+
+The file moved and a link stayed behind. zsh follows it and notices
+nothing; you edit `~/.zshrc` as before. The first `bier sync` asks for a
+passphrase:
+
+```
+The passphrase is the only thing protecting the vault, and
+nothing can recover it. Keep a copy somewhere that is not
+these Macs — your password manager, or a note in a drawer.
+Do that first; this is not the place to invent one.
+
+Passphrase:
+```
+
+Take that seriously. Lose it and the vault is scrap paper.
+
+On the next Mac, `bier sync` asks for the same passphrase once, and then
+`~/.zshrc` is there. Change it on either Mac, sync, and the other one
+has the change. It is the same file, not a copy.
+
+Whole folders work as well:
+
+```sh
+bier vault add ~/.config/nvim
+```
+
+**When a file is not for everybody:**
+
+```sh
+bier vault group laptops mini macbook
+bier vault add --for laptops ~/.zshrc
+```
+
+The mini tower is not in `laptops` and never opens the file — it does
+receive the encrypted copy, it just has no reason to look inside.
+
+**Taking something back out:**
+
+```sh
+bier vault forget ~/.zshrc    the real file returns, it stays on this Mac
+bier vault drop ~/.zshrc      gone everywhere, after asking
+```
+
+Those two are easy to mix up and the consequences differ, exactly like
+`bier dump` and `bier prune`.
+
+**If a link ever points nowhere** — you deleted the vault folder, or a
+program replaced the link with a file — `bier status` says so and
+`bier vault --restore` puts it back. And if bier is gone altogether,
+`Safe/README-recovery.txt` explains how to get everything back with
+`gpg` and nothing else.
+
+### Step 6: Getting rid of something
 
 Do not just type `brew uninstall` — the program would stay on the list,
 and the next `bier install` brings it back. Instead:

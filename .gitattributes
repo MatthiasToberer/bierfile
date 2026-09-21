@@ -6,3 +6,8 @@
 # there, and the test harness builds its world with it. Here in the
 # program repository there are no Brewfiles, so it does nothing.
 Brewfiles/* merge=union
+
+# Encrypted, so there are no lines to merge. Let git call them binary
+# and report a conflict honestly rather than glue two ciphertexts
+# together -- that was measured, and it ruins the file silently.
+Safe/** binary -merge

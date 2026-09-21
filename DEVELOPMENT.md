@@ -293,6 +293,61 @@ git -c gpg.format=ssh -c user.signingkey=~/.ssh/bier_signing.pub \
 `v0.14.0` carries a GPG signature from a first attempt. Nothing reads
 it.
 
+## The vault
+
+Three decisions hold it up. Each of them was measured, and each would
+look like an arbitrary complication to whoever tries to simplify it.
+
+**The Brewfiles stay readable.** Encrypting them was tried. A union
+merge then glues two ciphertexts together, git reports `Auto-merging`
+and exits 0, and the file is ruined without a word. And `was_tracked`
+searches the history with `git log -S`, which reads the stored blob --
+with ciphertext it finds nothing, and "removed elsewhere" stops working.
+A transparent clean/smudge filter does not help: git works on what is
+stored, not on what the working tree shows.
+
+**The plain files live outside every repository**, in
+`~/.bierfilevault`. A `.gitignore` is a rule somebody can get wrong; a
+different directory is a fact. Only `Safe/` in the data repository
+travels.
+
+**Symmetric, with one passphrase, not a key per Mac.** Public keys would
+mean an existing Mac has to re-encrypt for a new one before it can read
+anything -- you cannot encrypt to a key you do not have yet. Symmetric
+removes that: a new Mac needs the passphrase and nothing else. The price
+is one shared secret, and losing a Mac means changing it everywhere.
+`age` was the obvious candidate and does not fit: its passphrase mode is
+interactive by design and cannot be scripted. gpg in `--batch` mode
+with `--passphrase-fd` can, and gnupg is already there.
+
+The passphrase lives in that Mac's own keychain -- a working copy, not a
+place to keep it. `security` cannot create iCloud-synchronised items, so
+syncing it would need a signed Swift helper, and BierMenu is signed ad
+hoc.
+
+**At the destination there is a symlink.** Copying would mean inventing
+a semantic bier does not otherwise have for files: does editing
+`~/.zshrc` get picked up, or overwritten? With one file the question
+does not arise. Five tools were checked for whether writing through a
+link keeps it -- vim, `>>`, `sed -i`, python, `cp` -- and all five do.
+chezmoi copies because templates have to be rendered first, and we have
+no templates.
+
+**A scope is a directory**, `@laptops/dot_zshrc`, so the path says who a
+file is for and there is no second list to keep in step. A device name
+is a group of one. `.groups` is decrypted before anything else, because
+everything after it asks whether it belongs here and `find` gives no
+order worth relying on. `vault_seal` never deletes: a Mac legitimately
+does not hold the other groups' files.
+
+**Uninstalling puts the real files back first.** Every link points into
+the vault, so tidying up without that step leaves a home full of dead
+links and no `.zshrc` -- a data loss with advance notice.
+
+`Safe/README-recovery.txt` is unencrypted and says how to get everything
+back with `gpg` alone. The passphrase is the one thing nothing can
+recover, and `bier vault --init` says so before it takes one.
+
 ## Looking at the icon
 
 `app/preview-icon.swift` writes both resting states, six frames of the

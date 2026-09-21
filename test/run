@@ -62,7 +62,7 @@ for case_file in "$REPO"/test/cases/*.sh; do
 		} 2>&1
 	)
 	rc=$?
-	rm -rf "$WORK"
+	rm -rf "$WORK" ${GPGHOME:+"$GPGHOME"}
 
 	if [ "$rc" = 0 ]; then
 		printf '  ok    %s — %s\n' "$name" "$title"
