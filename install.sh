@@ -273,10 +273,10 @@ if [ "$DRY" = yes ]; then
 	else
 		ok "data       would ask where your Brewfiles live"
 	fi
-	if [ -n "$(find "${d:-/nonexistent}/Safe" -name '*.gpg' -print -quit 2>/dev/null)" ]; then
-		ok "vault      holds files — would ask for the passphrase"
+	if "$HERE/bin/bier" vault 2>/dev/null | grep -q 'remembered on this Mac'; then
+		ok "vault      create the folder; the passphrase is already known"
 	else
-		ok "vault      empty — nothing to ask"
+		ok "vault      create the folder and ask for a passphrase"
 	fi
 	v=$(sed -n 's/^BIER_VERSION=//p' "$HERE/bin/bier" | head -1)
 	if [ -d "$(app_target)" ]; then
@@ -454,16 +454,52 @@ fi
 # --- The vault ---------------------------------------------------------
 
 say "Vault"
-if [ -z "$(find "$DATA/Safe" -name '*.gpg' -type f -print -quit 2>/dev/null)" ]; then
-	ok "nothing in it yet — 'bier vault add ~/.zshrc' puts something there"
-elif "$HERE/bin/bier" vault 2>/dev/null | grep -q 'remembered on this Mac'; then
+
+VAULTDIR=$(sed -nE 's/^[[:space:]]*vault[[:space:]]*=[[:space:]]*(.*)$/\1/p' \
+	"$CONFIG" 2>/dev/null | tail -1)
+case ${VAULTDIR:-} in
+"") VAULTDIR=$HOME/.bierfilevault ;;
+"~/"*) VAULTDIR=$HOME/${VAULTDIR#\~/} ;;
+esac
+
+# The folder is made even when nobody uses it yet. A hint pointing at
+# something that does not exist is not a hint, and an empty folder in
+# your home is a question you can ask.
+mkdir -p "$VAULTDIR"
+if [ ! -f "$VAULTDIR/README.txt" ]; then
+	cat >"$VAULTDIR/README.txt" <<NOTE
+This is the vault of "bier". Everything in here travels to your other
+Macs encrypted; the server never sees it in the clear.
+
+Do not put files here by hand. Use:
+
+    bier vault add ~/.zshrc
+    bier vault add ~/.config/nvim
+
+That moves the file in here and leaves a link where it was, so the
+program that reads it still finds it.
+
+    bier vault              what is in it
+    bier vault forget PATH  take it back out, the real file returns
+    bier vault --restore    links and files back after an accident
+
+The encrypted copies live in Safe/ in your data repository, next to a
+note explaining how to open them with gpg alone, without bier.
+NOTE
+fi
+ok "$VAULTDIR"
+
+# The passphrase is asked here and nowhere else. Asking later, on the
+# day somebody first puts a file in, means the setup was never actually
+# finished -- and it is the day they are thinking about something else.
+if "$HERE/bin/bier" vault 2>/dev/null | grep -q 'remembered on this Mac'; then
 	ok "the passphrase is already known here"
 elif [ "$YES" = yes ] || [ ! -t 0 ]; then
 	# --yes cannot invent a passphrase, and guessing is not an option.
-	warn "the vault holds files — run 'bier vault --init' to unlock them"
+	warn "no passphrase yet — run 'bier vault --init' to set one"
 else
 	"$HERE/bin/bier" vault --init ||
-		warn "not unlocked; run 'bier vault --init' when you have the passphrase"
+		warn "not set; run 'bier vault --init' when you are ready"
 fi
 
 # --- Build and install the app -----------------------------------------

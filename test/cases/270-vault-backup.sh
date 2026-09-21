@@ -52,3 +52,15 @@ ln -sf "$WORK/home-macbook/fremdziel" "$WORK/home-macbook/.fremdlink"
 assert_ok bier macbook sync
 assert_contains "$OUT" "somewhere else" "a foreign link has to be reported"
 assert_eq "fremd" "$(cat "$WORK/home-macbook/.fremdlink")" "and left as it was"
+
+# The README install.sh leaves in the vault explains the folder. It is
+# the same everywhere and must not travel, or it turns up as
+# ~/README.txt on every Mac.
+printf 'erklaerung\n' >"$WORK/home-mini/.bierfilevault/README.txt"
+assert_ok bier mini sync
+assert_eq "no" \
+	"$([ -e "$WORK/mini/Safe/README.txt.gpg" ] && echo yes || echo no)" \
+	"the README must not be sealed"
+assert_ok bier macbook sync
+assert_eq "no" "$([ -e "$WORK/home-macbook/README.txt" ] && echo yes || echo no)" \
+	"and must not be linked into anyone's home"

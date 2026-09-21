@@ -420,8 +420,10 @@ ls -l ~/.zshrc
 ```
 
 The file moved and a link stayed behind. zsh follows it and notices
-nothing; you edit `~/.zshrc` as before. The first `bier sync` asks for a
-passphrase:
+nothing; you edit `~/.zshrc` as before.
+
+The passphrase was asked for during the installation, so nothing
+interrupts you here. What you saw back then was this:
 
 ```
 The passphrase is the only thing protecting the vault, and

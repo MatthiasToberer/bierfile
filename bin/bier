@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.20.0
+BIER_VERSION=0.21.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -1292,6 +1292,12 @@ vault_strip_scope() {
 }
 
 vault_is_meta() {
+	# bier's own files in the vault: .groups, and the README that
+	# install.sh leaves there. Without the second one it would travel
+	# like any other file and turn up as ~/README.txt on every Mac.
+	case $1 in
+	README.txt) return 0 ;;
+	esac
 	case $(basename "$1") in
 	.*) return 0 ;;
 	esac
@@ -1556,6 +1562,9 @@ vault_seal() {
 
 	find "$VAULT" -type f -print | while IFS= read -r f; do
 		rel=${f#"$VAULT"/}
+		# The README explains the folder to whoever opens it. It is the
+		# same on every Mac and has no business travelling.
+		[ "$rel" != "README.txt" ] || continue
 		enc=$SAFE_DIR/$rel.gpg
 		mkdir -p "$(dirname "$enc")"
 		if [ -f "$enc" ]; then
