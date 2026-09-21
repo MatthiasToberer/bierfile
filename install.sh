@@ -8,7 +8,8 @@
 #   ~/bierfile/install.sh
 #
 #   ./install.sh --data git@your-server:bierdata.git   without asking
-#   ./install.sh --uninstall   removes the symlink and the app again
+#   ./install.sh --dry-run     says what it would do, changes nothing
+#   ./install.sh --uninstall   takes bier off this Mac
 #
 # Running it more than once is harmless: it replaces what is there.
 
@@ -31,6 +32,7 @@ die() {
 # there a single command has to be enough.
 YES=no
 UNINSTALL=no
+DRY=no
 DATA_ARG=""
 prev=""
 for arg in "$@"; do
@@ -40,6 +42,7 @@ for arg in "$@"; do
 	case $arg in
 	--yes | -y) YES=yes ;;
 	--uninstall) UNINSTALL=yes ;;
+	--dry-run | -n) DRY=yes ;;
 	--data=*) DATA_ARG=${arg#--data=} ;;
 	esac
 	prev=$arg
@@ -91,39 +94,31 @@ stop_app() {
 	return 0
 }
 
-# --- Removal -----------------------------------------------------------
+# --- Prerequisites -----------------------------------------------------
 
-if [ "${1:-}" = "--uninstall" ]; then
-	say "Stopping and removing BierMenu"
-	stop_app || true
-	for candidate in /Applications/BierMenu.app "$HOME/Applications/BierMenu.app"; do
-		if [ -d "$candidate" ]; then
-			rm -rf "$candidate"
-			ok "removed: $candidate"
-		fi
-	done
-
-	say "Removing the symlink"
-	if [ -L "$LINK" ]; then
-		rm -f "$LINK"
-		ok "removed: $LINK"
-	else
-		ok "no symlink at $LINK"
+if [ "$UNINSTALL" = yes ] && [ "$DRY" = yes ]; then
+	say "What --uninstall would do"
+	n=0
+	if [ -x "$HERE/bin/bier" ]; then
+		n=$("$HERE/bin/bier" vault 2>/dev/null |
+			sed -n 's/^ *\([0-9]*\) entries in it/\1/p')
 	fi
+	ok "turn ${n:-0} vault files back into plain files"
+	ok "take $(hostname -s) out of Brewfiles/ and out of every group, and push"
+	[ ! -d "$(app_target)" ] || ok "remove $(app_target)"
+	[ ! -L "$LINK" ] || ok "remove $LINK"
+	ok "remove the vault passphrase from the keychain"
+	cat <<EOF
 
-	say "Config"
-	if [ -f "$CONFIG" ] && ask "delete $CONFIG as well?"; then
-		rm -f "$CONFIG"
-		ok "deleted"
-	else
-		ok "left in place: $CONFIG"
-	fi
+   It would ask whether to delete $CONFIG.
 
-	printf '\nThe repository at %s is left untouched.\n\n' "$HERE"
+   It would NOT touch the data repository or the vault files themselves.
+
+   Nothing has been changed.
+
+EOF
 	exit 0
 fi
-
-# --- Prerequisites -----------------------------------------------------
 
 if [ "$UNINSTALL" = yes ]; then
 	say "Taking bier off this Mac"
@@ -142,18 +137,23 @@ if [ "$UNINSTALL" = yes ]; then
 		fi
 	fi
 
-	TARGET=$(app_target)
-	stop_app && ok "stopped BierMenu"
-	if [ -d "$TARGET" ]; then
-		rm -rf "$TARGET"
-		ok "removed: $TARGET"
-	fi
+	stop_app && ok "stopped BierMenu" || true
+	for candidate in /Applications/BierMenu.app "$HOME/Applications/BierMenu.app"; do
+		if [ -d "$candidate" ]; then
+			rm -rf "$candidate"
+			ok "removed: $candidate"
+		fi
+	done
 	if [ -L "$LINK" ]; then
 		rm -f "$LINK"
 		ok "removed: $LINK"
 	fi
 	security delete-generic-password -s bier-vault -a vault >/dev/null 2>&1 &&
 		ok "the vault passphrase is out of the keychain" || true
+	if [ -f "$CONFIG" ] && ask "delete $CONFIG as well?"; then
+		rm -f "$CONFIG"
+		ok "deleted: $CONFIG"
+	fi
 
 	cat <<EOF
 
@@ -205,6 +205,49 @@ fi
 if [ "$MISSING" -gt 0 ]; then
 	die "$MISSING of them are missing. Install them with the lines above,
      then run $0 again. Nothing has been changed so far."
+fi
+
+if [ "$DRY" = yes ]; then
+	say "What it would do"
+	if [ -L "$LINK" ] && [ "$(readlink "$LINK")" = "$HERE/bin/bier" ]; then
+		ok "link       $LINK — already correct"
+	else
+		ok "link       $LINK -> $HERE/bin/bier"
+	fi
+	if [ "$(git -C "$HERE" config core.hooksPath 2>/dev/null)" = ".githooks" ]; then
+		ok "hook       pre-push — already set"
+	else
+		ok "hook       pre-push, so code only goes out with green tests"
+	fi
+	if [ -f "$CONFIG" ]; then
+		ok "config     $CONFIG — exists, kept"
+	else
+		ok "config     $CONFIG — would be created"
+	fi
+	d=$(sed -nE 's/^[[:space:]]*data[[:space:]]*=[[:space:]]*(.*)$/\1/p' "$CONFIG" 2>/dev/null | tail -1)
+	if [ -n "$d" ] && [ -d "$d/.git" ]; then
+		ok "data       $d — a git repository, kept"
+	else
+		ok "data       would ask where your Brewfiles live"
+	fi
+	if [ -n "$(find "${d:-/nonexistent}/Safe" -name '*.gpg' -print -quit 2>/dev/null)" ]; then
+		ok "vault      holds files — would ask for the passphrase"
+	else
+		ok "vault      empty — nothing to ask"
+	fi
+	v=$(sed -n 's/^BIER_VERSION=//p' "$HERE/bin/bier" | head -1)
+	if [ -d "$(app_target)" ]; then
+		ok "app        build $v and replace $(app_target)"
+	else
+		ok "app        build $v and install it"
+	fi
+	ok "inventory  bier dump, then ask whether to push"
+	cat <<EOF
+
+   Nothing has been changed. Leave out --dry-run to do it.
+
+EOF
+	exit 0
 fi
 
 # --- bier onto the PATH ------------------------------------------------
