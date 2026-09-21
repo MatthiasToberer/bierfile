@@ -435,7 +435,17 @@ Passphrase:
 Take that seriously. Lose it and the vault is scrap paper.
 
 On the next Mac, `bier sync` asks for the same passphrase once, and then
-`~/.zshrc` is there. Change it on either Mac, sync, and the other one
+`~/.zshrc` is there. That Mac had one of its own, of course — it is not
+thrown away:
+
+```
+kept: ~/.zshrc.backup
+linked: ~/.zshrc
+```
+
+If the two were identical there is nothing to save, and no backup is
+made. If `~/.zshrc` was already a link to somewhere else, bier leaves it
+alone and says so. Change it on either Mac, sync, and the other one
 has the change. It is the same file, not a copy.
 
 Whole folders work as well:

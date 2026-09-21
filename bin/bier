@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.19.3
+BIER_VERSION=0.20.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -1493,7 +1493,51 @@ files.
 NOTE
 }
 
-# vault -> Safe, encrypting only what really changed. gpg writes
+# Puts the link at its destination. Four cases, and only one of them
+# used to be handled:
+#
+#   nothing there      link it
+#   our own link       done already
+#   a plain file       keep it as .backup, then link
+#   somebody's link    leave it alone and say so
+#
+# The third is the normal case on the second Mac -- every Mac has a
+# .zshrc -- and it used to mean nothing happened at all: no link, no
+# word, and the file sitting decrypted in the vault where nobody looks.
+vault_link() {
+	local src=$1 target=$2 backup n
+
+	if [ -L "$target" ]; then
+		[ "$(readlink "$target")" != "$src" ] || return 0
+		info "left alone: $target is a link to somewhere else"
+		return 0
+	fi
+
+	mkdir -p "$(dirname "$target")"
+
+	if [ -e "$target" ]; then
+		if cmp -s "$target" "$src"; then
+			# Identical, so there is nothing a backup could save.
+			rm -f "$target"
+			ln -s "$src" "$target"
+			info "linked: $target (was the same file)"
+			return 0
+		fi
+		backup=$target.backup
+		n=2
+		while [ -e "$backup" ]; do
+			backup=$target.backup.$n
+			n=$((n + 1))
+		done
+		mv "$target" "$backup"
+		info "kept: $backup"
+	fi
+
+	ln -s "$src" "$target"
+	info "linked: $target"
+}
+
+# vault -> Safe, encrypting only what really changed.# vault -> Safe, encrypting only what really changed. gpg writes
 # different bytes every time, so re-encrypting everything would make a
 # commit out of every single run.
 vault_seal() {
@@ -1568,11 +1612,7 @@ vault_open() {
 		# bier's own files have no home to be linked into.
 		vault_is_meta "$rel" && continue
 		target=$(vault_target "$rel")
-		if [ ! -e "$target" ] && [ ! -L "$target" ]; then
-			mkdir -p "$(dirname "$target")"
-			ln -s "$out" "$target"
-			info "linked: $target"
-		fi
+		vault_link "$out" "$target"
 	done
 }
 
