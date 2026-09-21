@@ -261,13 +261,36 @@ worth stating rather than papering over.
 The repository is writable by its owner. Anything from anyone else
 arrives as a pull request and is read before it is merged.
 
-Signing was built and taken out again. A signature only helps when the
-verifier insists on one particular key — and insisting locks out
-everyone who has never imported it, which is every stranger who ever
-cloned the repository. Not insisting checks nothing. What was left was
-the same trust boundary plus code implying otherwise, so it went.
+`bier trust` narrows that, for whoever wants it:
 
-`v0.14.0` still carries a signature from that attempt. Nothing reads
+```sh
+bier trust https://example.org/bier/allowed_signers
+```
+
+bier fetches the file once, prints the fingerprints, and remembers it in
+`~/.config/bier/`. From then on `bier upgrade` installs a release only
+when it is signed with a key from that file, and refuses one signed by
+somebody else — or by nobody.
+
+The point is **where the key comes from**. It is published on a host
+that is not the one serving the code, so taking over the repository does
+not hand anyone the key, and it would have had to happen before the key
+was ever fetched. Fetching alone proves nothing: compare the fingerprint
+against one you were given some other way.
+
+Nothing is remembered by default, and then nothing is checked. An
+earlier attempt got this wrong and refused to upgrade whenever a key was
+missing, which strands every clone that never asked for any of this.
+
+Releasing then needs the key in the agent and git told to use it:
+
+```sh
+ssh-add ~/.ssh/bier_signing
+git -c gpg.format=ssh -c user.signingkey=~/.ssh/bier_signing.pub \
+    tag -s v0.16.0 -m "…"
+```
+
+`v0.14.0` carries a GPG signature from a first attempt. Nothing reads
 it.
 
 ## Looking at the icon

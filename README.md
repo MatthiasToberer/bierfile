@@ -144,6 +144,7 @@ Most of the time you only need the first one.
 | `bier uninstall <pkg>` | uninstall and drop from every list |
 | `bier prune` | remove what was deleted on another Mac |
 | `bier push [message]` | commit the lists and upload them |
+| `bier trust [url]` | verify releases against a key published elsewhere |
 | `bier config` | show which settings are in effect |
 | `bier version` | version, commit and paths |
 | `bier help` | the same overview in the terminal |

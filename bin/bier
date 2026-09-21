@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.15.0
+BIER_VERSION=0.16.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -110,6 +110,11 @@ esac
 # The one exception is an older setup where code and data lived together;
 # that is recognisable by the Brewfiles folder, which a fresh clone never
 # has.
+# Where a remembered signing key lives, next to the config that names
+# where it came from.
+SIGNERS_FILE=$(dirname "$CONFIG_FILE")/allowed_signers
+SIGNERS_URL_FILE=$SIGNERS_FILE.url
+
 DATA=${BIER_DATA:-$(config_get data)}
 if [ -z "$DATA" ] && [ -d "$ROOT/Brewfiles" ]; then
 	DATA=$ROOT
@@ -1137,6 +1142,93 @@ check_code() {
 	return 0
 }
 
+# Releases can be verified against a key that is published somewhere
+# other than the code. Fetching it once and remembering it is the whole
+# trick: whoever takes over the code server has to have taken over that
+# other host as well, and before the key was ever fetched.
+#
+# Nothing is remembered by default, and then nothing is checked. That is
+# on purpose. Insisting on a key that a fresh clone has no way of having
+# would strand every installation that never asked for this.
+cmd_trust() {
+	local url=${1:-} tmp line key fp
+
+	case $url in
+	--forget)
+		rm -f "$SIGNERS_FILE" "$SIGNERS_URL_FILE"
+		info "Forgotten. Releases are no longer verified."
+		return 0
+		;;
+	"")
+		if [ -s "$SIGNERS_FILE" ]; then
+			info "Releases are verified against:"
+			while IFS= read -r line; do
+				[ -n "$line" ] || continue
+				key=$(tmpfile)
+				printf '%s\n' "$line" | cut -d' ' -f2- >"$key"
+				info "  $(ssh-keygen -l -f "$key" 2>/dev/null || printf '%s' "$line")"
+			done <"$SIGNERS_FILE"
+			info ""
+			info "Fetched from: $(cat "$SIGNERS_URL_FILE" 2>/dev/null || echo '?')"
+			info "Stop:         bier trust --forget"
+		else
+			info "No key remembered, so releases are not verified."
+			info "  bier trust <url>   fetch one and remember it"
+		fi
+		return 0
+		;;
+	esac
+
+	tmp=$(tmpfile)
+	curl -fsSL --max-time 20 "$url" >"$tmp" ||
+		die "could not fetch $url"
+	[ -s "$tmp" ] || die "$url is empty"
+
+	# Every line has to be a key, or this is not the file we wanted —
+	# a login page returns 200 just as happily as a key does.
+	info "From $url:"
+	while IFS= read -r line; do
+		[ -n "$line" ] || continue
+		key=$(tmpfile)
+		printf '%s\n' "$line" | cut -d' ' -f2- >"$key"
+		fp=$(ssh-keygen -l -f "$key" 2>/dev/null) ||
+			die "$url does not hold signing keys — this line is not one:
+     $line"
+		info "  $fp"
+	done <"$tmp"
+
+	mkdir -p "$(dirname "$SIGNERS_FILE")"
+	cp "$tmp" "$SIGNERS_FILE"
+	printf '%s\n' "$url" >"$SIGNERS_URL_FILE"
+	info ""
+	info "Remembered. Compare the fingerprint above with the one you were"
+	info "given elsewhere — fetching it proves nothing on its own."
+	info "From now on bier upgrade only installs releases signed with it."
+}
+
+# Checking a tag out means running its code straight afterwards, so the
+# signature is looked at first — but only when a key was remembered.
+check_signature() {
+	local tag=$1
+
+	if [ ! -s "$SIGNERS_FILE" ]; then
+		info "Note: releases are not verified. See bier trust."
+		return 0
+	fi
+
+	git -C "$ROOT" cat-file tag "$tag" 2>/dev/null |
+		grep -q 'BEGIN \(SSH\|PGP\) SIGNATURE' ||
+		die "$tag carries no signature, and this Mac verifies releases.
+     Not upgrading. Give it up with: bier trust --forget"
+
+	git -C "$ROOT" -c gpg.ssh.allowedSignersFile="$SIGNERS_FILE" \
+		verify-tag "$tag" >/dev/null 2>&1 ||
+		die "$tag is not signed with the key this Mac trusts — not upgrading.
+     Somebody may have put a tag on the server who should not have."
+
+	info "Signature on $tag verified."
+}
+
 # Lifts the program itself onto a newer version. Touches no Brewfile —
 # that is what "bier sync" is for. Asks nothing.
 cmd_upgrade() {
@@ -1152,6 +1244,8 @@ cmd_upgrade() {
 		info "Rebuild anyway: bier upgrade --force"
 		return 0
 	fi
+
+	[ -z "$UPGRADE_TAG" ] || check_signature "$UPGRADE_TAG"
 
 	# Nothing newer, but --force was given: rebuild what is here instead
 	# of moving anywhere. Without this a forced rebuild would try to pull
@@ -1344,6 +1438,8 @@ bier — keeps Brewfiles in sync across Macs
   bier push [message]     commit the Brewfiles and push them
   bier sync [message]     record, fetch, merge, push — the everyday command
   bier upgrade [--force]  install a newer release of bier itself
+  bier trust [url]        verify releases against a key published
+                          elsewhere; no url shows what is trusted
   bier config             show which settings are in effect
   bier state [--fetch]    machine-readable state (for the menu bar app)
   bier version            version, commit and the paths in effect
@@ -1397,6 +1493,7 @@ upgrade) cmd_upgrade "$@" ;;
 update) cmd_update ;;
 state) cmd_state "$@" ;;
 config) cmd_config ;;
+trust) cmd_trust "$@" ;;
 version | --version | -V) cmd_version ;;
 help | -h | --help) cmd_help ;;
 *) die "unknown command: $cmd (bier help)" ;;
