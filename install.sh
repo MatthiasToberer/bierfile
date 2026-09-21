@@ -7,7 +7,7 @@
 #   git clone git@github.com:MatthiasToberer/bierfile.git ~/bierfile
 #   ~/bierfile/install.sh
 #
-#   ./install.sh --data git@your-server:bierdata.git   without asking
+#   ./install.sh --data git@your-server:bierfile.git   without asking
 #   ./install.sh --dry-run     says what it would do, changes nothing
 #   ./install.sh --uninstall   takes bier off this Mac
 #
@@ -347,7 +347,7 @@ if [ -z "$DATA" ] || [ ! -d "$DATA/.git" ]; then
 	if [ "$YES" = yes ] || [ ! -t 0 ]; then
 		die "The repository for your Brewfiles is missing.
      Create an empty, private git repository and run:
-       $0 --data git@your-server:bierdata.git"
+       $0 --data git@your-server:bierfile.git"
 	fi
 	printf '
    Your Brewfiles need a private repository of their own — they reveal
@@ -357,7 +357,7 @@ if [ -z "$DATA" ] || [ ! -d "$DATA/.git" ]; then
    If you do not have one yet, create it: an empty repository on GitHub
    (set it to private), on a server, or on a NAS.
 
-   Address (e.g. git@github.com:yourname/bierdata.git), empty = cancel
+   Address (e.g. git@github.com:yourname/bierfile.git), empty = cancel
    > '
 	read -r answer || answer=""
 	[ -n "$answer" ] || die "without a data repository bier can do nothing"

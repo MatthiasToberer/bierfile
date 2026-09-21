@@ -94,7 +94,7 @@ address of your private repository, builds the menu bar app and records
 this Mac's inventory. The address can also be passed in:
 
 ```sh
-~/bierfile/install.sh --data git@github.com:yourname/bierdata.git
+~/bierfile/install.sh --data git@github.com:yourname/bierfile.git
 ```
 
 Then, once and only once, set the shared baseline:

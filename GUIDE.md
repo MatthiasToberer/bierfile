@@ -36,8 +36,11 @@ The overview in short form is [README.md](README.md).
 ## The quick round
 
 **You need:** macOS, [Homebrew](https://brew.sh), the Command Line Tools
-(`xcode-select --install`) and an **empty, private git repository** for
-your lists that all Macs can reach over SSH.
+(`xcode-select --install`; if that is refused, from
+[developer.apple.com](https://developer.apple.com/download/all)), an
+**SSH key this Mac's server knows** (`ssh-keygen -t ed25519`, then the
+`.pub` onto the server), and an **empty, private git repository** for
+your lists.
 
 **On the first Mac** — the one whose software should serve as the
 template:
@@ -96,12 +99,62 @@ brew --version
 A version number means all is well. `command not found` means Homebrew is
 still missing.
 
-**The Command Line Tools.** They contain the Swift compiler that builds
-the menu bar app. Once:
+**The Command Line Tools.** They contain git and the Swift compiler that
+builds the menu bar app. Once:
 
 ```sh
 xcode-select --install
 ```
+
+A window appears and asks to install. **If instead it says the software
+is "not currently available from the Software Update server"**, that
+path is closed — it happens on fresh or very new systems. Then fetch
+them by hand from
+[developer.apple.com/download/all](https://developer.apple.com/download/all),
+search for "Command Line Tools", take the one matching your macOS
+version, and install the package. An Apple ID is needed; a free one is
+enough.
+
+Afterwards this has to answer:
+
+```sh
+swiftc --version
+```
+
+**An SSH key for your repository.** A fresh Mac has none, and the server
+has to be told about this one before anything can be fetched from it.
+
+```sh
+ls ~/.ssh/id_ed25519.pub
+```
+
+`No such file` means you have none yet:
+
+```sh
+ssh-keygen -t ed25519 -C "$(hostname -s)"
+```
+
+Press Enter through the questions; a passphrase is optional. Now the
+server has to learn the **public** half — the file ending in `.pub`,
+never the other one:
+
+```sh
+cat ~/.ssh/id_ed25519.pub
+```
+
+On GitHub that text goes into *Settings → SSH and GPG keys → New SSH
+key*. On your own server it goes into `~/.ssh/authorized_keys` of the
+account git logs in as — `ssh-copy-id user@server` does it for you if
+you can log in with a password.
+
+Then check it, before install.sh tries:
+
+```sh
+ssh -T git@github.com          # or: ssh git@your-server
+```
+
+A greeting, or a message about shell access, means it works. `Permission
+denied (publickey)` means the server does not know the key yet.
 
 **A git repository of your own for your lists.** Git is the program
 developers use to keep files in step between machines. `bier` uses it to
@@ -112,7 +165,7 @@ small Linux box on your network, a NAS, or a repository on GitHub.
 **Set it to private.** The lists reveal which software is on your Macs;
 that is nobody else's business. It is also why they do not live in the
 repository of `bier` itself but in your own. Throughout this guide the
-address reads `git@your-server:bierdata.git`; put your own in its place.
+address reads `git@your-server:bierfile.git`; put your own in its place.
 
 ### Step 1: The first device
 
@@ -146,7 +199,7 @@ The setup script. It tells you what it is doing at every step:
 4. **Asks for your private repository** for the inventory lists, clones
    it to `~/bierdata` and creates the basic structure inside. If you have
    the address to hand you can skip the question:
-   `~/bierfile/install.sh --data git@your-server:bierdata.git`
+   `~/bierfile/install.sh --data git@your-server:bierfile.git`
 5. **Creates the configuration** at `~/.config/bier/config`. It holds
    three things: where the program lives (`root`), where your lists live
    (`data`) and what this Mac is called (`host`).
