@@ -172,16 +172,40 @@ fi
 say "Prerequisites"
 [ "$(uname)" = "Darwin" ] || die "runs on macOS only"
 [ -d "$HERE/.git" ] || die "$HERE is not a git repository — clone it first"
-command -v git >/dev/null 2>&1 || die "git is missing"
-command -v brew >/dev/null 2>&1 || die "Homebrew is missing — see https://brew.sh"
-if ! command -v gpg >/dev/null 2>&1; then
-	ok "gpg is missing — installing gnupg, the vault is encrypted with it"
+
+# Everything at once. Stopping at the first missing thing turns a fresh
+# Mac into a guessing game: fix one, run again, learn about the next.
+MISSING=0
+need() {
+	if command -v "$2" >/dev/null 2>&1; then
+		printf '   %-10s ok\n' "$1"
+	else
+		printf '   %-10s MISSING\n' "$1"
+		printf '                %s\n' "$3"
+		MISSING=$((MISSING + 1))
+	fi
+}
+
+need git    git    "comes with the Command Line Tools:  xcode-select --install"
+need swiftc swiftc "comes with the Command Line Tools:  xcode-select --install"
+need brew   brew   "/bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+
+# gpg is not a prerequisite: without a vault nobody needs it, and with
+# Homebrew there it installs itself in a second.
+if command -v gpg >/dev/null 2>&1; then
+	printf '   %-10s ok\n' "gpg"
+elif command -v brew >/dev/null 2>&1; then
+	printf '   %-10s installing it now — the vault is encrypted with it\n' "gpg"
 	brew install gnupg >/dev/null 2>&1 ||
 		warn "could not install gnupg; 'bier vault' will say so again"
+else
+	printf '   %-10s comes along with Homebrew\n' "gpg"
 fi
-command -v swiftc >/dev/null 2>&1 ||
-	die "swiftc is missing — run 'xcode-select --install' and try again"
-ok "macOS, git, Homebrew and swiftc are present"
+
+if [ "$MISSING" -gt 0 ]; then
+	die "$MISSING of them are missing. Install them with the lines above,
+     then run $0 again. Nothing has been changed so far."
+fi
 
 # --- bier onto the PATH ------------------------------------------------
 
