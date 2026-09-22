@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.25.1
+BIER_VERSION=0.26.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -320,9 +320,9 @@ peer_is_self() {
 peer_authorize() {
 	local peer=$1 key=$HOME/.ssh/id_ed25519.pub
 
-	info "Checking SSH to $peer …"
+	info "1/4  Connecting to $peer …"
 	if peer_ssh "$peer" true; then
-		info "SSH to $peer works."
+		info "     SSH access is ready."
 		return 0
 	fi
 
@@ -331,8 +331,7 @@ peer_authorize() {
      Create one once with:
      ssh-keygen -t ed25519"
 
-	info "First connection to $peer."
-	info "Verify its host fingerprint and enter the password for $peer once."
+	info "     First connection: verify the host fingerprint and enter the password once."
 	cat "$key" | ssh -o BatchMode=no -o ConnectTimeout=10 -o StrictHostKeyChecking=ask "$peer" '
 		set -eu
 		umask 077
@@ -346,7 +345,7 @@ peer_authorize() {
 
 	peer_ssh "$peer" true ||
 		die "SSH key authorisation on $peer did not work"
-	info "SSH key authorised for $peer."
+	info "     SSH access is ready."
 }
 
 # --- Helpers -----------------------------------------------------------------
@@ -848,9 +847,18 @@ latest_agent_tag() {
 }
 
 need_agent_release_trust() {
-	[ -s "$AGENT_SIGNERS_FILE" ] && return 0
-	info "First peer: fetching the independent Bierkasten release key …"
-	cmd_peer_trust "$AGENT_TRUST_URL"
+	local output
+	if [ -s "$AGENT_SIGNERS_FILE" ]; then
+		info "2/4  Checking secure release verification …"
+		info "     Release verification is ready."
+		return 0
+	fi
+	info "2/4  Setting up secure release verification …"
+	if ! output=$(cmd_peer_trust "$AGENT_TRUST_URL" 2>&1); then
+		printf '%s\n' "$output" >&2
+		die "could not set up release verification"
+	fi
+	info "     Release verification is ready."
 }
 
 write_agent_launch_agent() {
@@ -881,7 +889,7 @@ cmd_peer_install() {
 	peer_authorize "$peer"
 	need_agent_release_trust
 	tag=$(latest_agent_tag)
-	info "Installing verified Bier agent $tag on $peer …"
+	info "3/4  Installing verified Bier agent $tag …"
 
 	home=$(peer_ssh "$peer" 'printf "%s\n" "$HOME"') ||
 		die "cannot determine the home directory of $peer"
@@ -919,9 +927,10 @@ launchctl bootstrap \"gui/\$(id -u)\" \"\$HOME/Library/LaunchAgents/com.bierkast
 		die "cannot start the Bier agent on $peer"
 
 	network_host=${peer##*@}
+	info "4/4  Checking whether the agent is reachable …"
 	curl -fsS --max-time 5 "http://$network_host:53991/v1/health" |
 		grep -q '"status":"ok"' || die "the Bier agent on $peer did not answer on TCP port 53991"
-	info "Bier agent installed on $peer as $agent and reachable on TCP port 53991."
+	info "Done. $agent is ready on $peer."
 }
 
 # Releases/latest is deliberately resolved only when the user asks. A remote

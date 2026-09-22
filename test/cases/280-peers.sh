@@ -73,17 +73,19 @@ printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest bier-test\n' \
 BIER_TEST_SSH=bootstrap
 export BIER_TEST_SSH
 assert_ok bier mini peer install first.local
-assert_contains "$OUT" 'First connection to first.local.'
-assert_contains "$OUT" 'SSH key authorised for first.local.'
-assert_contains "$OUT" 'First peer: fetching the independent Bierkasten release key'
+assert_contains "$OUT" '1/4  Connecting to first.local'
+assert_contains "$OUT" 'First connection: verify the host fingerprint'
+assert_contains "$OUT" '2/4  Setting up secure release verification'
+assert_contains "$OUT" 'Done. mini is ready on first.local.'
 assert_file_has "$WORK/ssh.args" 'BatchMode=no'
 assert_file_has "$WORK/ssh.args" 'StrictHostKeyChecking=ask'
 assert_file_has "$WORK/ssh.args" 'authorized_keys'
 unset BIER_TEST_SSH
 
 assert_ok bier mini peer install studio.local
-assert_contains "$OUT" 'Installing verified Bier agent v0.2.0 on studio.local'
-assert_contains "$OUT" 'reachable on TCP port 53991'
+assert_contains "$OUT" '3/4  Installing verified Bier agent v0.2.0'
+assert_contains "$OUT" '4/4  Checking whether the agent is reachable'
+assert_contains "$OUT" 'Done. mini is ready on studio.local.'
 assert_file_has "$WORK/scp.args" 'allowed_signers.new'
 assert_file_has "$WORK/scp.args" 'com.bierkasten.agent.plist.new'
 assert_file_has "$WORK/ssh.args" 'fetch --quiet --depth 1 origin'
@@ -93,4 +95,4 @@ unset BIER_AGENT_TRUST_URL
 
 assert_ok bier mini peer upgrade studio.local
 assert_contains "$OUT" 'Updating the Bier agent on studio.local'
-assert_contains "$OUT" 'reachable on TCP port 53991'
+assert_contains "$OUT" 'Done. mini is ready on studio.local.'
