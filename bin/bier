@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.23.0
+BIER_VERSION=0.23.1
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -713,6 +713,7 @@ fetch_rebase() {
 # Commits, fetches and pushes. Even without local changes it syncs,
 # otherwise you miss the commits made on the other device.
 publish() {
+	local branch remote
 	# Only the Brewfiles. "git add -A" would sweep up changes to the
 	# script or the README as well and hide them under an inventory
 	# message — that happened to me exactly once.
@@ -724,6 +725,23 @@ publish() {
 		git -C "$DATA" commit -q -m "$1"
 		info "Commit: $1"
 	fi
+
+	# A freshly created private repository has no branch to pull yet.
+	# Publish the first local branch directly and make it its upstream;
+	# every later call takes the normal fetch/rebase path below.
+	branch=$(git -C "$DATA" branch --show-current)
+	[ -n "$branch" ] || die "the data repository has no current branch"
+	if ! remote=$(git -C "$DATA" ls-remote --heads origin "$branch" 2>&1); then
+		printf '%s\n' "$remote" >&2
+		die "the data server could not be reached"
+	fi
+	if [ -z "$remote" ]; then
+		git -C "$DATA" push --quiet --set-upstream origin "HEAD:$branch" ||
+			die "could not create the first branch on the data server"
+		info "First inventory pushed to origin."
+		return 0
+	fi
+
 	fetch_rebase
 	git -C "$DATA" push --quiet
 	info "In sync with origin."
