@@ -3,7 +3,7 @@
 
 assert_ok bier mini peer
 assert_contains "$OUT" 'bier peer — manage Macs Bier may contact'
-for subcommand in discover add list check remove; do
+for subcommand in discover add list check install remove; do
 	assert_contains "$OUT" "bier peer $subcommand"
 done
 
@@ -50,3 +50,23 @@ assert_file_has "$WORK/dns-sd.args" '-B _bier-agent._tcp local.'
 assert_ok bier mini peer list
 assert_not_contains "$OUT" 'macbook.local'
 unset BIER_PEER_DISCOVER_SECONDS
+
+keys=$WORK/agent-signing
+mkdir -p "$keys" "$WORK/agent-release"
+ssh-keygen -q -t ed25519 -N '' -f "$keys/release"
+printf 'bierkasten-releases %s\n' "$(cat "$keys/release.pub")" >"$keys/allowed_signers"
+assert_ok bier mini trust "file://$keys/allowed_signers"
+
+asset=$WORK/agent-release/bier-agent-darwin-arm64
+printf 'test agent binary\n' >"$asset"
+ssh-keygen -q -Y sign -f "$keys/release" -n bierkasten-release "$asset"
+BIER_AGENT_RELEASE_URL="file://$WORK/agent-release"
+export BIER_AGENT_RELEASE_URL
+assert_ok bier mini peer install studio.local
+assert_contains "$OUT" 'Agent release signature verified.'
+assert_contains "$OUT" 'reachable on TCP port 53991'
+assert_file_has "$WORK/scp.args" 'bier-agent.new'
+assert_file_has "$WORK/scp.args" 'allowed_signers.new'
+assert_file_has "$WORK/scp.args" 'com.bierkasten.agent.plist.new'
+assert_file_has "$WORK/curl.args" 'http://studio.local:53991/v1/health'
+unset BIER_AGENT_RELEASE_URL

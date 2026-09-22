@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# SCP stand-in for peer installation. It proves the installer transfers only
+# prepared files to its fixed remote locations.
+
+set -euo pipefail
+
+printf '%s\n' "$*" >>"${WORK:?WORK is not set}/scp.args"

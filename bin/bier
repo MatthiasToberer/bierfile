@@ -295,6 +295,17 @@ peer_list() {
 	grep -E '^[A-Za-z0-9][A-Za-z0-9._:@-]*$' "$PEERS_FILE" | sort -u
 }
 
+# Every SSH/SCP call in the peer setup path is deliberately non-interactive
+# and refuses unknown host keys. A peer name was checked before it reaches
+# these helpers, so it cannot be interpreted as an option.
+peer_ssh() {
+	ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes "$@"
+}
+
+peer_scp() {
+	scp -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes "$@"
+}
+
 # --- Helpers -----------------------------------------------------------------
 
 # Print the entries of $1 that are not already in $2 — in their original
@@ -763,9 +774,103 @@ cmd_peer_check() {
 	[ $# -eq 1 ] && peer_name_ok "$peer" ||
 		die 'usage: bier peer check <host>'
 	info "Checking SSH to $peer …"
-	ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes \
-		"$peer" true || die "cannot reach $peer over SSH"
+	peer_ssh "$peer" true || die "cannot reach $peer over SSH"
 	info "SSH to $peer works."
+}
+
+agent_asset_for_arch() {
+	case $1 in
+	arm64) printf 'bier-agent-darwin-arm64' ;;
+	x86_64) printf 'bier-agent-darwin-amd64' ;;
+	*) die "unsupported macOS architecture: $1" ;;
+	esac
+}
+
+verify_agent_asset() {
+	local asset=$1 signature=$2
+	[ -s "$SIGNERS_FILE" ] || die "no release key is trusted for the Bier agent.
+
+     First fetch an allowed_signers file that contains the
+     bierkasten-releases principal: bier trust <url>"
+	ssh-keygen -Y verify -f "$SIGNERS_FILE" -I bierkasten-releases \
+		-n bierkasten-release -s "$signature" <"$asset" >/dev/null 2>&1 ||
+		die 'Bier agent asset is not signed by a trusted bierkasten release key'
+}
+
+write_agent_launch_agent() {
+	local path=$1 home=$2 agent=$3
+	cat >"$path" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.bierkasten.agent</string>
+  <key>ProgramArguments</key><array>
+    <string>$home/.local/share/bierkasten/bin/bier-agent</string>
+    <string>serve</string>
+    <string>--agent</string><string>$agent</string>
+    <string>--allowed-signers</string><string>$home/.local/share/bierkasten/allowed_signers</string>
+    <string>--listen</string><string>:53991</string>
+    <string>--state-dir</string><string>$home/.local/share/bierkasten/state</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+</dict></plist>
+EOF
+}
+
+cmd_peer_install() {
+	local peer=${1:-} arch asset signature release home agent plist network_host
+	[ $# -eq 1 ] && peer_name_ok "$peer" ||
+		die 'usage: bier peer install <host>'
+	cmd_peer_check "$peer"
+
+	arch=$(peer_ssh "$peer" uname -m) || die "cannot determine the architecture of $peer"
+	arch=$(printf '%s' "$arch" | tr -d '\r\n')
+	asset=$(agent_asset_for_arch "$arch")
+	release=${BIER_AGENT_RELEASE_URL:-https://github.com/MatthiasToberer/bierkasten/releases/latest/download}
+	signature=$(tmpfile)
+	local binary
+	binary=$(tmpfile)
+	info "Downloading the signed $asset release …"
+	curl -fsSL --max-time 60 "$release/$asset" >"$binary" ||
+		die "could not download $asset"
+	curl -fsSL --max-time 60 "$release/$asset.sig" >"$signature" ||
+		die "could not download $asset.sig"
+	verify_agent_asset "$binary" "$signature"
+	info 'Agent release signature verified.'
+
+	home=$(peer_ssh "$peer" 'printf "%s\n" "$HOME"') ||
+		die "cannot determine the home directory of $peer"
+	home=$(printf '%s' "$home" | tr -d '\r\n')
+	printf '%s\n' "$home" | grep -Eq '^/[A-Za-z0-9._/-]+$' ||
+		die "the home directory reported by $peer is not safe to install into"
+	agent=$(peer_ssh "$peer" hostname -s) || die "cannot determine the agent name of $peer"
+	agent=$(printf '%s' "$agent" | tr -d '\r\n')
+	peer_name_ok "$agent" || die "the agent name reported by $peer is not valid"
+	plist=$(tmpfile)
+	write_agent_launch_agent "$plist" "$home" "$agent"
+
+	peer_ssh "$peer" 'mkdir -p "$HOME/.local/share/bierkasten/bin" "$HOME/Library/LaunchAgents"' ||
+		die "cannot prepare the Bier agent directory on $peer"
+	peer_scp "$binary" "$peer:.local/share/bierkasten/bin/bier-agent.new" ||
+		die "cannot copy the Bier agent to $peer"
+	peer_scp "$SIGNERS_FILE" "$peer:.local/share/bierkasten/allowed_signers.new" ||
+		die "cannot copy the public release keys to $peer"
+	peer_scp "$plist" "$peer:Library/LaunchAgents/com.bierkasten.agent.plist.new" ||
+		die "cannot copy the Bier agent LaunchAgent to $peer"
+	peer_ssh "$peer" 'set -e
+mv "$HOME/.local/share/bierkasten/bin/bier-agent.new" "$HOME/.local/share/bierkasten/bin/bier-agent"
+chmod 700 "$HOME/.local/share/bierkasten/bin/bier-agent"
+mv "$HOME/.local/share/bierkasten/allowed_signers.new" "$HOME/.local/share/bierkasten/allowed_signers"
+mv "$HOME/Library/LaunchAgents/com.bierkasten.agent.plist.new" "$HOME/Library/LaunchAgents/com.bierkasten.agent.plist"
+launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.bierkasten.agent.plist" >/dev/null 2>&1 || true
+launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.bierkasten.agent.plist"' ||
+		die "cannot start the Bier agent on $peer"
+
+	network_host=${peer##*@}
+	curl -fsS --max-time 5 "http://$network_host:53991/v1/health" |
+		grep -q '"status":"ok"' || die "the Bier agent on $peer did not answer on TCP port 53991"
+	info "Bier agent installed on $peer as $agent and reachable on TCP port 53991."
 }
 
 peer_discover_wait() {
@@ -844,6 +949,7 @@ bier peer — manage Macs Bier may contact
   bier peer add <host>    remember a Mac locally
   bier peer list          show remembered Macs
   bier peer check <host>  check safe, non-interactive SSH access
+  bier peer install <host> install a signed Bier agent via SSH
   bier peer remove <host> forget a remembered Mac
 EOF
 }
@@ -860,9 +966,10 @@ cmd_peer() {
 	list) cmd_peer_list "$@" ;;
 	remove | rm) cmd_peer_remove "$@" ;;
 	check) cmd_peer_check "$@" ;;
+	install) cmd_peer_install "$@" ;;
 	discover) cmd_peer_discover "$@" ;;
 	help | -h | --help) cmd_peer_help ;;
-	*) die 'usage: bier peer <discover|add|list|check|remove> [host]' ;;
+	*) die 'usage: bier peer <discover|add|list|check|install|remove> [host]' ;;
 	esac
 }
 

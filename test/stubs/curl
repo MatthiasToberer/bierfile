@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Curl stand-in: local release fixtures remain files, and the post-install
+# health endpoint has a deterministic response.
+
+set -euo pipefail
+
+url=${!#}
+printf '%s\n' "$url" >>"${WORK:?WORK is not set}/curl.args"
+case $url in
+file://*) cat "${url#file://}" ;;
+http://*:53991/v1/health) printf '{"status":"ok","version":"test"}\n' ;;
+*) printf 'curl: unsupported test URL: %s\n' "$url" >&2; exit 22 ;;
+esac

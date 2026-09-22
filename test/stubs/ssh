@@ -4,8 +4,14 @@
 
 set -euo pipefail
 
-printf '%s\n' "$@" >"${WORK:?WORK is not set}/ssh.args"
+printf '%s\n' "$*" >>"${WORK:?WORK is not set}/ssh.args"
 if [ "${BIER_TEST_SSH:-ok}" = fail ]; then
 	printf 'ssh: connection refused\n' >&2
 	exit 255
 fi
+
+case "$*" in
+*'uname -m'*) printf '%s\n' "${BIER_TEST_SSH_ARCH:-arm64}" ;;
+*'printf "%s\n" "$HOME"'*) printf '%s\n' "${BIER_TEST_SSH_HOME:-/Users/bier}" ;;
+*'hostname -s'*) printf '%s\n' "${BIER_TEST_SSH_AGENT:-mini}" ;;
+esac
