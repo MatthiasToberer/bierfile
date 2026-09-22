@@ -758,6 +758,16 @@ cmd_peer_remove() {
 	info "Peer removed: $peer"
 }
 
+cmd_peer_check() {
+	local peer=${1:-}
+	[ $# -eq 1 ] && peer_name_ok "$peer" ||
+		die 'usage: bier peer check <host>'
+	info "Checking SSH to $peer …"
+	ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes \
+		"$peer" true || die "cannot reach $peer over SSH"
+	info "SSH to $peer works."
+}
+
 cmd_peer() {
 	local sub=${1:-list}
 	if [ $# -gt 0 ]; then shift; fi
@@ -765,7 +775,8 @@ cmd_peer() {
 	add) cmd_peer_add "$@" ;;
 	list) cmd_peer_list "$@" ;;
 	remove | rm) cmd_peer_remove "$@" ;;
-	*) die 'usage: bier peer <add|list|remove> [host]' ;;
+	check) cmd_peer_check "$@" ;;
+	*) die 'usage: bier peer <add|list|remove|check> [host]' ;;
 	esac
 }
 
@@ -2248,6 +2259,7 @@ bier — keeps Brewfiles in sync across Macs
   bier peer add <host>    remember a Mac that Bier may contact
   bier peer list          show remembered Macs
   bier peer remove <host> forget a remembered Mac
+  bier peer check <host>  check safe, non-interactive SSH access
   bier config             show which settings are in effect
   bier state [--fetch]    machine-readable state (for the menu bar app)
   bier version            version, commit and the paths in effect

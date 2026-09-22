@@ -39,11 +39,11 @@ assert_not_contains() {
 }
 
 assert_file_has() {
-	grep -qF "$2" "$1" || fail "${3:-line missing in $1}" "$2" "$(cat "$1")"
+	grep -qF -- "$2" "$1" || fail "${3:-line missing in $1}" "$2" "$(cat "$1")"
 }
 
 assert_file_lacks() {
-	if grep -qF "$2" "$1"; then
+	if grep -qF -- "$2" "$1"; then
 		fail "${3:-line should be gone from $1}" "without $2" "$(cat "$1")"
 	fi
 }

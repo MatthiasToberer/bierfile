@@ -20,3 +20,16 @@ assert_fails bier mini peer remove macbook.local
 assert_contains "$OUT" 'no peer called macbook.local'
 assert_fails bier mini peer add --bad
 assert_contains "$OUT" 'usage: bier peer add <host>'
+
+assert_ok bier mini peer check admin@192.168.1.42
+assert_contains "$OUT" 'SSH to admin@192.168.1.42 works.'
+assert_file_has "$WORK/ssh.args" 'BatchMode=yes'
+assert_file_has "$WORK/ssh.args" 'ConnectTimeout=5'
+assert_file_has "$WORK/ssh.args" 'StrictHostKeyChecking=yes'
+assert_file_has "$WORK/ssh.args" 'admin@192.168.1.42'
+
+BIER_TEST_SSH=fail
+export BIER_TEST_SSH
+assert_fails bier mini peer check unreachable.local
+assert_contains "$OUT" 'cannot reach unreachable.local over SSH'
+unset BIER_TEST_SSH

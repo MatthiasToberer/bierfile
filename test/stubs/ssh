@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# SSH stand-in for peer checks. It records the exact safe options so peer
+# tests do not require a network connection or an interactive SSH prompt.
+
+set -euo pipefail
+
+printf '%s\n' "$@" >"${WORK:?WORK is not set}/ssh.args"
+if [ "${BIER_TEST_SSH:-ok}" = fail ]; then
+	printf 'ssh: connection refused\n' >&2
+	exit 255
+fi
