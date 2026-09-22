@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.24.0
+BIER_VERSION=0.24.1
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -123,6 +123,7 @@ SIGNERS_URL_FILE=$SIGNERS_FILE.url
 # must not silently become the one that authorises upgrades of bier itself.
 AGENT_SIGNERS_FILE=$(dirname "$CONFIG_FILE")/bierkasten_allowed_signers
 AGENT_SIGNERS_URL_FILE=$AGENT_SIGNERS_FILE.url
+AGENT_TRUST_URL=${BIER_AGENT_TRUST_URL:-https://bier.uber.space/bierkasten/allowed_signers}
 # Peers describe reachable Macs only. They deliberately live next to the
 # local configuration rather than in the Brewfile repository: knowing which
 # machines may be contacted is not an inventory change to be synchronised.
@@ -841,10 +842,9 @@ latest_agent_tag() {
 }
 
 need_agent_release_trust() {
-	[ -s "$AGENT_SIGNERS_FILE" ] || die "no release key is trusted for the Bier agent.
-
-     First fetch the independent Bierkasten trust anchor:
-     bier peer trust https://bier.uber.space/bierkasten/allowed_signers"
+	[ -s "$AGENT_SIGNERS_FILE" ] && return 0
+	info "First peer: fetching the independent Bierkasten release key …"
+	cmd_peer_trust "$AGENT_TRUST_URL"
 }
 
 write_agent_launch_agent() {
@@ -1002,7 +1002,7 @@ bier peer — manage Macs Bier may contact
   bier peer add <host>    remember a Mac locally
   bier peer list          show remembered Macs
   bier peer check <host>  check safe, non-interactive SSH access
-  bier peer trust [url]   trust Bierkasten agent releases separately
+  bier peer trust [url]   inspect or replace the Bierkasten release key
   bier peer install <host> install a signed Bier agent via SSH
   bier peer upgrade <host> replace an agent with the latest signed release
   bier peer remove <host> forget a remembered Mac
@@ -2519,7 +2519,7 @@ bier — keeps Brewfiles in sync across Macs
   bier peer list          show remembered Macs
   bier peer remove <host> forget a remembered Mac
   bier peer check <host>  check safe, non-interactive SSH access
-  bier peer trust [url]   trust Bierkasten agent releases separately
+  bier peer trust [url]   inspect or replace the Bierkasten release key
   bier peer discover      show Bier agents announced via Bonjour
   bier config             show which settings are in effect
   bier state [--fetch]    machine-readable state (for the menu bar app)

@@ -182,7 +182,7 @@ carries an unencrypted note explaining how to get the files back with
 | `bier vault group` | which Macs a vault file is meant for |
 | `bier retire <name>` | take a Mac out of the fleet |
 | `bier trust [url]` | verify Bier program releases against a key published elsewhere |
-| `bier peer trust [url]` | verify Bierkasten agent releases against their separate key file |
+| `bier peer trust [url]` | inspect or replace the separately stored Bierkasten release key |
 | `bier config` | show which settings are in effect |
 | `bier version` | version, commit and paths |
 | `bier help` | the same overview in the terminal |

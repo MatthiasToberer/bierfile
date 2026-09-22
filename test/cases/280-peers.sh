@@ -55,7 +55,8 @@ keys=$WORK/agent-signing
 mkdir -p "$keys" "$WORK/agent-release"
 ssh-keygen -q -t ed25519 -N '' -f "$keys/release"
 printf 'bierkasten-releases %s\n' "$(cat "$keys/release.pub")" >"$keys/allowed_signers"
-assert_ok bier mini peer trust "file://$keys/allowed_signers"
+BIER_AGENT_TRUST_URL="file://$keys/allowed_signers"
+export BIER_AGENT_TRUST_URL
 
 mkdir -p "$WORK/home-mini/.ssh"
 printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest bier-test\n' \
@@ -65,6 +66,7 @@ export BIER_TEST_SSH
 assert_ok bier mini peer install first.local
 assert_contains "$OUT" 'First connection to first.local.'
 assert_contains "$OUT" 'SSH key authorised for first.local.'
+assert_contains "$OUT" 'First peer: fetching the independent Bierkasten release key'
 assert_file_has "$WORK/ssh.args" 'BatchMode=no'
 assert_file_has "$WORK/ssh.args" 'StrictHostKeyChecking=ask'
 assert_file_has "$WORK/ssh.args" 'authorized_keys'
@@ -78,6 +80,7 @@ assert_file_has "$WORK/scp.args" 'com.bierkasten.agent.plist.new'
 assert_file_has "$WORK/ssh.args" 'git clone'
 assert_file_has "$WORK/ssh.args" 'source.new/agent/build.sh'
 assert_file_has "$WORK/curl.args" 'http://studio.local:53991/v1/health'
+unset BIER_AGENT_TRUST_URL
 
 assert_ok bier mini peer upgrade studio.local
 assert_contains "$OUT" 'Updating the Bier agent on studio.local'
