@@ -16,10 +16,13 @@ agent="$work/bier-agent"
 ssh-keygen -q -t ed25519 -N '' -f "$work/controller"
 printf 'controller-test %s\n' "$(cat "$work/controller.pub")" >"$work/allowed_signers"
 printf 'mini %s\n' "$(cat "$work/controller.pub")" >"$work/peer_signers"
+mkdir -p "$work/data/Brewfiles" "$work/data/Safe"
+printf 'brew "wget"\n' >"$work/data/Brewfiles/main"
+printf 'encrypted\n' >"$work/data/Safe/test.gpg"
 printf '%s\n' '{"version":1,"id":"probe-1","target":"mini","type":"agent.probe","expires_at":"2099-01-01T00:00:00Z","issuer":"controller-test","payload":{}}' >"$work/recipe.json"
 ssh-keygen -q -Y sign -f "$work/controller" -n bier-recipe "$work/recipe.json"
 
-"$agent" serve --agent mini --allowed-signers "$work/allowed_signers" --peer-signers "$work/peer_signers" --state-dir "$work/state" --port 53992 --bonjour false >"$work/agent.log" 2>&1 &
+"$agent" serve --agent mini --allowed-signers "$work/allowed_signers" --peer-signers "$work/peer_signers" --data-dir "$work/data" --state-dir "$work/state" --port 53992 --bonjour false >"$work/agent.log" 2>&1 &
 pid=$!
 for attempt in 1 2 3 4 5; do
 	if curl -fsS --max-time 1 http://127.0.0.1:53992/v1/health 2>/dev/null | grep -q '"status":"ok"'; then break; fi
@@ -40,6 +43,16 @@ status=$(curl -sS --max-time 2 -o "$work/response" -w '%{http_code}' \
 	-H "X-Bier-Peer: mini" -H "X-Bier-Time: $peer_time" -H "X-Bier-Nonce: $peer_nonce" \
 	-H "X-Bier-Signature: $peer_signature" http://127.0.0.1:53992/v1/peer/hello)
 [ "$status" = 409 ]
+peer_nonce=agent-manifest-0123456789
+printf 'GET\n/v1/peer/manifest\nmini\n%s\n%s\n' "$peer_time" "$peer_nonce" >"$work/peer-request"
+ssh-keygen -q -Y sign -f "$work/controller" -n bier-peer "$work/peer-request"
+peer_signature=$(base64 <"$work/peer-request.sig" | tr -d '\n')
+status=$(curl -sS --max-time 2 -o "$work/response" -w '%{http_code}' \
+	-H "X-Bier-Peer: mini" -H "X-Bier-Time: $peer_time" -H "X-Bier-Nonce: $peer_nonce" \
+	-H "X-Bier-Signature: $peer_signature" http://127.0.0.1:53992/v1/peer/manifest)
+[ "$status" = 200 ]
+grep -q 'Brewfiles/main' "$work/response"
+grep -q 'Safe/test.gpg' "$work/response"
 recipe=$(base64 <"$work/recipe.json" | tr -d '\n')
 signature=$(base64 <"$work/recipe.json.sig" | tr -d '\n')
 body=$(printf '{"recipe":"%s","signature":"%s"}' "$recipe" "$signature")

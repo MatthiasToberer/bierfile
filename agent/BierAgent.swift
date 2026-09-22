@@ -77,7 +77,7 @@ func verifyRecipe(agent: String, signers: String, raw: Data, signature: Data) th
 	return recipe
 }
 
-func verifyPeer(peer: String, signers: String, time: String, nonce: String, signature: Data) throws {
+func verifyPeer(method: String, path: String, peer: String, signers: String, time: String, nonce: String, signature: Data) throws {
 	guard validHostName(peer), validPeerNonce(nonce) else {
 		throw NSError(domain: "BierAgent", code: 1, userInfo: [NSLocalizedDescriptionKey: "invalid peer request"])
 	}
@@ -85,7 +85,7 @@ func verifyPeer(peer: String, signers: String, time: String, nonce: String, sign
 	guard let requestTime = formatter.date(from: time), abs(requestTime.timeIntervalSinceNow) <= maxPeerRequestAge else {
 		throw NSError(domain: "BierAgent", code: 1, userInfo: [NSLocalizedDescriptionKey: "peer request has expired"])
 	}
-	let payload = "GET\n/v1/peer/hello\n\(peer)\n\(time)\n\(nonce)\n"
+	let payload = "\(method)\n\(path)\n\(peer)\n\(time)\n\(nonce)\n"
 	let signatureURL = FileManager.default.temporaryDirectory.appendingPathComponent("bier-peer-signature-\(UUID().uuidString)")
 	try signature.write(to: signatureURL, options: .atomic)
 	try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: signatureURL.path)
@@ -132,10 +132,11 @@ final class AgentServer {
 	private let agent: String
 	private let signers: String
 	private let peerSigners: String?
+	private let dataDirectory: URL?
 	private let store: ReplayStore
 	private let listener: NWListener
 
-	init(agent: String, signers: String, peerSigners: String?, stateDirectory: URL, port: UInt16, bonjour: Bool) throws {
+	init(agent: String, signers: String, peerSigners: String?, dataDirectory: URL?, stateDirectory: URL, port: UInt16, bonjour: Bool) throws {
 		guard validHostName(agent), FileManager.default.fileExists(atPath: signers),
 			let endpointPort = NWEndpoint.Port(rawValue: port) else {
 			throw NSError(domain: "BierAgent", code: 1, userInfo: [NSLocalizedDescriptionKey: "invalid server configuration"])
@@ -143,6 +144,7 @@ final class AgentServer {
 		self.agent = agent
 		self.signers = signers
 		self.peerSigners = peerSigners
+		self.dataDirectory = dataDirectory
 		store = try ReplayStore(directory: stateDirectory)
 		listener = try NWListener(using: .tcp, on: endpointPort)
 		if bonjour {
@@ -209,7 +211,7 @@ final class AgentServer {
 				return
 			}
 			do {
-				try verifyPeer(peer: peer, signers: peerSigners, time: time, nonce: nonce, signature: signature)
+				try verifyPeer(method: method, path: path, peer: peer, signers: peerSigners, time: time, nonce: nonce, signature: signature)
 				if try store.record("peer-\(peer)-\(nonce)") {
 					respond(connection, status: 409, body: "peer request was already processed")
 				} else {
@@ -218,6 +220,20 @@ final class AgentServer {
 			} catch {
 				respond(connection, status: 403, body: "peer is not authorised")
 			}
+			return
+		}
+		if method == "GET" && path == "/v1/peer/manifest" {
+			guard let peerSigners, let dataDirectory, let peer = headers["x-bier-peer"], let time = headers["x-bier-time"],
+				let nonce = headers["x-bier-nonce"], let encoded = headers["x-bier-signature"], let signature = Data(base64Encoded: encoded) else {
+				respond(connection, status: 403, body: "peer is not authorised")
+				return
+			}
+			do {
+				try verifyPeer(method: method, path: path, peer: peer, signers: peerSigners, time: time, nonce: nonce, signature: signature)
+				if try store.record("peer-\(peer)-\(nonce)") { respond(connection, status: 409, body: "peer request was already processed"); return }
+				let body = try String(data: JSONEncoder().encode(collectDataManifest(at: dataDirectory)), encoding: .utf8) ?? "{}"
+				respond(connection, status: 200, body: body, contentType: "application/json")
+			} catch { respond(connection, status: 403, body: "peer request was rejected") }
 			return
 		}
 		guard method == "POST", path == "/v1/probe",
@@ -273,9 +289,10 @@ case "serve":
 	let port = UInt16(option(arguments, "--port") ?? "53991") ?? 0
 	let bonjour = option(arguments, "--bonjour") != "false"
 	let peerSigners = option(arguments, "--peer-signers")
+	let dataDirectory = option(arguments, "--data-dir").map(URL.init(fileURLWithPath:))
 	let state = option(arguments, "--state-dir").map(URL.init(fileURLWithPath:))
 		?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Bier")
-	do { try AgentServer(agent: agent, signers: signers, peerSigners: peerSigners, stateDirectory: state, port: port, bonjour: bonjour).start() }
+	do { try AgentServer(agent: agent, signers: signers, peerSigners: peerSigners, dataDirectory: dataDirectory, stateDirectory: state, port: port, bonjour: bonjour).start() }
 	catch { agentError(error.localizedDescription) }
 default:
 	agentError("unknown command")
