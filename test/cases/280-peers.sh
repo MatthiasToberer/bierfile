@@ -3,7 +3,7 @@
 
 assert_ok bier mini peer
 assert_contains "$OUT" 'bier peer — manage Macs Bier may contact'
-for subcommand in discover add list check install upgrade remove; do
+for subcommand in discover add list check trust install upgrade remove; do
 	assert_contains "$OUT" "bier peer $subcommand"
 done
 
@@ -55,7 +55,7 @@ keys=$WORK/agent-signing
 mkdir -p "$keys" "$WORK/agent-release"
 ssh-keygen -q -t ed25519 -N '' -f "$keys/release"
 printf 'bierkasten-releases %s\n' "$(cat "$keys/release.pub")" >"$keys/allowed_signers"
-assert_ok bier mini trust "file://$keys/allowed_signers"
+assert_ok bier mini peer trust "file://$keys/allowed_signers"
 
 assert_ok bier mini peer install studio.local
 assert_contains "$OUT" 'Building the signed Bier agent release v0.2.0 on studio.local'

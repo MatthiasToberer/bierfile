@@ -181,7 +181,8 @@ carries an unencrypted note explaining how to get the files back with
 | `bier vault add <path>` | take a file or folder into the vault |
 | `bier vault group` | which Macs a vault file is meant for |
 | `bier retire <name>` | take a Mac out of the fleet |
-| `bier trust [url]` | verify releases against a key published elsewhere |
+| `bier trust [url]` | verify Bier program releases against a key published elsewhere |
+| `bier peer trust [url]` | verify Bierkasten agent releases against their separate key file |
 | `bier config` | show which settings are in effect |
 | `bier version` | version, commit and paths |
 | `bier help` | the same overview in the terminal |
