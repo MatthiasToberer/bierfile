@@ -45,6 +45,7 @@ status=$(curl -sS --max-time 2 -o "$work/response" -w '%{http_code}' \
 [ "$status" = 409 ]
 peer_nonce=agent-manifest-0123456789
 printf 'GET\n/v1/peer/manifest\nmini\n%s\n%s\n' "$peer_time" "$peer_nonce" >"$work/peer-request"
+rm -f "$work/peer-request.sig"
 ssh-keygen -q -Y sign -f "$work/controller" -n bier-peer "$work/peer-request"
 peer_signature=$(base64 <"$work/peer-request.sig" | tr -d '\n')
 status=$(curl -sS --max-time 2 -o "$work/response" -w '%{http_code}' \
