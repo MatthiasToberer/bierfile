@@ -768,6 +768,74 @@ cmd_peer_check() {
 	info "SSH to $peer works."
 }
 
+peer_discover_wait() {
+	local seconds=${BIER_PEER_DISCOVER_SECONDS:-3}
+	case $seconds in
+	'' | *[!0-9]*) die 'BIER_PEER_DISCOVER_SECONDS must be a whole number' ;;
+	esac
+	[ "$seconds" -le 30 ] || die 'BIER_PEER_DISCOVER_SECONDS must not exceed 30'
+	printf '%s' "$seconds"
+}
+
+# dns-sd browse and lookup commands stay alive to watch for later changes.
+# Run each briefly in the background, then collect the snapshot and stop it.
+peer_discover_run() {
+	local output=$1 seconds=$2
+	shift 2
+	dns-sd "$@" >"$output" 2>&1 &
+	local pid=$!
+	sleep "$seconds"
+	kill "$pid" 2>/dev/null || true
+	wait "$pid" 2>/dev/null || true
+}
+
+cmd_peer_discover() {
+	command -v dns-sd >/dev/null 2>&1 ||
+		die 'Bonjour discovery needs dns-sd (included with macOS)'
+	local seconds browse lookup instances instance host n=0
+	seconds=$(peer_discover_wait)
+	browse=$(tmpfile)
+	peer_discover_run "$browse" "$seconds" -B _bier-agent._tcp local.
+	instances=$(awk '
+		/ Add / && /_bier-agent\._tcp/ {
+			for (i = 1; i <= NF; i++) {
+				if ($i ~ /^_bier-agent\._tcp\.?$/) {
+					for (j = i + 1; j <= NF; j++) {
+						printf "%s%s", (j == i + 1 ? "" : " "), $j
+					}
+					printf "\n"
+					break
+				}
+			}
+		}
+	' "$browse" | sed '/^$/d' | sort -u)
+	if [ -z "$instances" ]; then
+		info 'No Bier agents found on the local network.'
+		return 0
+	fi
+
+	info 'Bier agents found on the local network:'
+	while IFS= read -r instance; do
+		[ -n "$instance" ] || continue
+		lookup=$(tmpfile)
+		peer_discover_run "$lookup" "$seconds" -L "$instance" _bier-agent._tcp local.
+		host=$(sed -nE 's/.*can be reached at ([^ ]+)\.?(:[0-9]+)?.*/\1/p' "$lookup" |
+			sed 's/\.$//' | head -1)
+		if peer_name_ok "$host"; then
+			n=$((n + 1))
+			printf '  %2s  %s\n' "$n" "$host"
+		fi
+	done <<EOF
+$instances
+EOF
+	if [ "$n" = 0 ]; then
+		info 'No usable Bier agent address was announced.'
+	else
+		info ''
+		info 'To remember one: bier peer add <host>'
+	fi
+}
+
 cmd_peer() {
 	local sub=${1:-list}
 	if [ $# -gt 0 ]; then shift; fi
@@ -776,7 +844,8 @@ cmd_peer() {
 	list) cmd_peer_list "$@" ;;
 	remove | rm) cmd_peer_remove "$@" ;;
 	check) cmd_peer_check "$@" ;;
-	*) die 'usage: bier peer <add|list|remove|check> [host]' ;;
+	discover) cmd_peer_discover "$@" ;;
+	*) die 'usage: bier peer <add|list|remove|check|discover> [host]' ;;
 	esac
 }
 
@@ -2260,6 +2329,7 @@ bier — keeps Brewfiles in sync across Macs
   bier peer list          show remembered Macs
   bier peer remove <host> forget a remembered Mac
   bier peer check <host>  check safe, non-interactive SSH access
+  bier peer discover      show Bier agents announced via Bonjour
   bier config             show which settings are in effect
   bier state [--fetch]    machine-readable state (for the menu bar app)
   bier version            version, commit and the paths in effect

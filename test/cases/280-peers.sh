@@ -33,3 +33,14 @@ export BIER_TEST_SSH
 assert_fails bier mini peer check unreachable.local
 assert_contains "$OUT" 'cannot reach unreachable.local over SSH'
 unset BIER_TEST_SSH
+
+BIER_PEER_DISCOVER_SECONDS=1
+export BIER_PEER_DISCOVER_SECONDS
+assert_ok bier mini peer discover
+assert_contains "$OUT" 'Bier agents found on the local network:'
+assert_contains "$OUT" 'macbook.local'
+assert_contains "$OUT" 'To remember one: bier peer add <host>'
+assert_file_has "$WORK/dns-sd.args" '-B _bier-agent._tcp local.'
+assert_ok bier mini peer list
+assert_not_contains "$OUT" 'macbook.local'
+unset BIER_PEER_DISCOVER_SECONDS

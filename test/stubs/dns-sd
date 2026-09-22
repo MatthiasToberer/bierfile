@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Bonjour stand-in for peer discovery. The real dns-sd commands normally
+# keep running; this fixture emits one deterministic browse/lookup snapshot.
+
+set -euo pipefail
+
+printf '%s\n' "$*" >>"${WORK:?WORK is not set}/dns-sd.args"
+case ${1:-} in
+-B)
+	printf '0 Add 2 4 local. _bier-agent._tcp. Bier on macbook\n'
+	;;
+-L)
+	printf 'Bier on macbook._bier-agent._tcp.local. can be reached at macbook.local.:53991\n'
+	;;
+*) exit 1 ;;
+esac
