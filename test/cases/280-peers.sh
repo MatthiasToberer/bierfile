@@ -3,7 +3,7 @@
 
 assert_ok bier mini peer
 assert_contains "$OUT" 'bier peer — manage Macs Bier may contact'
-for subcommand in discover add list check trust install upgrade remove; do
+for subcommand in discover add list check trust install upgrade uninstall remove; do
 	assert_contains "$OUT" "bier peer $subcommand"
 done
 
@@ -96,3 +96,12 @@ unset BIER_AGENT_TRUST_URL
 assert_ok bier mini peer upgrade studio.local
 assert_contains "$OUT" 'Updating the Bier agent on studio.local'
 assert_contains "$OUT" 'Done. mini is ready on studio.local.'
+
+assert_ok bier mini peer uninstall studio.local
+assert_contains "$OUT" '1/2  Checking SSH access to studio.local'
+assert_contains "$OUT" '2/2  Removing the Bier agent'
+assert_contains "$OUT" 'Done. Bier agent removed from studio.local.'
+assert_file_has "$WORK/ssh.args" 'launchctl bootout'
+assert_file_has "$WORK/ssh.args" '.local/share/bierkasten'
+assert_fails bier mini peer uninstall --bad
+assert_contains "$OUT" 'usage: bier peer uninstall <host>'

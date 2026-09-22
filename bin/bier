@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.26.0
+BIER_VERSION=0.27.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -838,6 +838,25 @@ cmd_peer_check() {
 	info "SSH to $peer works."
 }
 
+# This removes only the files and service owned by Bierkasten.  SSH access is
+# deliberately left in place: it may be used for normal administration too.
+cmd_peer_uninstall() {
+	local peer=${1:-}
+	[ $# -eq 1 ] && peer_name_ok "$peer" ||
+		die 'usage: bier peer uninstall <host>'
+	info "1/2  Checking SSH access to $peer …"
+	peer_ssh "$peer" true || die "cannot reach $peer over SSH"
+	info '     SSH access is ready.'
+	info '2/2  Removing the Bier agent …'
+	peer_ssh "$peer" 'set -e
+plist="$HOME/Library/LaunchAgents/com.bierkasten.agent.plist"
+launchctl bootout "gui/$(id -u)" "$plist" >/dev/null 2>&1 || true
+rm -f "$plist"
+rm -rf "$HOME/.local/share/bierkasten"' ||
+		die "cannot remove the Bier agent from $peer"
+	info "Done. Bier agent removed from $peer."
+}
+
 latest_agent_tag() {
 	local api=${BIER_AGENT_RELEASE_API:-https://api.github.com/repos/MatthiasToberer/bierkasten/releases/latest} json tag
 	json=$(curl -fsSL --max-time 20 "$api") || die 'could not check the latest Bier agent release'
@@ -1042,6 +1061,7 @@ bier peer — manage Macs Bier may contact
   bier peer trust [url]   inspect or replace the Bierkasten release key
   bier peer install <host> install a signed Bier agent via SSH
   bier peer upgrade <host> replace an agent with the latest signed release
+  bier peer uninstall <host> stop and remove a Bier agent via SSH
   bier peer remove <host> forget a remembered Mac
 EOF
 }
@@ -1061,9 +1081,10 @@ check) cmd_peer_check "$@" ;;
 trust) cmd_peer_trust "$@" ;;
 install) cmd_peer_install "$@" ;;
 upgrade | update) cmd_peer_upgrade "$@" ;;
+uninstall) cmd_peer_uninstall "$@" ;;
 discover) cmd_peer_discover "$@" ;;
 help | -h | --help) cmd_peer_help ;;
-*) die 'usage: bier peer <discover|add|list|check|trust|install|upgrade|remove> [host]' ;;
+*) die 'usage: bier peer <discover|add|list|check|trust|install|upgrade|uninstall|remove> [host]' ;;
 	esac
 }
 
@@ -2558,6 +2579,9 @@ bier — keeps Brewfiles in sync across Macs
   bier peer check <host>  check safe, non-interactive SSH access
   bier peer trust [url]   inspect or replace the Bierkasten release key
   bier peer discover      show Bier agents announced via Bonjour
+  bier peer install <host> install a signed Bier agent via SSH
+  bier peer upgrade <host> replace an agent with the latest signed release
+  bier peer uninstall <host> stop and remove a Bier agent via SSH
   bier config             show which settings are in effect
   bier state [--fetch]    machine-readable state (for the menu bar app)
   bier version            version, commit and the paths in effect
