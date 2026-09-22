@@ -52,8 +52,8 @@ status=$(curl -sS --max-time 2 -o "$work/response" -w '%{http_code}' \
 	-H "X-Bier-Peer: mini" -H "X-Bier-Time: $peer_time" -H "X-Bier-Nonce: $peer_nonce" \
 	-H "X-Bier-Signature: $peer_signature" http://127.0.0.1:53992/v1/peer/manifest)
 [ "$status" = 200 ]
-grep -q 'Brewfiles/main' "$work/response"
-grep -q 'Safe/test.gpg' "$work/response"
+grep -q 'Brewfiles/main' "$work/response" || { cat "$work/response" >&2; exit 1; }
+grep -q 'Safe/test.gpg' "$work/response" || { cat "$work/response" >&2; exit 1; }
 recipe=$(base64 <"$work/recipe.json" | tr -d '\n')
 signature=$(base64 <"$work/recipe.json.sig" | tr -d '\n')
 body=$(printf '{"recipe":"%s","signature":"%s"}' "$recipe" "$signature")

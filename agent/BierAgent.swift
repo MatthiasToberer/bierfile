@@ -231,7 +231,9 @@ final class AgentServer {
 			do {
 				try verifyPeer(method: method, path: path, peer: peer, signers: peerSigners, time: time, nonce: nonce, signature: signature)
 				if try store.record("peer-\(peer)-\(nonce)") { respond(connection, status: 409, body: "peer request was already processed"); return }
-				let body = try String(data: JSONEncoder().encode(collectDataManifest(at: dataDirectory)), encoding: .utf8) ?? "{}"
+				let encoder = JSONEncoder()
+				encoder.outputFormatting = .withoutEscapingSlashes
+				let body = try String(data: encoder.encode(collectDataManifest(at: dataDirectory)), encoding: .utf8) ?? "{}"
 				respond(connection, status: 200, body: body, contentType: "application/json")
 			} catch { respond(connection, status: 403, body: "peer request was rejected") }
 			return
