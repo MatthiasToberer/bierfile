@@ -119,6 +119,10 @@ esac
 # where it came from.
 SIGNERS_FILE=$(dirname "$CONFIG_FILE")/allowed_signers
 SIGNERS_URL_FILE=$SIGNERS_FILE.url
+# Peers describe reachable Macs only. They deliberately live next to the
+# local configuration rather than in the Brewfile repository: knowing which
+# machines may be contacted is not an inventory change to be synchronised.
+PEERS_FILE=$(dirname "$CONFIG_FILE")/peers
 
 DATA=${BIER_DATA:-$(config_get data)}
 if [ -z "$DATA" ] && [ -d "$ROOT/Brewfiles" ]; then
@@ -276,6 +280,19 @@ host_list() {
 			printf '%s\n' "$name"
 		fi
 	done
+}
+
+# A peer may be an SSH host alias, a DNS name, an address, or user@host. Do
+# not pass a value beginning with '-' to ssh, and keep the persisted format
+# one name per line so it remains auditable and easy to repair by hand.
+peer_name_ok() {
+	[ -n "${1:-}" ] && printf '%s\n' "$1" |
+		grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:@-]*$'
+}
+
+peer_list() {
+	[ -f "$PEERS_FILE" ] || return 0
+	grep -E '^[A-Za-z0-9][A-Za-z0-9._:@-]*$' "$PEERS_FILE" | sort -u
 }
 
 # --- Helpers -----------------------------------------------------------------
@@ -698,6 +715,59 @@ publish() {
 }
 
 # --- Commands ----------------------------------------------------------------
+
+cmd_peer_add() {
+	local peer=${1:-}
+	[ $# -eq 1 ] && peer_name_ok "$peer" ||
+		die 'usage: bier peer add <host>'
+	if peer_list | grep -qxF "$peer"; then
+		info "Peer already known: $peer"
+		return 0
+	fi
+	mkdir -p "$(dirname "$PEERS_FILE")"
+	printf '%s\n' "$peer" >>"$PEERS_FILE"
+	info "Peer added: $peer"
+}
+
+cmd_peer_list() {
+	local peers n=0 peer
+	peers=$(peer_list)
+	if [ -z "$peers" ]; then
+		info 'No peers known. Add one: bier peer add <host>'
+		return 0
+	fi
+	info 'Known peers:'
+	while IFS= read -r peer; do
+		[ -n "$peer" ] || continue
+		n=$((n + 1))
+		printf '  %2s  %s\n' "$n" "$peer"
+	done <<EOF
+$peers
+EOF
+}
+
+cmd_peer_remove() {
+	local peer=${1:-} tmp
+	[ $# -eq 1 ] && peer_name_ok "$peer" ||
+		die 'usage: bier peer remove <host>'
+	peer_list | grep -qxF "$peer" || die "no peer called $peer"
+	tmp=$(tmpfile)
+	peer_list | grep -vxF "$peer" >"$tmp" || true
+	mkdir -p "$(dirname "$PEERS_FILE")"
+	mv "$tmp" "$PEERS_FILE"
+	info "Peer removed: $peer"
+}
+
+cmd_peer() {
+	local sub=${1:-list}
+	if [ $# -gt 0 ]; then shift; fi
+	case $sub in
+	add) cmd_peer_add "$@" ;;
+	list) cmd_peer_list "$@" ;;
+	remove | rm) cmd_peer_remove "$@" ;;
+	*) die 'usage: bier peer <add|list|remove> [host]' ;;
+	esac
+}
 
 cmd_dump() {
 	need_brew
@@ -2175,6 +2245,9 @@ bier — keeps Brewfiles in sync across Macs
        [--passphrase]     with one passphrase all your Macs share
   bier trust [url]        verify releases against a key published
                           elsewhere; no url shows what is trusted
+  bier peer add <host>    remember a Mac that Bier may contact
+  bier peer list          show remembered Macs
+  bier peer remove <host> forget a remembered Mac
   bier config             show which settings are in effect
   bier state [--fetch]    machine-readable state (for the menu bar app)
   bier version            version, commit and the paths in effect
@@ -2230,6 +2303,7 @@ update) cmd_update ;;
 state) cmd_state "$@" ;;
 config) cmd_config ;;
 trust) cmd_trust "$@" ;;
+peer) cmd_peer "$@" ;;
 vault) cmd_vault "$@" ;;
 retire) cmd_retire "$@" ;;
 version | --version | -V) cmd_version ;;
