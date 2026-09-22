@@ -873,6 +873,17 @@ launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.bierkasten.ag
 	info "Bier agent installed on $peer as $agent and reachable on TCP port 53991."
 }
 
+# Releases/latest is deliberately resolved only when the user asks. A remote
+# agent must never replace itself in the background: the same signed install
+# path is an update, and it remains visible in the terminal.
+cmd_peer_upgrade() {
+	local peer=${1:-}
+	[ $# -eq 1 ] && peer_name_ok "$peer" ||
+		die 'usage: bier peer upgrade <host>'
+	info "Updating the Bier agent on $peer from the latest trusted release …"
+	cmd_peer_install "$peer"
+}
+
 peer_discover_wait() {
 	local seconds=${BIER_PEER_DISCOVER_SECONDS:-3}
 	case $seconds in
@@ -950,6 +961,7 @@ bier peer — manage Macs Bier may contact
   bier peer list          show remembered Macs
   bier peer check <host>  check safe, non-interactive SSH access
   bier peer install <host> install a signed Bier agent via SSH
+  bier peer upgrade <host> replace an agent with the latest signed release
   bier peer remove <host> forget a remembered Mac
 EOF
 }
@@ -965,11 +977,12 @@ cmd_peer() {
 	add) cmd_peer_add "$@" ;;
 	list) cmd_peer_list "$@" ;;
 	remove | rm) cmd_peer_remove "$@" ;;
-	check) cmd_peer_check "$@" ;;
-	install) cmd_peer_install "$@" ;;
-	discover) cmd_peer_discover "$@" ;;
-	help | -h | --help) cmd_peer_help ;;
-	*) die 'usage: bier peer <discover|add|list|check|install|remove> [host]' ;;
+check) cmd_peer_check "$@" ;;
+install) cmd_peer_install "$@" ;;
+upgrade | update) cmd_peer_upgrade "$@" ;;
+discover) cmd_peer_discover "$@" ;;
+help | -h | --help) cmd_peer_help ;;
+*) die 'usage: bier peer <discover|add|list|check|install|upgrade|remove> [host]' ;;
 	esac
 }
 

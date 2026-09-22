@@ -3,7 +3,7 @@
 
 assert_ok bier mini peer
 assert_contains "$OUT" 'bier peer — manage Macs Bier may contact'
-for subcommand in discover add list check install remove; do
+for subcommand in discover add list check install upgrade remove; do
 	assert_contains "$OUT" "bier peer $subcommand"
 done
 
@@ -69,4 +69,8 @@ assert_file_has "$WORK/scp.args" 'bier-agent.new'
 assert_file_has "$WORK/scp.args" 'allowed_signers.new'
 assert_file_has "$WORK/scp.args" 'com.bierkasten.agent.plist.new'
 assert_file_has "$WORK/curl.args" 'http://studio.local:53991/v1/health'
+
+assert_ok bier mini peer upgrade studio.local
+assert_contains "$OUT" 'Updating the Bier agent on studio.local'
+assert_contains "$OUT" 'reachable on TCP port 53991'
 unset BIER_AGENT_RELEASE_URL
