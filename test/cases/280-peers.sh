@@ -63,9 +63,9 @@ unset BIER_PEER_DISCOVER_SECONDS
 keys=$WORK/agent-signing
 mkdir -p "$keys" "$WORK/agent-release"
 ssh-keygen -q -t ed25519 -N '' -f "$keys/release"
-printf 'bierkasten-releases %s\n' "$(cat "$keys/release.pub")" >"$keys/allowed_signers"
-BIER_AGENT_TRUST_URL="file://$keys/allowed_signers"
-export BIER_AGENT_TRUST_URL
+printf 'bier-releases %s\n' "$(cat "$keys/release.pub")" >"$keys/allowed_signers"
+BIER_RELEASE_TRUST_URL="file://$keys/allowed_signers"
+export BIER_RELEASE_TRUST_URL
 
 mkdir -p "$WORK/home-mini/.ssh"
 printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest bier-test\n' \
@@ -83,18 +83,18 @@ assert_file_has "$WORK/ssh.args" 'authorized_keys'
 unset BIER_TEST_SSH
 
 assert_ok bier mini peer install studio.local
-assert_contains "$OUT" '3/4  Installing verified Bier agent v0.2.0'
+assert_contains "$OUT" '3/4  Installing verified Bier agent v0.30.0'
 assert_contains "$OUT" '4/4  Checking whether the agent is reachable'
 assert_contains "$OUT" 'Done. mini is ready on studio.local.'
 assert_file_has "$WORK/scp.args" 'allowed_signers.new'
-assert_file_has "$WORK/scp.args" 'com.bierkasten.agent.plist.new'
+assert_file_has "$WORK/scp.args" 'com.bier.agent.plist.new'
 assert_file_has "$WORK/ssh.args" 'fetch --quiet --depth 1 origin'
 assert_file_has "$WORK/ssh.args" 'source.new/agent/build.sh'
 assert_file_has "$WORK/curl.args" 'http://studio.local:53991/v1/health'
 assert_ok bier mini peer list
 assert_contains "$OUT" 'first.local'
 assert_contains "$OUT" 'studio.local'
-unset BIER_AGENT_TRUST_URL
+unset BIER_RELEASE_TRUST_URL
 
 assert_ok bier mini peer upgrade studio.local
 assert_contains "$OUT" 'Updating the Bier agent on studio.local'
@@ -105,7 +105,7 @@ printf 'studio.local %s\n' "$(cat "$keys/release.pub")" >"$WORK/home-mini/.ssh/k
 assert_ok ssh-keygen -F studio.local -f "$WORK/home-mini/.ssh/known_hosts"
 answer n
 assert_ok bier mini peer uninstall studio.local
-assert_contains "$OUT" 'This permanently removes Bierkasten from studio.local:'
+assert_contains "$OUT" 'This permanently removes Bier from studio.local:'
 assert_contains "$OUT" 'Cancelled.'
 assert_ok bier mini peer list
 assert_contains "$OUT" 'studio.local'
@@ -114,12 +114,12 @@ answer y
 assert_ok bier mini peer uninstall studio.local
 assert_contains "$OUT" '1/3  Checking SSH access to studio.local'
 assert_contains "$OUT" '2/3  Removing the Bier agent and SSH access'
-assert_contains "$OUT" '3/3  Removing local Bierkasten connection details'
+assert_contains "$OUT" '3/3  Removing local Bier connection details'
 assert_contains "$OUT" 'Done. Bier agent removed from studio.local.'
 assert_file_has "$WORK/ssh.args" 'launchctl bootout'
-assert_file_has "$WORK/ssh.args" '.local/share/bierkasten'
+assert_file_has "$WORK/ssh.args" '.local/share/bier/agent'
 assert_file_has "$WORK/ssh.args" 'ssh-key-installed'
-assert_file_has "$WORK/ssh.args" 'authorized_keys.bierkasten'
+assert_file_has "$WORK/ssh.args" 'authorized_keys.bier'
 assert_file_has "$WORK/scp.args" 'uninstall-key.new'
 assert_fails ssh-keygen -F studio.local -f "$WORK/home-mini/.ssh/known_hosts"
 assert_ok bier mini peer list

@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.29.0
+BIER_VERSION=0.30.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -119,11 +119,9 @@ esac
 # where it came from.
 SIGNERS_FILE=$(dirname "$CONFIG_FILE")/allowed_signers
 SIGNERS_URL_FILE=$SIGNERS_FILE.url
-# The Bierkasten agent is a separately releasable program. Its trust anchor
-# must not silently become the one that authorises upgrades of bier itself.
-AGENT_SIGNERS_FILE=$(dirname "$CONFIG_FILE")/bierkasten_allowed_signers
-AGENT_SIGNERS_URL_FILE=$AGENT_SIGNERS_FILE.url
-AGENT_TRUST_URL=${BIER_AGENT_TRUST_URL:-https://bier.uber.space/bierkasten/allowed_signers}
+# The agent is part of Bier itself, so it is built only from the same signed
+# release tag that authorises an upgrade of the command-line program.
+RELEASE_TRUST_URL=${BIER_RELEASE_TRUST_URL:-https://bier.uber.space/bier/allowed_signers}
 # Peers describe reachable Macs only. They deliberately live next to the
 # local configuration rather than in the Brewfile repository: knowing which
 # machines may be contacted is not an inventory change to be synchronised.
@@ -360,8 +358,8 @@ peer_authorize() {
 		while IFS= read -r key; do
 			if ! grep -qxF "$key" "$HOME/.ssh/authorized_keys"; then
 				printf "%s\n" "$key" >>"$HOME/.ssh/authorized_keys"
-				mkdir -p "$HOME/.local/share/bierkasten"
-				printf "%s\n" "$key" >"$HOME/.local/share/bierkasten/ssh-key-installed"
+				mkdir -p "$HOME/.local/share/bier/agent"
+				printf "%s\n" "$key" >"$HOME/.local/share/bier/agent/ssh-key-installed"
 			fi
 		done
 	' || die "could not authorise this Mac for SSH on $peer"
@@ -864,7 +862,7 @@ cmd_peer_uninstall() {
 	local peer=${1:-} key=$HOME/.ssh/id_ed25519.pub network_host answer
 	[ $# -eq 1 ] && peer_name_ok "$peer" ||
 		die 'usage: bier peer uninstall <host>'
-	info "This permanently removes Bierkasten from $peer:"
+	info "This permanently removes Bier from $peer:"
 	info '  - the Bier agent, its files and its LaunchAgent'
 	info '  - the remembered peer and saved SSH host key on this Mac'
 	info '  - the public SSH key this Mac uses to reach that host'
@@ -882,22 +880,28 @@ cmd_peer_uninstall() {
 	info "1/3  Checking SSH access to $peer …"
 	peer_ssh "$peer" true || die "cannot reach $peer over SSH"
 	info '     SSH access is ready.'
+	peer_ssh "$peer" 'mkdir -p "$HOME/.local/share/bier/agent"' ||
+		die "cannot prepare Bier removal on $peer"
 	if [ -r "$key" ]; then
-		peer_scp "$key" "$peer:.local/share/bierkasten/uninstall-key.new" ||
+		peer_scp "$key" "$peer:.local/share/bier/agent/uninstall-key.new" ||
 			die "cannot prepare SSH key removal on $peer"
 	fi
 	info '2/3  Removing the Bier agent and SSH access …'
 	peer_ssh "$peer" 'set -e
-plist="$HOME/Library/LaunchAgents/com.bierkasten.agent.plist"
-state_dir="$HOME/.local/share/bierkasten"
+plist="$HOME/Library/LaunchAgents/com.bier.agent.plist"
+legacy_plist="$HOME/Library/LaunchAgents/com.bierkasten.agent.plist"
+state_dir="$HOME/.local/share/bier/agent"
+legacy_state_dir="$HOME/.local/share/bierkasten"
 authorized_keys="$HOME/.ssh/authorized_keys"
 launchctl bootout "gui/$(id -u)" "$plist" >/dev/null 2>&1 || true
+launchctl bootout "gui/$(id -u)" "$legacy_plist" >/dev/null 2>&1 || true
 rm -f "$plist"
+rm -f "$legacy_plist"
 
 if [ -f "$authorized_keys" ]; then
-  for key_file in "$state_dir/ssh-key-installed" "$state_dir/uninstall-key.new"; do
+  for key_file in "$state_dir/ssh-key-installed" "$legacy_state_dir/ssh-key-installed" "$state_dir/uninstall-key.new"; do
     [ -s "$key_file" ] || continue
-    tmp=$(mktemp "$HOME/.ssh/authorized_keys.bierkasten.XXXXXX")
+    tmp=$(mktemp "$HOME/.ssh/authorized_keys.bier.XXXXXX")
     grep -vxFf "$key_file" "$authorized_keys" >"$tmp" || true
     mv "$tmp" "$authorized_keys"
   done
@@ -907,12 +911,12 @@ rm -rf "$state_dir"' ||
 	network_host=${peer##*@}
 	peer_forget "$peer"
 	ssh-keygen -q -f "$HOME/.ssh/known_hosts" -R "$network_host" >/dev/null 2>&1 || true
-	info '3/3  Removing local Bierkasten connection details …'
+	info '3/3  Removing local Bier connection details …'
 	info "Done. Bier agent removed from $peer."
 }
 
 latest_agent_tag() {
-	local api=${BIER_AGENT_RELEASE_API:-https://api.github.com/repos/MatthiasToberer/bierkasten/releases/latest} json tag
+	local api=${BIER_AGENT_RELEASE_API:-https://api.github.com/repos/MatthiasToberer/bierfile/releases/latest} json tag
 	json=$(curl -fsSL --max-time 20 "$api") || die 'could not check the latest Bier agent release'
 	tag=$(printf '%s\n' "$json" | sed -nE 's/.*"tag_name"[[:space:]]*:[[:space:]]*"(v[0-9]+(\.[0-9]+)*)".*/\1/p' | head -1)
 	[ -n "$tag" ] || die 'the latest Bier agent release has no valid version tag'
@@ -921,13 +925,13 @@ latest_agent_tag() {
 
 need_agent_release_trust() {
 	local output
-	if [ -s "$AGENT_SIGNERS_FILE" ]; then
+	if [ -s "$SIGNERS_FILE" ]; then
 		info "2/4  Checking secure release verification …"
 		info "     Release verification is ready."
 		return 0
 	fi
 	info "2/4  Setting up secure release verification …"
-	if ! output=$(cmd_peer_trust "$AGENT_TRUST_URL" 2>&1); then
+	if ! output=$(cmd_trust "$RELEASE_TRUST_URL" 2>&1); then
 		printf '%s\n' "$output" >&2
 		die "could not set up release verification"
 	fi
@@ -940,14 +944,14 @@ write_agent_launch_agent() {
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>com.bierkasten.agent</string>
+  <key>Label</key><string>com.bier.agent</string>
   <key>ProgramArguments</key><array>
-    <string>$home/.local/share/bierkasten/bin/bier-agent</string>
+    <string>$home/.local/share/bier/agent/bin/bier-agent</string>
     <string>serve</string>
     <string>--agent</string><string>$agent</string>
-    <string>--allowed-signers</string><string>$home/.local/share/bierkasten/allowed_signers</string>
+    <string>--allowed-signers</string><string>$home/.local/share/bier/agent/allowed_signers</string>
     <string>--listen</string><string>:53991</string>
-    <string>--state-dir</string><string>$home/.local/share/bierkasten/state</string>
+    <string>--state-dir</string><string>$home/.local/share/bier/agent/state</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
@@ -975,28 +979,31 @@ cmd_peer_install() {
 	plist=$(tmpfile)
 	write_agent_launch_agent "$plist" "$home" "$agent"
 
-	peer_ssh "$peer" 'mkdir -p "$HOME/.local/share/bierkasten/bin" "$HOME/Library/LaunchAgents"' ||
+	peer_ssh "$peer" 'mkdir -p "$HOME/.local/share/bier/agent/bin" "$HOME/Library/LaunchAgents"' ||
 		die "cannot prepare the Bier agent directory on $peer"
-	peer_scp "$AGENT_SIGNERS_FILE" "$peer:.local/share/bierkasten/allowed_signers.new" ||
+	peer_scp "$SIGNERS_FILE" "$peer:.local/share/bier/agent/allowed_signers.new" ||
 		die "cannot copy the public release keys to $peer"
-	peer_scp "$plist" "$peer:Library/LaunchAgents/com.bierkasten.agent.plist.new" ||
+	peer_scp "$plist" "$peer:Library/LaunchAgents/com.bier.agent.plist.new" ||
 		die "cannot copy the Bier agent LaunchAgent to $peer"
 	peer_ssh "$peer" "set -e
-rm -rf \"\$HOME/.local/share/bierkasten/source.new\"
-git init --quiet \"\$HOME/.local/share/bierkasten/source.new\"
-git -C \"\$HOME/.local/share/bierkasten/source.new\" remote add origin https://github.com/MatthiasToberer/bierkasten.git
-git -C \"\$HOME/.local/share/bierkasten/source.new\" fetch --quiet --depth 1 origin \"refs/tags/$tag:refs/tags/$tag\"
-git -C \"\$HOME/.local/share/bierkasten/source.new\" checkout --quiet --detach \"$tag\"
-git -C \"\$HOME/.local/share/bierkasten/source.new\" -c gpg.ssh.allowedSignersFile=\"\$HOME/.local/share/bierkasten/allowed_signers.new\" verify-tag \"$tag\" >/dev/null
-\"\$HOME/.local/share/bierkasten/source.new/agent/build.sh\" \"\$HOME/.local/share/bierkasten/bin/bier-agent.new\" >/dev/null
-mv \"\$HOME/.local/share/bierkasten/bin/bier-agent.new\" \"\$HOME/.local/share/bierkasten/bin/bier-agent\"
-chmod 700 \"\$HOME/.local/share/bierkasten/bin/bier-agent\"
-mv \"\$HOME/.local/share/bierkasten/allowed_signers.new\" \"\$HOME/.local/share/bierkasten/allowed_signers\"
-rm -rf \"\$HOME/.local/share/bierkasten/source\"
-mv \"\$HOME/.local/share/bierkasten/source.new\" \"\$HOME/.local/share/bierkasten/source\"
-mv \"\$HOME/Library/LaunchAgents/com.bierkasten.agent.plist.new\" \"\$HOME/Library/LaunchAgents/com.bierkasten.agent.plist\"
+rm -rf \"\$HOME/.local/share/bier/agent/source.new\"
+git init --quiet \"\$HOME/.local/share/bier/agent/source.new\"
+git -C \"\$HOME/.local/share/bier/agent/source.new\" remote add origin https://github.com/MatthiasToberer/bierfile.git
+git -C \"\$HOME/.local/share/bier/agent/source.new\" fetch --quiet --depth 1 origin \"refs/tags/$tag:refs/tags/$tag\"
+git -C \"\$HOME/.local/share/bier/agent/source.new\" checkout --quiet --detach \"$tag\"
+git -C \"\$HOME/.local/share/bier/agent/source.new\" -c gpg.ssh.allowedSignersFile=\"\$HOME/.local/share/bier/agent/allowed_signers.new\" verify-tag \"$tag\" >/dev/null
+\"\$HOME/.local/share/bier/agent/source.new/agent/build.sh\" \"\$HOME/.local/share/bier/agent/bin/bier-agent.new\" >/dev/null
+mv \"\$HOME/.local/share/bier/agent/bin/bier-agent.new\" \"\$HOME/.local/share/bier/agent/bin/bier-agent\"
+chmod 700 \"\$HOME/.local/share/bier/agent/bin/bier-agent\"
+mv \"\$HOME/.local/share/bier/agent/allowed_signers.new\" \"\$HOME/.local/share/bier/agent/allowed_signers\"
+rm -rf \"\$HOME/.local/share/bier/agent/source\"
+mv \"\$HOME/.local/share/bier/agent/source.new\" \"\$HOME/.local/share/bier/agent/source\"
+rm -rf \"\$HOME/.local/share/bierkasten\"
+mv \"\$HOME/Library/LaunchAgents/com.bier.agent.plist.new\" \"\$HOME/Library/LaunchAgents/com.bier.agent.plist\"
+launchctl bootout \"gui/\$(id -u)\" \"\$HOME/Library/LaunchAgents/com.bier.agent.plist\" >/dev/null 2>&1 || true
 launchctl bootout \"gui/\$(id -u)\" \"\$HOME/Library/LaunchAgents/com.bierkasten.agent.plist\" >/dev/null 2>&1 || true
-launchctl bootstrap \"gui/\$(id -u)\" \"\$HOME/Library/LaunchAgents/com.bierkasten.agent.plist\"" ||
+rm -f \"\$HOME/Library/LaunchAgents/com.bierkasten.agent.plist\"
+launchctl bootstrap \"gui/\$(id -u)\" \"\$HOME/Library/LaunchAgents/com.bier.agent.plist\"" ||
 		die "cannot start the Bier agent on $peer"
 
 	network_host=${peer##*@}
@@ -1113,7 +1120,7 @@ bier peer — manage Macs Bier may contact
   bier peer add <host>    remember a Mac locally
   bier peer list          show remembered Macs
   bier peer check <host>  check safe, non-interactive SSH access
-  bier peer trust [url]   inspect or replace the Bierkasten release key
+  bier peer trust [url]   alias for bier trust
   bier peer install <host> install a signed Bier agent via SSH
   bier peer upgrade <host> replace an agent with the latest signed release
   bier peer uninstall <host> stop and remove a Bier agent via SSH
@@ -2375,8 +2382,7 @@ cmd_trust() {
 }
 
 cmd_peer_trust() {
-	cmd_trust_keys "$AGENT_SIGNERS_FILE" "$AGENT_SIGNERS_URL_FILE" \
-		"Bierkasten agent releases" "bier peer trust" "$@"
+	cmd_trust "$@"
 }
 
 # Checking a tag out means running its code straight afterwards, so the
@@ -2632,7 +2638,7 @@ bier — keeps Brewfiles in sync across Macs
   bier peer list          show remembered Macs
   bier peer remove <host> forget a remembered Mac
   bier peer check <host>  check safe, non-interactive SSH access
-  bier peer trust [url]   inspect or replace the Bierkasten release key
+  bier peer trust [url]   alias for bier trust
   bier peer discover      show Bier agents announced via Bonjour
   bier peer install <host> install a signed Bier agent via SSH
   bier peer upgrade <host> replace an agent with the latest signed release
