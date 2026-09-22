@@ -34,6 +34,7 @@ YES=no
 UNINSTALL=no
 DRY=no
 DATA_ARG=""
+NO_INVENTORY=no
 prev=""
 for arg in "$@"; do
 	case $prev in
@@ -44,6 +45,7 @@ for arg in "$@"; do
 	--uninstall) UNINSTALL=yes ;;
 	--dry-run | -n) DRY=yes ;;
 	--data=*) DATA_ARG=${arg#--data=} ;;
+	--no-inventory) NO_INVENTORY=yes ;;
 	esac
 	prev=$arg
 done
@@ -541,13 +543,18 @@ fi
 
 # --- Record the inventory ----------------------------------------------
 
-say "Recording this Mac's inventory"
-"$HERE/bin/bier" dump
-
-if ask "commit and push to the git server?"; then
-	"$HERE/bin/bier" sync "$(hostname -s): inventory recorded"
+if [ "$NO_INVENTORY" = yes ]; then
+	say "Recording this Mac's inventory"
+	ok "unchanged — bier upgrade updates only the program"
 else
-	ok "not pushed — later with 'bier sync'"
+	say "Recording this Mac's inventory"
+	"$HERE/bin/bier" dump
+
+	if ask "commit and push to the git server?"; then
+		"$HERE/bin/bier" sync "$(hostname -s): inventory recorded"
+	else
+		ok "not pushed — later with 'bier sync'"
+	fi
 fi
 
 # --- Done --------------------------------------------------------------
