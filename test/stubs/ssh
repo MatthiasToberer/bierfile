@@ -5,10 +5,21 @@
 set -euo pipefail
 
 printf '%s\n' "$*" >>"${WORK:?WORK is not set}/ssh.args"
-if [ "${BIER_TEST_SSH:-ok}" = fail ]; then
+case "${BIER_TEST_SSH:-ok}" in
+fail)
 	printf 'ssh: connection refused\n' >&2
 	exit 255
-fi
+	;;
+bootstrap)
+	if [[ "$*" == *'BatchMode=yes'* ]] && [ ! -f "${WORK:?WORK is not set}/ssh.bootstrapped" ]; then
+		printf 'ssh: Permission denied (publickey,password).\n' >&2
+		exit 255
+	fi
+	if [[ "$*" == *'BatchMode=no'* ]]; then
+		: >"${WORK:?WORK is not set}/ssh.bootstrapped"
+	fi
+	;;
+esac
 
 case "$*" in
 *'uname -m'*) printf '%s\n' "${BIER_TEST_SSH_ARCH:-arm64}" ;;

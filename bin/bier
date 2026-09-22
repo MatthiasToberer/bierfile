@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.23.1
+BIER_VERSION=0.24.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -308,6 +308,38 @@ peer_ssh() {
 
 peer_scp() {
 	scp -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes "$@"
+}
+
+peer_authorize() {
+	local peer=$1 key=$HOME/.ssh/id_ed25519.pub
+
+	info "Checking SSH to $peer …"
+	if peer_ssh "$peer" true; then
+		info "SSH to $peer works."
+		return 0
+	fi
+
+	[ -r "$key" ] || die "SSH to $peer needs a public key on this Mac.
+
+     Create one once with:
+     ssh-keygen -t ed25519"
+
+	info "First connection to $peer."
+	info "Verify its host fingerprint and enter the password for $peer once."
+	cat "$key" | ssh -o BatchMode=no -o ConnectTimeout=10 -o StrictHostKeyChecking=ask "$peer" '
+		set -eu
+		umask 077
+		mkdir -p "$HOME/.ssh"
+		touch "$HOME/.ssh/authorized_keys"
+		while IFS= read -r key; do
+			grep -qxF "$key" "$HOME/.ssh/authorized_keys" ||
+				printf "%s\n" "$key" >>"$HOME/.ssh/authorized_keys"
+		done
+	' || die "could not authorise this Mac for SSH on $peer"
+
+	peer_ssh "$peer" true ||
+		die "SSH key authorisation on $peer did not work"
+	info "SSH key authorised for $peer."
 }
 
 # --- Helpers -----------------------------------------------------------------
@@ -840,7 +872,7 @@ cmd_peer_install() {
 	local peer=${1:-} tag home agent plist network_host
 	[ $# -eq 1 ] && peer_name_ok "$peer" ||
 		die 'usage: bier peer install <host>'
-	cmd_peer_check "$peer"
+	peer_authorize "$peer"
 	need_agent_release_trust
 	tag=$(latest_agent_tag)
 	info "Building the signed Bier agent release $tag on $peer …"

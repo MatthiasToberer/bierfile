@@ -57,6 +57,19 @@ ssh-keygen -q -t ed25519 -N '' -f "$keys/release"
 printf 'bierkasten-releases %s\n' "$(cat "$keys/release.pub")" >"$keys/allowed_signers"
 assert_ok bier mini peer trust "file://$keys/allowed_signers"
 
+mkdir -p "$WORK/home-mini/.ssh"
+printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest bier-test\n' \
+	>"$WORK/home-mini/.ssh/id_ed25519.pub"
+BIER_TEST_SSH=bootstrap
+export BIER_TEST_SSH
+assert_ok bier mini peer install first.local
+assert_contains "$OUT" 'First connection to first.local.'
+assert_contains "$OUT" 'SSH key authorised for first.local.'
+assert_file_has "$WORK/ssh.args" 'BatchMode=no'
+assert_file_has "$WORK/ssh.args" 'StrictHostKeyChecking=ask'
+assert_file_has "$WORK/ssh.args" 'authorized_keys'
+unset BIER_TEST_SSH
+
 assert_ok bier mini peer install studio.local
 assert_contains "$OUT" 'Building the signed Bier agent release v0.2.0 on studio.local'
 assert_contains "$OUT" 'reachable on TCP port 53991'
