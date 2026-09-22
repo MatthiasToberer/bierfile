@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.24.1
+BIER_VERSION=0.25.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -950,14 +950,28 @@ peer_discover_run() {
 cmd_peer_discover() {
 	command -v dns-sd >/dev/null 2>&1 ||
 		die 'Bonjour discovery needs dns-sd (included with macOS)'
-	local seconds browse lookup instances instance host n=0
+	[ "$#" -le 1 ] || die 'usage: bier peer discover [-ssh]'
+	local mode=${1:-} service title suggestion seconds browse lookup instances instance host n=0
+	case $mode in
+	"")
+		service=_bier-agent._tcp
+		title='Bier agents found on the local network:'
+		suggestion='To remember one: bier peer add <host>'
+		;;
+	-ssh)
+		service=_ssh._tcp
+		title='Macs with Remote Login found on the local network:'
+		suggestion='To install one: bier peer install <user>@<host>'
+		;;
+	*) die 'usage: bier peer discover [-ssh]' ;;
+	esac
 	seconds=$(peer_discover_wait)
 	browse=$(tmpfile)
-	peer_discover_run "$browse" "$seconds" -B _bier-agent._tcp local.
+	peer_discover_run "$browse" "$seconds" -B "$service" local.
 	instances=$(awk '
-		/ Add / && /_bier-agent\._tcp/ {
+		/ Add / {
 			for (i = 1; i <= NF; i++) {
-				if ($i ~ /^_bier-agent\._tcp\.?$/) {
+				if ($i == service || $i == service ".") {
 					for (j = i + 1; j <= NF; j++) {
 						printf "%s%s", (j == i + 1 ? "" : " "), $j
 					}
@@ -966,17 +980,21 @@ cmd_peer_discover() {
 				}
 			}
 		}
-	' "$browse" | sed '/^$/d' | sort -u)
+	' service="$service" "$browse" | sed '/^$/d' | sort -u)
 	if [ -z "$instances" ]; then
-		info 'No Bier agents found on the local network.'
+		if [ "$mode" = -ssh ]; then
+			info 'No Macs with Remote Login found on the local network.'
+		else
+			info 'No Bier agents found on the local network.'
+		fi
 		return 0
 	fi
 
-	info 'Bier agents found on the local network:'
+	info "$title"
 	while IFS= read -r instance; do
 		[ -n "$instance" ] || continue
 		lookup=$(tmpfile)
-		peer_discover_run "$lookup" "$seconds" -L "$instance" _bier-agent._tcp local.
+		peer_discover_run "$lookup" "$seconds" -L "$instance" "$service" local.
 		host=$(sed -nE 's/.*can be reached at ([^ ]+)\.?(:[0-9]+)?.*/\1/p' "$lookup" |
 			sed 's/\.$//' | head -1)
 		if peer_name_ok "$host"; then
@@ -987,10 +1005,10 @@ cmd_peer_discover() {
 $instances
 EOF
 	if [ "$n" = 0 ]; then
-		info 'No usable Bier agent address was announced.'
+		info 'No usable host address was announced.'
 	else
 		info ''
-		info 'To remember one: bier peer add <host>'
+		info "$suggestion"
 	fi
 }
 
@@ -999,6 +1017,7 @@ cmd_peer_help() {
 bier peer — manage Macs Bier may contact
 
   bier peer discover      show Bier agents announced via Bonjour
+  bier peer discover -ssh show Macs with Remote Login via Bonjour
   bier peer add <host>    remember a Mac locally
   bier peer list          show remembered Macs
   bier peer check <host>  check safe, non-interactive SSH access

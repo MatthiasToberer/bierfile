@@ -49,6 +49,14 @@ assert_contains "$OUT" 'To remember one: bier peer add <host>'
 assert_file_has "$WORK/dns-sd.args" '-B _bier-agent._tcp local.'
 assert_ok bier mini peer list
 assert_not_contains "$OUT" 'macbook.local'
+
+assert_ok bier mini peer discover -ssh
+assert_contains "$OUT" 'Macs with Remote Login found on the local network:'
+assert_contains "$OUT" 'macbook.local'
+assert_contains "$OUT" 'bier peer install <user>@<host>'
+assert_file_has "$WORK/dns-sd.args" '-B _ssh._tcp local.'
+assert_fails bier mini peer discover -ssh unexpected
+assert_contains "$OUT" 'usage: bier peer discover [-ssh]'
 unset BIER_PEER_DISCOVER_SECONDS
 
 keys=$WORK/agent-signing

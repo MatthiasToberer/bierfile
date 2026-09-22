@@ -7,10 +7,16 @@ set -euo pipefail
 printf '%s\n' "$*" >>"${WORK:?WORK is not set}/dns-sd.args"
 case ${1:-} in
 -B)
-	printf '0 Add 2 4 local. _bier-agent._tcp. Bier on macbook\n'
+	case ${2:-} in
+	_bier-agent._tcp) printf '0 Add 2 4 local. _bier-agent._tcp. Bier on macbook\n' ;;
+	_ssh._tcp) printf '0 Add 2 4 local. _ssh._tcp. SSH on macbook\n' ;;
+	esac
 	;;
 -L)
-	printf 'Bier on macbook._bier-agent._tcp.local. can be reached at macbook.local.:53991\n'
+	case ${3:-} in
+	_bier-agent._tcp) printf 'Bier on macbook._bier-agent._tcp.local. can be reached at macbook.local.:53991\n' ;;
+	_ssh._tcp) printf 'SSH on macbook._ssh._tcp.local. can be reached at macbook.local.:22\n' ;;
+	esac
 	;;
 *) exit 1 ;;
 esac
