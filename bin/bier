@@ -789,8 +789,8 @@ latest_agent_tag() {
 need_agent_release_trust() {
 	[ -s "$SIGNERS_FILE" ] || die "no release key is trusted for the Bier agent.
 
-     First fetch the independent Bier trust anchor:
-     bier trust https://bier.uber.space/bier/allowed_signers"
+     First fetch the independent Bierkasten trust anchor:
+     bier trust https://bier.uber.space/bierkasten/allowed_signers"
 }
 
 write_agent_launch_agent() {
