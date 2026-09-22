@@ -8,6 +8,7 @@ url=${!#}
 printf '%s\n' "$url" >>"${WORK:?WORK is not set}/curl.args"
 case $url in
 file://*) cat "${url#file://}" ;;
+https://api.github.com/repos/MatthiasToberer/bierkasten/releases/latest) printf '{"tag_name":"v0.2.0"}\n' ;;
 http://*:53991/v1/health) printf '{"status":"ok","version":"test"}\n' ;;
 *) printf 'curl: unsupported test URL: %s\n' "$url" >&2; exit 22 ;;
 esac

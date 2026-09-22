@@ -57,20 +57,15 @@ ssh-keygen -q -t ed25519 -N '' -f "$keys/release"
 printf 'bierkasten-releases %s\n' "$(cat "$keys/release.pub")" >"$keys/allowed_signers"
 assert_ok bier mini trust "file://$keys/allowed_signers"
 
-asset=$WORK/agent-release/bier-agent-darwin-arm64
-printf 'test agent binary\n' >"$asset"
-ssh-keygen -q -Y sign -f "$keys/release" -n bierkasten-release "$asset"
-BIER_AGENT_RELEASE_URL="file://$WORK/agent-release"
-export BIER_AGENT_RELEASE_URL
 assert_ok bier mini peer install studio.local
-assert_contains "$OUT" 'Agent release signature verified.'
+assert_contains "$OUT" 'Building the signed Bier agent release v0.2.0 on studio.local'
 assert_contains "$OUT" 'reachable on TCP port 53991'
-assert_file_has "$WORK/scp.args" 'bier-agent.new'
 assert_file_has "$WORK/scp.args" 'allowed_signers.new'
 assert_file_has "$WORK/scp.args" 'com.bierkasten.agent.plist.new'
+assert_file_has "$WORK/ssh.args" 'git clone'
+assert_file_has "$WORK/ssh.args" 'swiftc -O -framework Foundation -framework Network'
 assert_file_has "$WORK/curl.args" 'http://studio.local:53991/v1/health'
 
 assert_ok bier mini peer upgrade studio.local
 assert_contains "$OUT" 'Updating the Bier agent on studio.local'
 assert_contains "$OUT" 'reachable on TCP port 53991'
-unset BIER_AGENT_RELEASE_URL
