@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.25.0
+BIER_VERSION=0.25.1
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -308,7 +308,13 @@ peer_ssh() {
 }
 
 peer_scp() {
-	scp -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes "$@"
+	scp -q -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes "$@"
+}
+
+peer_is_self() {
+	local host=${1%.} short
+	short=${host%%.*}
+	[ "$short" = "$HOST" ]
 }
 
 peer_authorize() {
@@ -875,7 +881,7 @@ cmd_peer_install() {
 	peer_authorize "$peer"
 	need_agent_release_trust
 	tag=$(latest_agent_tag)
-	info "Building the signed Bier agent release $tag on $peer …"
+	info "Installing verified Bier agent $tag on $peer …"
 
 	home=$(peer_ssh "$peer" 'printf "%s\n" "$HOME"') ||
 		die "cannot determine the home directory of $peer"
@@ -896,9 +902,12 @@ cmd_peer_install() {
 		die "cannot copy the Bier agent LaunchAgent to $peer"
 	peer_ssh "$peer" "set -e
 rm -rf \"\$HOME/.local/share/bierkasten/source.new\"
-git clone --quiet --depth 1 --branch \"$tag\" https://github.com/MatthiasToberer/bierkasten.git \"\$HOME/.local/share/bierkasten/source.new\"
-git -C \"\$HOME/.local/share/bierkasten/source.new\" -c gpg.ssh.allowedSignersFile=\"\$HOME/.local/share/bierkasten/allowed_signers.new\" verify-tag \"$tag\"
-\"\$HOME/.local/share/bierkasten/source.new/agent/build.sh\" \"\$HOME/.local/share/bierkasten/bin/bier-agent.new\"
+git init --quiet \"\$HOME/.local/share/bierkasten/source.new\"
+git -C \"\$HOME/.local/share/bierkasten/source.new\" remote add origin https://github.com/MatthiasToberer/bierkasten.git
+git -C \"\$HOME/.local/share/bierkasten/source.new\" fetch --quiet --depth 1 origin \"refs/tags/$tag:refs/tags/$tag\"
+git -C \"\$HOME/.local/share/bierkasten/source.new\" checkout --quiet --detach \"$tag\"
+git -C \"\$HOME/.local/share/bierkasten/source.new\" -c gpg.ssh.allowedSignersFile=\"\$HOME/.local/share/bierkasten/allowed_signers.new\" verify-tag \"$tag\" >/dev/null
+\"\$HOME/.local/share/bierkasten/source.new/agent/build.sh\" \"\$HOME/.local/share/bierkasten/bin/bier-agent.new\" >/dev/null
 mv \"\$HOME/.local/share/bierkasten/bin/bier-agent.new\" \"\$HOME/.local/share/bierkasten/bin/bier-agent\"
 chmod 700 \"\$HOME/.local/share/bierkasten/bin/bier-agent\"
 mv \"\$HOME/.local/share/bierkasten/allowed_signers.new\" \"\$HOME/.local/share/bierkasten/allowed_signers\"
@@ -997,7 +1006,7 @@ cmd_peer_discover() {
 		peer_discover_run "$lookup" "$seconds" -L "$instance" "$service" local.
 		host=$(sed -nE 's/.*can be reached at ([^ ]+)\.?(:[0-9]+)?.*/\1/p' "$lookup" |
 			sed 's/\.$//' | head -1)
-		if peer_name_ok "$host"; then
+		if peer_name_ok "$host" && ! peer_is_self "$host"; then
 			n=$((n + 1))
 			printf '  %2s  %s\n' "$n" "$host"
 		fi

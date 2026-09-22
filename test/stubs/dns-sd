@@ -9,13 +9,18 @@ case ${1:-} in
 -B)
 	case ${2:-} in
 	_bier-agent._tcp) printf '0 Add 2 4 local. _bier-agent._tcp. Bier on macbook\n' ;;
-	_ssh._tcp) printf '0 Add 2 4 local. _ssh._tcp. SSH on macbook\n' ;;
+	_ssh._tcp) printf '0 Add 2 4 local. _ssh._tcp. SSH on mini\n0 Add 2 4 local. _ssh._tcp. SSH on macbook\n' ;;
 	esac
 	;;
 -L)
 	case ${3:-} in
 	_bier-agent._tcp) printf 'Bier on macbook._bier-agent._tcp.local. can be reached at macbook.local.:53991\n' ;;
-	_ssh._tcp) printf 'SSH on macbook._ssh._tcp.local. can be reached at macbook.local.:22\n' ;;
+	_ssh._tcp)
+		case ${2:-} in
+		'SSH on mini') printf 'SSH on mini._ssh._tcp.local. can be reached at mini.local.:22\n' ;;
+		*) printf 'SSH on macbook._ssh._tcp.local. can be reached at macbook.local.:22\n' ;;
+		esac
+		;;
 	esac
 	;;
 *) exit 1 ;;

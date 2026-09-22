@@ -53,6 +53,7 @@ assert_not_contains "$OUT" 'macbook.local'
 assert_ok bier mini peer discover -ssh
 assert_contains "$OUT" 'Macs with Remote Login found on the local network:'
 assert_contains "$OUT" 'macbook.local'
+assert_not_contains "$OUT" 'mini.local'
 assert_contains "$OUT" 'bier peer install <user>@<host>'
 assert_file_has "$WORK/dns-sd.args" '-B _ssh._tcp local.'
 assert_fails bier mini peer discover -ssh unexpected
@@ -81,11 +82,11 @@ assert_file_has "$WORK/ssh.args" 'authorized_keys'
 unset BIER_TEST_SSH
 
 assert_ok bier mini peer install studio.local
-assert_contains "$OUT" 'Building the signed Bier agent release v0.2.0 on studio.local'
+assert_contains "$OUT" 'Installing verified Bier agent v0.2.0 on studio.local'
 assert_contains "$OUT" 'reachable on TCP port 53991'
 assert_file_has "$WORK/scp.args" 'allowed_signers.new'
 assert_file_has "$WORK/scp.args" 'com.bierkasten.agent.plist.new'
-assert_file_has "$WORK/ssh.args" 'git clone'
+assert_file_has "$WORK/ssh.args" 'fetch --quiet --depth 1 origin'
 assert_file_has "$WORK/ssh.args" 'source.new/agent/build.sh'
 assert_file_has "$WORK/curl.args" 'http://studio.local:53991/v1/health'
 unset BIER_AGENT_TRUST_URL
