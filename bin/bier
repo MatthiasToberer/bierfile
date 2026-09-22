@@ -836,16 +836,33 @@ EOF
 	fi
 }
 
+cmd_peer_help() {
+	cat <<'EOF'
+bier peer — manage Macs Bier may contact
+
+  bier peer discover      show Bier agents announced via Bonjour
+  bier peer add <host>    remember a Mac locally
+  bier peer list          show remembered Macs
+  bier peer check <host>  check safe, non-interactive SSH access
+  bier peer remove <host> forget a remembered Mac
+EOF
+}
+
 cmd_peer() {
-	local sub=${1:-list}
-	if [ $# -gt 0 ]; then shift; fi
+	if [ $# -eq 0 ]; then
+		cmd_peer_help
+		return 0
+	fi
+	local sub=$1
+	shift
 	case $sub in
 	add) cmd_peer_add "$@" ;;
 	list) cmd_peer_list "$@" ;;
 	remove | rm) cmd_peer_remove "$@" ;;
 	check) cmd_peer_check "$@" ;;
 	discover) cmd_peer_discover "$@" ;;
-	*) die 'usage: bier peer <add|list|remove|check|discover> [host]' ;;
+	help | -h | --help) cmd_peer_help ;;
+	*) die 'usage: bier peer <discover|add|list|check|remove> [host]' ;;
 	esac
 }
 

@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 # peers are a local, safe-to-repeat contact list
 
+assert_ok bier mini peer
+assert_contains "$OUT" 'bier peer — manage Macs Bier may contact'
+for subcommand in discover add list check remove; do
+	assert_contains "$OUT" "bier peer $subcommand"
+done
+
 assert_ok bier mini peer list
 assert_contains "$OUT" 'No peers known'
 
