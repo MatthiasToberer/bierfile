@@ -91,6 +91,9 @@ assert_file_has "$WORK/scp.args" 'com.bierkasten.agent.plist.new'
 assert_file_has "$WORK/ssh.args" 'fetch --quiet --depth 1 origin'
 assert_file_has "$WORK/ssh.args" 'source.new/agent/build.sh'
 assert_file_has "$WORK/curl.args" 'http://studio.local:53991/v1/health'
+assert_ok bier mini peer list
+assert_contains "$OUT" 'first.local'
+assert_contains "$OUT" 'studio.local'
 unset BIER_AGENT_TRUST_URL
 
 assert_ok bier mini peer upgrade studio.local

@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.27.0
+BIER_VERSION=0.28.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -298,6 +298,15 @@ peer_name_ok() {
 peer_list() {
 	[ -f "$PEERS_FILE" ] || return 0
 	grep -E '^[A-Za-z0-9][A-Za-z0-9._:@-]*$' "$PEERS_FILE" | sort -u
+}
+
+peer_remember() {
+	local peer=$1
+	if peer_list | grep -qxF "$peer"; then
+		return 0
+	fi
+	mkdir -p "$(dirname "$PEERS_FILE")"
+	printf '%s\n' "$peer" >>"$PEERS_FILE"
 }
 
 # Every SSH/SCP call in the peer setup path is deliberately non-interactive
@@ -795,8 +804,7 @@ cmd_peer_add() {
 		info "Peer already known: $peer"
 		return 0
 	fi
-	mkdir -p "$(dirname "$PEERS_FILE")"
-	printf '%s\n' "$peer" >>"$PEERS_FILE"
+	peer_remember "$peer"
 	info "Peer added: $peer"
 }
 
@@ -949,6 +957,7 @@ launchctl bootstrap \"gui/\$(id -u)\" \"\$HOME/Library/LaunchAgents/com.bierkast
 	info "4/4  Checking whether the agent is reachable …"
 	curl -fsS --max-time 5 "http://$network_host:53991/v1/health" |
 		grep -q '"status":"ok"' || die "the Bier agent on $peer did not answer on TCP port 53991"
+	peer_remember "$peer"
 	info "Done. $agent is ready on $peer."
 }
 
