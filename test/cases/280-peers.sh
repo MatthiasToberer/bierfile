@@ -63,7 +63,7 @@ assert_contains "$OUT" 'reachable on TCP port 53991'
 assert_file_has "$WORK/scp.args" 'allowed_signers.new'
 assert_file_has "$WORK/scp.args" 'com.bierkasten.agent.plist.new'
 assert_file_has "$WORK/ssh.args" 'git clone'
-assert_file_has "$WORK/ssh.args" 'swiftc -O -framework Foundation -framework Network'
+assert_file_has "$WORK/ssh.args" 'source.new/agent/build.sh'
 assert_file_has "$WORK/curl.args" 'http://studio.local:53991/v1/health'
 
 assert_ok bier mini peer upgrade studio.local
