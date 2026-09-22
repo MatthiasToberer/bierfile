@@ -3,7 +3,7 @@
 
 assert_ok bier mini peer
 assert_contains "$OUT" 'bier peer — manage Macs Bier may contact'
-for subcommand in discover add list check trust install upgrade uninstall remove; do
+for subcommand in discover add list check hello trust install upgrade uninstall remove; do
 	assert_contains "$OUT" "bier peer $subcommand"
 done
 
@@ -68,8 +68,7 @@ BIER_RELEASE_TRUST_URL="file://$keys/allowed_signers"
 export BIER_RELEASE_TRUST_URL
 
 mkdir -p "$WORK/home-mini/.ssh"
-printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest bier-test\n' \
-	>"$WORK/home-mini/.ssh/id_ed25519.pub"
+ssh-keygen -q -t ed25519 -N '' -f "$WORK/home-mini/.ssh/id_ed25519"
 BIER_TEST_SSH=bootstrap
 export BIER_TEST_SSH
 assert_ok bier mini peer install first.local
@@ -83,18 +82,24 @@ assert_file_has "$WORK/ssh.args" 'authorized_keys'
 unset BIER_TEST_SSH
 
 assert_ok bier mini peer install studio.local
-assert_contains "$OUT" '3/4  Installing verified Bier agent v0.30.0'
+assert_contains "$OUT" '3/4  Installing verified Bier agent v0.31.0'
 assert_contains "$OUT" '4/4  Checking whether the agent is reachable'
 assert_contains "$OUT" 'Done. mini is ready on studio.local.'
 assert_file_has "$WORK/scp.args" 'allowed_signers.new'
 assert_file_has "$WORK/scp.args" 'com.bier.agent.plist.new'
 assert_file_has "$WORK/ssh.args" 'fetch --quiet --depth 1 origin'
 assert_file_has "$WORK/ssh.args" 'source.new/agent/build.sh'
+assert_file_has "$WORK/ssh.args" 'peer_signers'
 assert_file_has "$WORK/curl.args" 'http://studio.local:53991/v1/health'
 assert_ok bier mini peer list
 assert_contains "$OUT" 'first.local'
 assert_contains "$OUT" 'studio.local'
 unset BIER_RELEASE_TRUST_URL
+
+assert_ok bier mini peer hello studio.local
+assert_contains "$OUT" 'Bier Agent on studio.local accepted mini as a peer.'
+assert_file_has "$WORK/curl.args" 'http://studio.local:53991/v1/peer/hello'
+assert_file_has "$WORK/curl.args" 'X-Bier-Peer: mini'
 
 assert_ok bier mini peer upgrade studio.local
 assert_contains "$OUT" 'Updating the Bier agent on studio.local'

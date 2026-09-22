@@ -2,6 +2,7 @@ import Foundation
 import Network
 
 let maxRequestBytes = 64 * 1024
+let maxPeerRequestAge: TimeInterval = 5 * 60
 
 struct Recipe: Decodable {
 	let version: Int
@@ -28,6 +29,10 @@ func validHostName(_ value: String) -> Bool {
 
 func validRecipeID(_ value: String) -> Bool {
 	value.count <= 128 && value.range(of: "^[A-Za-z0-9][A-Za-z0-9._-]*$", options: .regularExpression) != nil
+}
+
+func validPeerNonce(_ value: String) -> Bool {
+	value.count >= 16 && value.count <= 128 && value.range(of: "^[A-Za-z0-9._-]+$", options: .regularExpression) != nil
 }
 
 func agentError(_ message: String) -> Never {
@@ -72,6 +77,36 @@ func verifyRecipe(agent: String, signers: String, raw: Data, signature: Data) th
 	return recipe
 }
 
+func verifyPeer(peer: String, signers: String, time: String, nonce: String, signature: Data) throws {
+	guard validHostName(peer), validPeerNonce(nonce) else {
+		throw NSError(domain: "BierAgent", code: 1, userInfo: [NSLocalizedDescriptionKey: "invalid peer request"])
+	}
+	let formatter = ISO8601DateFormatter()
+	guard let requestTime = formatter.date(from: time), abs(requestTime.timeIntervalSinceNow) <= maxPeerRequestAge else {
+		throw NSError(domain: "BierAgent", code: 1, userInfo: [NSLocalizedDescriptionKey: "peer request has expired"])
+	}
+	let payload = "GET\n/v1/peer/hello\n\(peer)\n\(time)\n\(nonce)\n"
+	let signatureURL = FileManager.default.temporaryDirectory.appendingPathComponent("bier-peer-signature-\(UUID().uuidString)")
+	try signature.write(to: signatureURL, options: .atomic)
+	try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: signatureURL.path)
+	defer { try? FileManager.default.removeItem(at: signatureURL) }
+
+	let process = Process()
+	process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh-keygen")
+	process.arguments = ["-Y", "verify", "-f", signers, "-I", peer, "-n", "bier-peer", "-s", signatureURL.path]
+	let input = Pipe(), output = Pipe()
+	process.standardInput = input
+	process.standardOutput = output
+	process.standardError = output
+	try process.run()
+	input.fileHandleForWriting.write(Data(payload.utf8))
+	input.fileHandleForWriting.closeFile()
+	process.waitUntilExit()
+	guard process.terminationStatus == 0 else {
+		throw NSError(domain: "BierAgent", code: 1, userInfo: [NSLocalizedDescriptionKey: "peer signature is not trusted"])
+	}
+}
+
 final class ReplayStore {
 	private let url: URL
 	private let lock = NSLock()
@@ -96,16 +131,18 @@ final class ReplayStore {
 final class AgentServer {
 	private let agent: String
 	private let signers: String
+	private let peerSigners: String?
 	private let store: ReplayStore
 	private let listener: NWListener
 
-	init(agent: String, signers: String, stateDirectory: URL, port: UInt16, bonjour: Bool) throws {
+	init(agent: String, signers: String, peerSigners: String?, stateDirectory: URL, port: UInt16, bonjour: Bool) throws {
 		guard validHostName(agent), FileManager.default.fileExists(atPath: signers),
 			let endpointPort = NWEndpoint.Port(rawValue: port) else {
 			throw NSError(domain: "BierAgent", code: 1, userInfo: [NSLocalizedDescriptionKey: "invalid server configuration"])
 		}
 		self.agent = agent
 		self.signers = signers
+		self.peerSigners = peerSigners
 		store = try ReplayStore(directory: stateDirectory)
 		listener = try NWListener(using: .tcp, on: endpointPort)
 		if bonjour {
@@ -135,11 +172,11 @@ final class AgentServer {
 				self.receive(connection, data: combined)
 				return
 			}
-			self.handle(connection, method: request.method, path: request.path, body: request.body)
+			self.handle(connection, method: request.method, path: request.path, headers: request.headers, body: request.body)
 		}
 	}
 
-	private func completeRequest(_ data: Data) -> (method: String, path: String, body: Data)? {
+	private func completeRequest(_ data: Data) -> (method: String, path: String, headers: [String: String], body: Data)? {
 		let separator = Data("\r\n\r\n".utf8)
 		guard let range = data.range(of: separator),
 			let header = String(data: data[..<range.lowerBound], encoding: .utf8) else { return nil }
@@ -147,16 +184,40 @@ final class AgentServer {
 		guard let requestLine = lines.first else { return nil }
 		let fields = requestLine.split(separator: " ")
 		guard fields.count == 3 else { return nil }
-		let contentLength = lines.dropFirst().first { $0.lowercased().hasPrefix("content-length:") }
-			.flatMap { Int($0.split(separator: ":", maxSplits: 1)[1].trimmingCharacters(in: .whitespaces)) } ?? 0
+		var headers: [String: String] = [:]
+		for line in lines.dropFirst() {
+			let fields = line.split(separator: ":", maxSplits: 1)
+			guard fields.count == 2 else { return nil }
+			headers[String(fields[0]).lowercased()] = String(fields[1]).trimmingCharacters(in: .whitespaces)
+		}
+		let contentLength = headers["content-length"].flatMap(Int.init) ?? 0
 		let bodyStart = range.upperBound
 		guard contentLength >= 0, data.count >= bodyStart + contentLength else { return nil }
-		return (String(fields[0]), String(fields[1]), Data(data[bodyStart..<(bodyStart + contentLength)]))
+		return (String(fields[0]), String(fields[1]), headers, Data(data[bodyStart..<(bodyStart + contentLength)]))
 	}
 
-	private func handle(_ connection: NWConnection, method: String, path: String, body: Data) {
+	private func handle(_ connection: NWConnection, method: String, path: String, headers: [String: String], body: Data) {
 		if method == "GET" && path == "/v1/health" {
 			respond(connection, status: 200, body: "{\"status\":\"ok\",\"version\":\"\(agentVersion)\"}", contentType: "application/json")
+			return
+		}
+		if method == "GET" && path == "/v1/peer/hello" {
+			guard let peerSigners, let peer = headers["x-bier-peer"], let time = headers["x-bier-time"],
+				let nonce = headers["x-bier-nonce"], let encoded = headers["x-bier-signature"],
+				let signature = Data(base64Encoded: encoded) else {
+				respond(connection, status: 403, body: "peer is not authorised")
+				return
+			}
+			do {
+				try verifyPeer(peer: peer, signers: peerSigners, time: time, nonce: nonce, signature: signature)
+				if try store.record("peer-\(peer)-\(nonce)") {
+					respond(connection, status: 409, body: "peer request was already processed")
+				} else {
+					respond(connection, status: 200, body: "{\"status\":\"peer-ok\",\"agent\":\"\(agent)\"}", contentType: "application/json")
+				}
+			} catch {
+				respond(connection, status: 403, body: "peer is not authorised")
+			}
 			return
 		}
 		guard method == "POST", path == "/v1/probe",
@@ -211,9 +272,10 @@ case "serve":
 	}
 	let port = UInt16(option(arguments, "--port") ?? "53991") ?? 0
 	let bonjour = option(arguments, "--bonjour") != "false"
+	let peerSigners = option(arguments, "--peer-signers")
 	let state = option(arguments, "--state-dir").map(URL.init(fileURLWithPath:))
 		?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Bier")
-	do { try AgentServer(agent: agent, signers: signers, stateDirectory: state, port: port, bonjour: bonjour).start() }
+	do { try AgentServer(agent: agent, signers: signers, peerSigners: peerSigners, stateDirectory: state, port: port, bonjour: bonjour).start() }
 	catch { agentError(error.localizedDescription) }
 default:
 	agentError("unknown command")
