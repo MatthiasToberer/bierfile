@@ -166,6 +166,10 @@ pid=
 mkdir -p "$work/source/Brewfiles" "$work/home/.ssh"
 printf 'brew "jq"\n' >"$work/source/Brewfiles/main"
 git init -q "$work/source"
+git -C "$work/source" config user.email test@example.com
+git -C "$work/source" config user.name Test
+git -C "$work/source" add Brewfiles
+git -C "$work/source" commit -qm 'initial data'
 cp "$work/controller" "$work/home/.ssh/id_ed25519"
 cp "$work/controller.pub" "$work/home/.ssh/id_ed25519.pub"
 chmod 600 "$work/home/.ssh/id_ed25519"
@@ -180,6 +184,8 @@ grep -q 'Bier Agent on 127.0.0.1 accepted mini as a peer.' "$work/hello-swift.lo
 "$peer_cli" seed 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --data "$work/source" --port 53992 >"$work/client.log"
 grep -q 'Done. 127.0.0.1 now has the Bier data from mini.' "$work/client.log"
 test "$(cat "$work/target/Brewfiles/main")" = 'brew "jq"'
+test -d "$work/target/.git"
+test "$(git -C "$work/target" log -1 --format=%s)" = 'initial data'
 printf 'brew "tree"\n' >"$work/source/Brewfiles/main"
 "$peer_cli" seed-if-empty 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --data "$work/source" --port 53992 >"$work/client-existing.log"
 grep -q 'Existing peer data was kept unchanged.' "$work/client-existing.log"

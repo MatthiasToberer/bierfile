@@ -81,6 +81,7 @@ private enum BierPeerCLI {
 		let options = try Options(arguments: Array(CommandLine.arguments.dropFirst()))
 		let transport = try PeerClient(baseURL: options.baseURL, peerName: options.localHost, identity: options.identity)
 		let snapshots = PeerSnapshotClient(transport: transport)
+		let repositories = PeerRepositoryClient(transport: transport)
 		switch options.command {
 		case "hello":
 			let response = try JSONDecoder().decode(HelloResponse.self, from: try await transport.send(method: "GET", path: "/v1/peer/hello", body: Data()))
@@ -91,9 +92,13 @@ private enum BierPeerCLI {
 			do {
 				try await snapshots.seedIfEmpty(from: data)
 			} catch PeerSnapshotClientError.peerNotEmpty where options.command == "seed-if-empty" {
+				if try await snapshots.manifest().entries == collectDataManifest(at: data).entries {
+					try await repositories.push(from: GitRepository(root: data))
+				}
 				print("Existing peer data was kept unchanged.")
 				return
 			}
+			try await repositories.push(from: GitRepository(root: data))
 			print("Done. \(options.displayHost) now has the Bier data from \(options.localHost).")
 		case "compare":
 			guard let data = options.data else { throw CLIError.missingData }
