@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.34.0
+BIER_VERSION=0.35.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -837,6 +837,10 @@ publish() {
 	# every later call takes the normal fetch/rebase path below.
 	branch=$(git -C "$DATA" branch --show-current)
 	[ -n "$branch" ] || die "the data repository has no current branch"
+	if ! git -C "$DATA" remote get-url origin >/dev/null 2>&1; then
+		info "Saved in the local Bier history."
+		return 0
+	fi
 	if ! remote=$(git -C "$DATA" ls-remote --heads origin "$branch" 2>&1); then
 		printf '%s\n' "$remote" >&2
 		die "the data server could not be reached"
@@ -1873,6 +1877,10 @@ cmd_install() {
 # publish fetches before every push anyway, and update needs it here.
 sync_data() {
 	local msg=${1:-"$HOST: inventory updated"}
+	if ! git -C "$DATA" remote get-url origin >/dev/null 2>&1; then
+		publish "$msg"
+		return 0
+	fi
 
 	# Safe as well as Brewfiles. A run in which only a vault file
 	# changed would otherwise fall through here and never be committed
