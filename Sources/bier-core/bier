@@ -929,8 +929,19 @@ cmd_peer_hello() {
 	info "Bier Agent on $peer accepted $HOST as a peer."
 }
 
+peer_pair_address_ok() {
+	case $1 in
+	'' | [!a-zA-Z0-9]* | *[!a-zA-Z0-9.-]*) return 1 ;;
+	esac
+}
+
 cmd_peer_offer() {
-	[ $# -eq 0 ] || die 'usage: bier peer offer'
+	local address="$(hostname -s).local"
+	if [ $# -ne 0 ]; then
+		[ $# -eq 2 ] && [ "$1" = --address ] && peer_pair_address_ok "$2" ||
+			die 'usage: bier peer offer [--address <own-host>]'
+		address=$2
+	fi
 	[ -x "$HOME/.local/share/bier/agent/bin/bier-agent" ] || die "the local Bier agent is not installed; run install.sh"
 	[ -r "$PEER_IDENTITY.pub" ] || die "the local Bier peer identity is missing; run install.sh"
 	local code expires tmp shown
@@ -943,13 +954,20 @@ cmd_peer_offer() {
 	mv "$tmp" "$PAIRING_OFFER"
 	shown=$(printf '%s' "$code" | sed -E 's/(.{4})/\1-/g; s/-$//')
 	info "Pairing is open for 10 minutes."
-	info "On the other Mac run:  bier peer pair $(hostname -s).local"
+	info "On the other Mac run:  bier peer pair $address"
 	info "One-time code: $shown"
 }
 
 cmd_peer_pair() {
 	local peer=${1:-} code code_file
-	[ $# -eq 1 ] && peer_name_ok "$peer" || die 'usage: bier peer pair <host>'
+	local -a address_args=()
+	{ [ $# -eq 1 ] || [ $# -eq 3 ]; } && peer_name_ok "$peer" ||
+		die 'usage: bier peer pair <host> [--address <own-host>]'
+	if [ $# -eq 3 ]; then
+		[ "$2" = --address ] && peer_pair_address_ok "$3" ||
+			die 'usage: bier peer pair <host> [--address <own-host>]'
+		address_args=(--address "$3")
+	fi
 	[ -x "$PEER_CLIENT" ] || die "the Swift peer client is not built; run install.sh"
 	[ -r "$PEER_IDENTITY" ] && [ -r "$PEER_IDENTITY.pub" ] || die "the local Bier peer identity is missing; run install.sh"
 	code=${BIER_PAIR_CODE:-}
@@ -962,7 +980,7 @@ cmd_peer_pair() {
 	printf '%s\n' "$code" >"$code_file"
 	chmod 600 "$code_file"
 	info "Pairing with $peer …"
-	"$PEER_CLIENT" pair "$peer" --local "$HOST" --identity "$PEER_IDENTITY" --code-file "$code_file" --peer-signers "$LOCAL_PEER_SIGNERS" --port "$PEER_PORT" ||
+	"$PEER_CLIENT" pair "$peer" ${address_args[@]+"${address_args[@]}"} --local "$HOST" --identity "$PEER_IDENTITY" --code-file "$code_file" --peer-signers "$LOCAL_PEER_SIGNERS" --port "$PEER_PORT" ||
 		die "pairing with $peer failed"
 	peer_remember "$peer"
 	info "Peer added: $peer"
@@ -1462,8 +1480,8 @@ bier peer — manage Macs Bier may contact
   bier peer list          show remembered Macs
   bier peer check <host>  check safe, non-interactive SSH access
   bier peer hello <host>  prove authenticated Bier Agent access
-  bier peer offer         show a one-time code for SSH-free pairing
-  bier peer pair <host>   pair with a Mac using its one-time code
+  bier peer offer [--address <own-host>]  show a one-time code for SSH-free pairing
+  bier peer pair <host> [--address <own-host>]  pair with a Mac using its one-time code
   bier peer compare <host> compare verified data without changing it
   bier peer sync <host>   synchronise data and history with a peer
   bier peer seed <host>   copy data to a new, empty Bier peer
@@ -3033,8 +3051,8 @@ bier — keeps Brewfiles in sync across Macs
   bier peer remove <host> forget a remembered Mac
   bier peer check <host>  check safe, non-interactive SSH access
   bier peer hello <host>  prove authenticated Bier Agent access
-  bier peer offer         show a one-time code for SSH-free pairing
-  bier peer pair <host>   pair with a Mac using its one-time code
+  bier peer offer [--address <own-host>]  show a one-time code for SSH-free pairing
+  bier peer pair <host> [--address <own-host>]  pair with a Mac using its one-time code
   bier peer compare <host> compare verified data without changing it
   bier peer sync <host>   synchronise data and history with a peer
   bier peer seed <host>   copy data to a new, empty Bier peer

@@ -12,8 +12,8 @@ Manages the Macs this one exchanges data with.
 
 | Command | Effect |
 | --- | --- |
-| `offer` | open pairing for ten minutes and show a one-time code |
-| `pair <host>` | pair with a Mac that shows a code; copies data to it if it is untouched |
+| `offer [--address <own-host>]` | open pairing for ten minutes and show a one-time code |
+| `pair <host> [--address <own-host>]` | pair with a Mac that shows a code; copies data to it if it is untouched |
 | `list` | Macs this one exchanges with |
 | `remove <host>` | forget a Mac |
 | `hello <host>` | check that the other agent accepts this Mac |
@@ -22,6 +22,9 @@ Manages the Macs this one exchanges data with.
 | `seed <host>` | copy this Mac's data to a peer whose data is empty |
 | `discover` | list bier agents announced via Bonjour |
 | `trust [url]` | alias for [`bier trust`](trust.md) |
+
+`--address` advertises this Mac's reachable name or IPv4 address. Use it
+on both commands for [Tailscale pairing](../../security/pairing.md#syncing-beyond-the-local-network-tailscale).
 
 ## Remote installation over SSH
 

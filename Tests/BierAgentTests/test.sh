@@ -194,6 +194,12 @@ grep -q '^mini ssh-ed25519 ' "$work/peer_signers"
 grep -qx 'mini.local' "$work/remote-peers"
 grep -q '^target ssh-ed25519 ' "$work/home/.local/share/bier/agent/peer_signers"
 grep -qx '127.0.0.1' "$work/home/.config/bier/peers"
+for advertised in mini.example.ts.net 100.64.0.1; do
+	printf '{"version":1,"code":"%s","expires":%s,"attempts":0}\n' "$pair_code" "$pair_expiry" >"$work/state-client/pairing-offer.json"
+	BIER_ROOT="$root" BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 BIER_PEER_CLIENT="$peer_cli" BIER_PEER_IDENTITY="$work/home/.ssh/id_ed25519" BIER_PAIR_CODE="$pair_code" HOME="$work/home" \
+		"$root/Sources/bier-core/bier" peer pair 127.0.0.1 --address "$advertised" >"$work/pair-address.log"
+	grep -qx "$advertised" "$work/remote-peers"
+done
 test ! -e "$work/state-client/pairing-offer.json"
 test "$(cat "$work/target/Brewfiles/main")" = 'brew "jq"'
 test -d "$work/target/.git"

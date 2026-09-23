@@ -78,23 +78,32 @@ the [threat model](threat-model.md#transport)).
 
 1. Install Tailscale on every Mac, sign in with the same account and
    turn on MagicDNS, so each Mac is reachable by its name.
-2. Pair using the Tailscale name instead of the `.local` name. On the
-   first Mac:
+2. On the joining Mac, advertise its Tailscale name (example: `macbook`):
 
    ```sh
-   bier peer pair macbook
+   bier peer offer --address macbook
    ```
 
-3. The joining Mac remembers the first one by its `.local` name, which
-   Tailscale does not resolve. On the joining Mac, replace it:
+3. On the already configured Mac (example: `mini`), use the printed
+   destination and advertise this Mac's own Tailscale name:
 
    ```sh
-   bier peer add mini
-   bier peer remove mini.local
+   bier peer pair macbook --address mini
    ```
 
-`bier peer list` should then show only Tailscale names on both Macs, and
-`bier sync` works on any network.
+Enter the one-time code from the joining Mac. Both Macs now remember
+Tailscale addresses; no manual replacement of `.local` entries is needed.
+`--address` always names the Mac on which you run the command. It does
+not change that Mac's Bier identity. Use the names shown in Tailscale;
+full MagicDNS names or Tailscale IPv4 addresses also work.
+
+Without `--address`, the existing local-network behavior is preserved.
+For Macs paired previously, `bier peer add <tailscale-name>` and
+`bier peer remove <old-name>.local` on each Mac can replace the stored
+address without pairing again. Re-pairing does not remove old addresses.
+
+Check `bier peer list` on both Macs, then `bier peer hello <other-mac>`
+and `bier sync`. Tailscale must allow TCP port 53991 between the Macs.
 
 What the agent does and does not accept:
 [Threat model](threat-model.md).

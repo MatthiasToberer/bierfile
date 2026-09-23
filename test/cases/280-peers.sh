@@ -86,6 +86,26 @@ chmod +x "$WORK/peer-client"
 BIER_PEER_CLIENT=$WORK/peer-client
 BIER_TEST_PEER_LOG=$WORK/peer-client.log
 export BIER_PEER_CLIENT BIER_TEST_PEER_LOG
+# Both addresses must be supplied unchanged, without modifying peer identity.
+assert_ok bier mini peer offer --address macbook.example.ts.net
+assert_contains "$OUT" 'bier peer pair macbook.example.ts.net'
+assert_fails bier mini peer offer --address 'bad/name'
+assert_fails bier mini peer offer --address $'mini\nother'
+assert_fails bier mini peer offer --address ''
+assert_fails bier mini peer pair macbook --address
+assert_fails bier mini peer pair macbook --address 'user@mini'
+BIER_PAIR_CODE=0123456789abcdef0123456789abcdef
+export BIER_PAIR_CODE
+assert_ok bier mini peer pair macbook.example.ts.net --address mini.example.ts.net
+assert_file_has "$WORK/peer-client.log" 'pair macbook.example.ts.net --address mini.example.ts.net --local mini'
+assert_ok bier mini peer remove macbook.example.ts.net
+assert_ok bier mini peer pair 100.64.0.2 --address 100.64.0.1
+assert_file_has "$WORK/peer-client.log" 'pair 100.64.0.2 --address 100.64.0.1 --local mini'
+assert_ok bier mini peer remove 100.64.0.2
+assert_ok bier mini peer pair macbook.local
+assert_file_has "$WORK/peer-client.log" 'pair macbook.local --local mini'
+assert_ok bier mini peer remove macbook.local
+unset BIER_PAIR_CODE
 system mini <<'EOF'
 brew "wget"
 EOF

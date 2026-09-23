@@ -204,8 +204,8 @@ BierMenu, `bier-peer` and the agent and restarts the LaunchAgent.
 - The transport is plain HTTP. Requests are authenticated; traffic is not
   encrypted and responses are not signed. See the
   [threat model](../security/threat-model.md#transport).
-- Pairing sends the initiating Mac's address as `<host>.local`, which does
-  not resolve outside the local network — see
+- Pairing defaults to `<host>.local`. Across networks, supply the local
+  Tailscale address with `--address` — see
   [Syncing beyond the local network](../security/pairing.md#syncing-beyond-the-local-network-tailscale).
 - `bier sync` stops at the first peer it cannot reach.
 - Recipes: only `agent.probe` exists. Every further recipe type needs a

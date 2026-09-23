@@ -12,7 +12,7 @@ private enum CLIError: LocalizedError {
 	var errorDescription: String? {
 		switch self {
 		case .usage:
-			return "usage: bier-peer <hello|pair|seed|seed-if-empty|seed-if-pristine|compare|sync> <host> --local <name> --identity <path> [--data <path>] [--code-file <path>] [--peer-signers <path>] [--port <port>]"
+			return "usage: bier-peer <hello|pair|seed|seed-if-empty|seed-if-pristine|compare|sync> <host> --local <name> --identity <path> [--data <path>] [--address <own-host>] [--code-file <path>] [--peer-signers <path>] [--port <port>]"
 		case .invalidHost:
 			return "the peer host or port is invalid"
 		case .missingData:
@@ -29,6 +29,7 @@ private struct Options {
 	let command: String
 	let displayHost: String
 	let localHost: String
+	let address: String
 	let identity: URL
 	let data: URL?
 	let codeFile: URL?
@@ -48,6 +49,7 @@ private struct Options {
 		}
 		guard let local = values["--local"], let identityPath = values["--identity"] else { throw CLIError.usage }
 		localHost = local
+		address = values["--address"] ?? (local.contains(".") ? local : "\(local).local")
 		identity = URL(fileURLWithPath: identityPath)
 		data = values["--data"].map(URL.init(fileURLWithPath:))
 		codeFile = values["--code-file"].map(URL.init(fileURLWithPath:))
@@ -132,7 +134,10 @@ private enum BierPeerCLI {
 		guard code.count == 32 else { throw CLIError.missingPairing }
 		let publicKey = try String(contentsOf: URL(fileURLWithPath: options.identity.path + ".pub"), encoding: .utf8)
 			.trimmingCharacters(in: .whitespacesAndNewlines)
-		let address = options.localHost.contains(".") ? options.localHost : "\(options.localHost).local"
+		let address = options.address
+		guard address.range(of: "^[A-Za-z0-9][A-Za-z0-9.-]*\\z", options: .regularExpression) != nil else {
+			throw CLIError.invalidHost
+		}
 		let pairing = PeerPairingRequest(peer: options.localHost, address: address, publicKey: publicKey,
 			proof: peerPairingProof(code: code, peer: options.localHost, address: address, publicKey: publicKey))
 		let encoder = JSONEncoder()
