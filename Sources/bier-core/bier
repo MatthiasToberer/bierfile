@@ -2133,13 +2133,11 @@ vault_decrypt() {
 # say, and then anything is as good as anything else.
 vault_pass_works() {
 	local f probe
-	for f in "$SAFE_DIR"/*.gpg; do
-		[ -f "$f" ] || return 0
-		probe=$(tmpfile)
-		vault_decrypt "$f" "$1" "$probe" && return 0
-		return 1
-	done
-	return 0
+	# Any file will do, also one in a folder or the groups list.
+	f=$(find "$SAFE_DIR" -name '*.gpg' -type f -print -quit 2>/dev/null)
+	[ -n "$f" ] || return 0
+	probe=$(tmpfile)
+	vault_decrypt "$f" "$1" "$probe"
 }
 
 # Asks and hands back what was typed. Never echoes it.
@@ -2499,6 +2497,12 @@ vault_seal() {
 	[ -n "$pass" ] || die "the vault holds files but no passphrase is set.
      bier vault --init"
 	need_gpg
+	# Checked before anything is encrypted. A wrong passphrase used to
+	# seal this Mac's files first and complain only when opening, and
+	# the safe then held files the other Macs could not open.
+	vault_pass_works "$pass" ||
+		die "the safe will not open with the remembered passphrase.
+     Nothing was encrypted. Changed on another Mac?  bier vault --init"
 
 	mkdir -p "$SAFE_DIR"
 	vault_recovery_note
