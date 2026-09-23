@@ -29,7 +29,7 @@ export PATH="$REPO/test/stubs:$PATH"
 
 # bier must never pick up the real machine's config or repository path,
 # should a case forget to set something.
-unset BIER_ROOT BIER_HOST BIER_CONFIG 2>/dev/null || true
+unset BIER_ROOT BIER_HOST BIER_CONFIG XDG_STATE_HOME 2>/dev/null || true
 
 TOTAL=0
 BAD=0

@@ -27,5 +27,12 @@ bier vault --passphrase
 
 Only files below your home folder can go into the vault.
 
+`bier sync` seals a file only when it changed on this Mac, and takes the
+safe's version only when it changed elsewhere. When a file changed on
+both sides, nothing is overwritten: the other version is put next to it
+as `<file>.from-safe`. Merge what you need; the next sync distributes
+the file as it is then. A Mac that has not synced its vault since this
+behaviour arrived treats every difference that way once.
+
 **See also:** [Vault](../../vault/dotfiles.md), [Groups](../../vault/groups.md),
 [Passphrase and recovery](../../vault/recovery.md)

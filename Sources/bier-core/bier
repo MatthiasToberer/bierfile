@@ -175,6 +175,7 @@ BREW_DIR=$DATA/Brewfiles
 # a different directory is a fact. Only the encrypted copies travel.
 VAULT=${BIER_VAULT:-$(config_get vault)}
 VAULT=${VAULT:-$HOME/.bierfilevault}
+VAULT_STATE=${XDG_STATE_HOME:-$HOME/.local/state}/bier
 case $VAULT in
 "~/"*) VAULT=$HOME/${VAULT#\~/} ;;
 esac
@@ -2486,7 +2487,7 @@ vault_own_files() {
 # different bytes every time, so re-encrypting everything would make a
 # commit out of every single run.
 vault_seal() {
-	local pass f rel enc old
+	local pass f rel enc old cur safe base
 	[ -d "$VAULT" ] || return 0
 	# An empty vault asks for nothing. Demanding a passphrase from
 	# somebody who never put a file in would be absurd -- and since
@@ -2513,23 +2514,35 @@ vault_seal() {
 		# same on every Mac and has no business travelling.
 		[ "$rel" != "README.txt" ] || continue
 		enc=$SAFE_DIR/$rel.gpg
-		mkdir -p "$(dirname "$enc")"
+		cur=$(vault_hash "$f")
 		if [ -f "$enc" ]; then
-			old=$(mktemp "${TMPDIR:-/tmp}/bier.XXXXXX")
-			if vault_decrypt "$enc" "$pass" "$old" && cmp -s "$f" "$old"; then
-				rm -f "$old"
+			old=$(tmpfile)
+			vault_decrypt "$enc" "$pass" "$old" ||
+				die "Safe/$rel.gpg will not open with the remembered passphrase"
+			safe=$(vault_hash "$old")
+			rm -f "$old"
+			if [ "$cur" = "$safe" ]; then
+				vault_base_set "$rel" "$cur"
 				continue
 			fi
-			rm -f "$old"
+			# Only a change made here is sealed. A paired Mac can put a
+			# newer safe in place at any time, and sealing whatever
+			# differs from it wrote the old version back over the new
+			# one. Changed in the safe, or on both sides: vault_open
+			# sorts that out once the exchange is done.
+			base=$(vault_base_get "$rel")
+			[ -n "$base" ] && [ "$safe" = "$base" ] || continue
 		fi
+		mkdir -p "$(dirname "$enc")"
 		vault_encrypt "$f" "$pass" "$enc"
+		vault_base_set "$rel" "$cur"
 	done
 }
 
 # Safe -> vault, and a link at the destination for anything that has
 # none yet.
 vault_open() {
-	local pass f rel out target
+	local pass f rel
 	[ -d "$SAFE_DIR" ] || return 0
 	[ -n "$(find "$SAFE_DIR" -name '*.gpg' -type f -print -quit 2>/dev/null)" ] || return 0
 	case $(vault_pass_state) in
@@ -2552,33 +2565,102 @@ vault_open() {
 	# The groups first, and on their own: everything after this asks
 	# them whether it belongs here, and find gives no order worth
 	# relying on.
-	if [ -f "$SAFE_DIR/.groups.gpg" ]; then
-		mkdir -p "$VAULT"
-		vault_decrypt "$SAFE_DIR/.groups.gpg" "$pass" "$VAULT/.groups" || {
-			rm -f "$VAULT/.groups"
-			die "the safe will not open with the remembered passphrase.
-     Changed on another Mac?  bier vault --init"
-		}
-	fi
+	[ ! -f "$SAFE_DIR/.groups.gpg" ] || vault_take .groups "$pass"
 
 	find "$SAFE_DIR" -name '*.gpg' -type f -print | while IFS= read -r f; do
 		rel=${f#"$SAFE_DIR"/}
 		rel=${rel%.gpg}
+		[ "$rel" != .groups ] || continue
 		# Not ours: another group's file. It stays in the safe, it just
 		# never gets decrypted here.
 		vault_wanted "$rel" || continue
-		out=$VAULT/$rel
-		mkdir -p "$(dirname "$out")"
-		vault_decrypt "$f" "$pass" "$out" || {
-			rm -f "$out"
-			die "the safe will not open with the remembered passphrase.
-     Changed on another Mac?  bier vault --init"
-		}
+		vault_take "$rel" "$pass"
 		# bier's own files have no home to be linked into.
 		vault_is_meta "$rel" && continue
-		target=$(vault_target "$rel")
-		vault_link "$out" "$target"
+		vault_link "$VAULT/$rel" "$(vault_target "$rel")"
 	done
+}
+
+# One file from the safe into the vault, by what changed since this Mac
+# and the safe last agreed:
+#
+#   only the safe      take it
+#   only the vault     keep it; the next sync seals it
+#   both, or unknown   keep it, and put the safe's version next to the
+#                      file as .from-safe; the next sync seals this
+#                      Mac's version, so merge by hand before that
+#
+# bier's own files take the safe's version when both changed: there is
+# nobody's home to put a second copy in.
+vault_take() {
+	local rel=$1 pass=$2 out plain safe cur base target copy n
+	out=$VAULT/$rel
+	plain=$(tmpfile)
+	vault_decrypt "$SAFE_DIR/$rel.gpg" "$pass" "$plain" ||
+		die "the safe will not open with the remembered passphrase.
+     Changed on another Mac?  bier vault --init"
+	safe=$(vault_hash "$plain")
+	if [ ! -f "$out" ]; then
+		mkdir -p "$(dirname "$out")"
+		cp "$plain" "$out"
+	else
+		cur=$(vault_hash "$out")
+		base=$(vault_base_get "$rel")
+		if [ "$cur" = "$safe" ]; then
+			:
+		elif [ -n "$base" ] && [ "$cur" = "$base" ]; then
+			cat "$plain" >"$out"
+			vault_is_meta "$rel" || info "updated: $(vault_target "$rel")"
+		elif [ -n "$base" ] && [ "$safe" = "$base" ]; then
+			rm -f "$plain"
+			return 0
+		elif vault_is_meta "$rel"; then
+			cat "$plain" >"$out"
+			info "$rel changed here and on another Mac; the other version was taken"
+		else
+			target=$(vault_target "$rel")
+			copy=$target.from-safe
+			n=2
+			while [ -e "$copy" ]; do
+				copy=$target.from-safe.$n
+				n=$((n + 1))
+			done
+			cp "$plain" "$copy"
+			info "changed here and on another Mac: $target"
+			info "  the other version is in $copy"
+			info "  merge what you need into $target; the next sync keeps it as it is then"
+		fi
+	fi
+	rm -f "$plain"
+	vault_base_set "$rel" "$safe"
+}
+
+# What this Mac and the safe last agreed on, per vault file, lives in
+# $VAULT_STATE. A salted hash rather than the plain one: a short secret
+# in a file would otherwise be easy to guess back from it. Neither the
+# salt nor the list travels.
+vault_hash() {
+	local salt=$VAULT_STATE/vault-salt
+	if [ ! -s "$salt" ]; then
+		mkdir -p "$VAULT_STATE"
+		chmod 700 "$VAULT_STATE"
+		(umask 077 && head -c 32 /dev/urandom | xxd -p | tr -d '\n' >"$salt")
+	fi
+	{ cat "$salt"; cat "$1"; } | shasum -a 256 | cut -d' ' -f1
+}
+
+vault_base_get() {
+	[ -f "$VAULT_STATE/vault-base" ] || return 0
+	awk -F '\t' -v rel="$1" '$2 == rel { hash = $1 } END { if (hash != "") print hash }' "$VAULT_STATE/vault-base"
+}
+
+vault_base_set() {
+	local list=$VAULT_STATE/vault-base next
+	mkdir -p "$VAULT_STATE"
+	next=$(mktemp "$VAULT_STATE/vault-base.XXXXXX")
+	[ ! -f "$list" ] || awk -F '\t' -v rel="$1" '$2 != rel' "$list" >"$next"
+	printf '%s\t%s\n' "$2" "$1" >>"$next"
+	mv "$next" "$list"
 }
 
 cmd_vault() {
