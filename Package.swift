@@ -9,19 +9,7 @@ let package = Package(
 		.library(name: "BierCore", targets: ["BierCore"])
 	],
 	targets: [
-		.target(
-			name: "BierCore",
-			path: "agent",
-			exclude: [
-				"BierAgent.swift",
-				"PEER-DATA-PROTOCOL.md",
-				"README.md",
-				"SnapshotTest.swift",
-				"build.sh",
-				"test.sh"
-			],
-			sources: ["DataManifest.swift", "DataSnapshot.swift"]
-		),
+		.target(name: "BierCore"),
 		.testTarget(
 			name: "BierCoreTests",
 			dependencies: ["BierCore"],

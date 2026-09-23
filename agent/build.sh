@@ -13,7 +13,7 @@ version_source=$version_dir/main.swift
 trap 'rm -rf "$version_dir"' EXIT
 {
 	printf 'let agentVersion = "%s"\n' "$version"
-	cat "$here/DataManifest.swift" "$here/DataSnapshot.swift" "$here/BierAgent.swift"
+	cat "$here/../Sources/BierCore/DataManifest.swift" "$here/../Sources/BierCore/DataSnapshot.swift" "$here/BierAgent.swift"
 } >"$version_source"
 mkdir -p "$(dirname "$out")"
 swiftc -O -framework Foundation -framework Network -framework CryptoKit -o "$out" "$version_source"
