@@ -961,6 +961,11 @@ cmd_peer_pair() {
 		die "pairing with $peer failed"
 	peer_remember "$peer"
 	info "Peer added: $peer"
+	if [ -n "$DATA" ] && [ -d "$DATA/.git" ]; then
+		info "Checking whether the new peer needs this Mac's Bier data …"
+		"$PEER_CLIENT" seed-if-pristine "$peer" --local "$HOST" --identity "$HOME/.ssh/id_ed25519" --data "$DATA" --port "$PEER_PORT" ||
+			die "paired successfully, but could not initialise the peer data"
+	fi
 }
 
 peer_snapshot_files() {

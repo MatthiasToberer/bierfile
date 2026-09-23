@@ -12,7 +12,7 @@ private enum CLIError: LocalizedError {
 	var errorDescription: String? {
 		switch self {
 		case .usage:
-			return "usage: bier-peer <hello|pair|seed|seed-if-empty|compare|sync> <host> --local <name> --identity <path> [--data <path>] [--code-file <path>] [--peer-signers <path>] [--port <port>]"
+			return "usage: bier-peer <hello|pair|seed|seed-if-empty|seed-if-pristine|compare|sync> <host> --local <name> --identity <path> [--data <path>] [--code-file <path>] [--peer-signers <path>] [--port <port>]"
 		case .invalidHost:
 			return "the peer host or port is invalid"
 		case .missingData:
@@ -96,11 +96,15 @@ private enum BierPeerCLI {
 			print("Bier Agent on \(options.displayHost) accepted \(options.localHost) as a peer.")
 		case "pair":
 			try await pair(options)
-		case "seed", "seed-if-empty":
+		case "seed", "seed-if-empty", "seed-if-pristine":
 			guard let data = options.data else { throw CLIError.missingData }
 			do {
-				try await snapshots.seedIfEmpty(from: data)
-			} catch PeerSnapshotClientError.peerNotEmpty where options.command == "seed-if-empty" {
+				if options.command == "seed-if-pristine" {
+					try await snapshots.seedIfPristine(from: data)
+				} else {
+					try await snapshots.seedIfEmpty(from: data)
+				}
+			} catch PeerSnapshotClientError.peerNotEmpty where options.command != "seed" {
 				if try await snapshots.manifest().entries == collectDataManifest(at: data).entries {
 					try await repositories.push(from: GitRepository(root: data))
 				}

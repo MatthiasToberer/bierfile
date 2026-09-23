@@ -186,19 +186,19 @@ done
 pair_code=0123456789abcdef0123456789abcdef
 pair_expiry=$(date -v+10M +%s)
 printf '{"version":1,"code":"%s","expires":%s,"attempts":0}\n' "$pair_code" "$pair_expiry" >"$work/state-client/pairing-offer.json"
-printf '%s\n' "$pair_code" >"$work/pair-code"
-"$peer_cli" pair 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --code-file "$work/pair-code" --peer-signers "$work/local-peer-signers" --port 53992 >"$work/pair.log"
+BIER_ROOT="$root" BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 BIER_PEER_CLIENT="$peer_cli" BIER_PAIR_CODE="$pair_code" HOME="$work/home" \
+	"$root/Sources/bier-core/bier" peer pair 127.0.0.1 >"$work/pair.log"
 grep -q 'Paired mini with target on 127.0.0.1.' "$work/pair.log"
+grep -q 'Done. 127.0.0.1 now has the Bier data from mini.' "$work/pair.log"
 grep -q '^mini ssh-ed25519 ' "$work/peer_signers"
-grep -q '^target ssh-ed25519 ' "$work/local-peer-signers"
+grep -q '^target ssh-ed25519 ' "$work/home/.local/share/bier/agent/peer_signers"
+grep -qx '127.0.0.1' "$work/home/.config/bier/peers"
 test ! -e "$work/state-client/pairing-offer.json"
-"$peer_cli" hello 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --port 53992 >"$work/hello-swift.log"
-grep -q 'Bier Agent on 127.0.0.1 accepted mini as a peer.' "$work/hello-swift.log"
-"$peer_cli" seed 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --data "$work/source" --port 53992 >"$work/client.log"
-grep -q 'Done. 127.0.0.1 now has the Bier data from mini.' "$work/client.log"
 test "$(cat "$work/target/Brewfiles/main")" = 'brew "jq"'
 test -d "$work/target/.git"
 test "$(git -C "$work/target" log -1 --format=%s)" = 'initial data'
+"$peer_cli" hello 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --port 53992 >"$work/hello-swift.log"
+grep -q 'Bier Agent on 127.0.0.1 accepted mini as a peer.' "$work/hello-swift.log"
 printf 'brew "tree"\n' >"$work/source/Brewfiles/main"
 "$peer_cli" seed-if-empty 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --data "$work/source" --port 53992 >"$work/client-existing.log"
 grep -q 'Existing peer data was kept unchanged.' "$work/client-existing.log"

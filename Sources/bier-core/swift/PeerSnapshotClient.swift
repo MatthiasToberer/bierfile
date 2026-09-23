@@ -82,7 +82,19 @@ public struct PeerSnapshotClient<Transport: PeerTransport> {
 	}
 
 	public func seedIfEmpty(from source: URL) async throws {
-		guard try await manifest().entries.isEmpty else { throw PeerSnapshotClientError.peerNotEmpty }
+		try await seed(from: source, acceptingPristine: false)
+	}
+
+	public func seedIfPristine(from source: URL) async throws {
+		try await seed(from: source, acceptingPristine: true)
+	}
+
+	private func seed(from source: URL, acceptingPristine: Bool) async throws {
+		let remote = try await manifest()
+		let pristine = remote.entries.allSatisfy {
+			$0.path == ".gitattributes" || ($0.path == "Brewfiles/main" && $0.bytes == 0)
+		}
+		guard remote.entries.isEmpty || (acceptingPristine && pristine) else { throw PeerSnapshotClientError.peerNotEmpty }
 		let manifest = try collectDataManifest(at: source)
 		try validate(manifest)
 		let id = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
