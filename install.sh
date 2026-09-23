@@ -99,6 +99,13 @@ stop_app() {
 	return 0
 }
 
+stop_agent() {
+	local plist=$HOME/Library/LaunchAgents/com.bier.agent.plist
+	[ -f "$plist" ] || return 1
+	launchctl bootout "gui/$(id -u)" "$plist" >/dev/null 2>&1 || true
+	return 0
+}
+
 # --- Prerequisites -----------------------------------------------------
 
 if [ "$UNINSTALL" = yes ] && [ "$DRY" = yes ]; then
@@ -111,6 +118,7 @@ if [ "$UNINSTALL" = yes ] && [ "$DRY" = yes ]; then
 	ok "turn ${n:-0} vault files back into plain files"
 	ok "take $(hostname -s) out of Brewfiles/ and out of every group, and push"
 	[ ! -d "$(app_target)" ] || ok "remove $(app_target)"
+	[ ! -e "$HOME/.local/share/bier/agent" ] || ok "remove the local Bier agent"
 	[ ! -L "$LINK" ] || ok "remove $LINK"
 	ok "remove the vault passphrase from the keychain"
 	cat <<EOF
@@ -143,6 +151,12 @@ if [ "$UNINSTALL" = yes ]; then
 	fi
 
 	stop_app && ok "stopped BierMenu" || true
+	stop_agent && ok "stopped Bier agent" || true
+	rm -f "$HOME/Library/LaunchAgents/com.bier.agent.plist"
+	if [ -e "$HOME/.local/share/bier/agent" ]; then
+		rm -rf "$HOME/.local/share/bier/agent"
+		ok "removed the local Bier agent"
+	fi
 	for candidate in /Applications/BierMenu.app "$HOME/Applications/BierMenu.app"; do
 		if [ -d "$candidate" ]; then
 			rm -rf "$candidate"
@@ -296,6 +310,7 @@ if [ "$DRY" = yes ]; then
 	else
 		ok "inventory  automatic — record this Mac with bier dump"
 	fi
+	ok "agent      build and run locally on TCP port 53991"
 	cat <<EOF
 
    Nothing has been changed. Leave out --dry-run to do it.
@@ -519,6 +534,50 @@ else
 	"$HERE/Sources/bier-core/bier" vault --init ||
 		warn "not set; run 'bier vault --init' when you are ready"
 fi
+
+# --- Local peer agent -------------------------------------------------
+
+say "Installing the local Bier agent"
+AGENT_HOME=$HOME/.local/share/bier/agent
+AGENT_BIN=$AGENT_HOME/bin/bier-agent
+AGENT_PLIST=$HOME/Library/LaunchAgents/com.bier.agent.plist
+PEER_SIGNERS=$AGENT_HOME/peer_signers
+RELEASE_SIGNERS=$HOME/.config/bier/allowed_signers
+mkdir -p "$AGENT_HOME/bin" "$AGENT_HOME/state" "$HOME/Library/LaunchAgents" "$(dirname "$RELEASE_SIGNERS")"
+touch "$PEER_SIGNERS" "$RELEASE_SIGNERS"
+chmod 700 "$AGENT_HOME" "$AGENT_HOME/bin" "$AGENT_HOME/state"
+chmod 600 "$PEER_SIGNERS" "$RELEASE_SIGNERS"
+"$HERE/Sources/bier-agent/build.sh" "$AGENT_BIN.new" >/dev/null
+mv "$AGENT_BIN.new" "$AGENT_BIN"
+chmod 700 "$AGENT_BIN"
+
+xml_data=$(printf '%s' "$DATA" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
+xml_home=$(printf '%s' "$HOME" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
+xml_host=$(hostname -s | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
+cat >"$AGENT_PLIST.new" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.bier.agent</string>
+  <key>ProgramArguments</key><array>
+    <string>$xml_home/.local/share/bier/agent/bin/bier-agent</string>
+    <string>serve</string>
+    <string>--agent</string><string>$xml_host</string>
+    <string>--allowed-signers</string><string>$xml_home/.config/bier/allowed_signers</string>
+    <string>--peer-signers</string><string>$xml_home/.local/share/bier/agent/peer_signers</string>
+    <string>--data-dir</string><string>$xml_data</string>
+    <string>--port</string><string>53991</string>
+    <string>--state-dir</string><string>$xml_home/.local/share/bier/agent/state</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+</dict></plist>
+EOF
+plutil -lint "$AGENT_PLIST.new" >/dev/null || die "could not create the Bier agent configuration"
+stop_agent || true
+mv "$AGENT_PLIST.new" "$AGENT_PLIST"
+launchctl bootstrap "gui/$(id -u)" "$AGENT_PLIST" || die "could not start the local Bier agent"
+ok "running for $(hostname -s) on TCP port 53991"
 
 # --- Build and install the app -----------------------------------------
 
