@@ -192,15 +192,32 @@ say "Prerequisites"
 [ "$(uname)" = "Darwin" ] || die "runs on macOS only"
 [ -d "$HERE/.git" ] || die "$HERE is not a git repository — clone it first"
 
-# Everything at once. Stopping at the first missing thing turns a fresh
+# Check all required tools. Stopping at the first missing one turns a fresh
 # Mac into a guessing game: fix one, run again, learn about the next.
 MISSING=0
+FIXES=""
+GREEN="" RED="" RESET=""
+if [ -t 1 ] && [ "${TERM:-dumb}" != dumb ] && [ -z "${NO_COLOR:-}" ]; then
+	GREEN=$(printf '\033[1;32m')
+	RED=$(printf '\033[1;31m')
+	RESET=$(printf '\033[0m')
+fi
+check_ok() { printf '   %s[OK]%s      %s\n' "$GREEN" "$RESET" "$1"; }
+check_missing() { printf '   %s[MISSING]%s %s\n' "$RED" "$RESET" "$1"; }
+stop_if_missing() {
+	[ "$MISSING" -gt 0 ] || return 0
+	printf '\n%sINSTALLATION STOPPED — missing prerequisites: %s%s\n' "$RED" "$MISSING" "$RESET"
+	[ -z "$FIXES" ] || printf '%s\n' "$FIXES"
+	printf '\nFix these first, then run: %s\n' "$0"
+	exit 1
+}
 need() {
 	if command -v "$2" >/dev/null 2>&1; then
-		printf '   %-10s ok\n' "$1"
+		check_ok "$1"
 	else
-		printf '   %-10s MISSING\n' "$1"
-		printf '                %s\n' "$3"
+		check_missing "$1"
+		FIXES="${FIXES}
+   $1: $3"
 		MISSING=$((MISSING + 1))
 	fi
 }
@@ -209,6 +226,9 @@ need git    git    "comes with the Command Line Tools:  xcode-select --install"
 need swiftc swiftc "comes with the Command Line Tools:  xcode-select --install"
 need brew   brew   "/bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
 
+# Stop before prompts or setup can bury a missing tool.
+stop_if_missing
+
 # git refuses to commit without a name and an address, and bier commits
 # on your behalf -- for the scaffolding, and at every sync. A fresh Mac
 # has neither, and the message git gives instead arrives much later, in
@@ -216,9 +236,9 @@ need brew   brew   "/bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.c
 GIT_NAME=$(git config --get user.name 2>/dev/null || true)
 GIT_MAIL=$(git config --get user.email 2>/dev/null || true)
 if [ -n "$GIT_NAME" ] && [ -n "$GIT_MAIL" ]; then
-	printf '   %-10s ok         %s <%s>\n' "identity" "$GIT_NAME" "$GIT_MAIL"
+	check_ok "identity   $GIT_NAME <$GIT_MAIL>"
 elif [ "$DRY" = yes ] || [ "$YES" = yes ] || [ ! -t 0 ]; then
-	printf '   %-10s MISSING\n' "identity"
+	check_missing "identity"
 	printf '                git config --global user.name "Your Name"\n'
 	printf '                git config --global user.email "you@example.com"\n'
 	MISSING=$((MISSING + 1))
@@ -235,8 +255,9 @@ else
 	if [ -n "$GIT_NAME" ] && [ -n "$GIT_MAIL" ]; then
 		git config --global user.name "$GIT_NAME"
 		git config --global user.email "$GIT_MAIL"
-		printf '   %-10s set        %s <%s>\n' "identity" "$GIT_NAME" "$GIT_MAIL"
+		check_ok "identity   $GIT_NAME <$GIT_MAIL> (saved)"
 	else
+		check_missing "identity"
 		printf '                nothing entered — set it yourself:\n'
 		printf '                git config --global user.name "Your Name"\n'
 		printf '                git config --global user.email "you@example.com"\n'
@@ -244,25 +265,18 @@ else
 	fi
 fi
 
+stop_if_missing
+
 # gpg is not a prerequisite: without a vault nobody needs it, and with
 # Homebrew there it installs itself in a second.
 if command -v gpg >/dev/null 2>&1; then
-	printf '   %-10s ok\n' "gpg"
+	check_ok "gpg"
 elif command -v brew >/dev/null 2>&1; then
 	printf '   %-10s installing it now — the vault is encrypted with it\n' "gpg"
 	brew install gnupg >/dev/null 2>&1 ||
 		warn "could not install gnupg; 'bier vault' will say so again"
 else
 	printf '   %-10s comes along with Homebrew\n' "gpg"
-fi
-
-if [ "$MISSING" -gt 0 ]; then
-	if [ "$MISSING" = 1 ]; then
-		die "one thing is missing. The line above puts it right, then run
-     $0 again. Nothing has been changed so far."
-	fi
-	die "$MISSING things are missing. The lines above put them right, then
-     run $0 again. Nothing has been changed so far."
 fi
 
 if [ "$DRY" = yes ]; then
