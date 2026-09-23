@@ -50,6 +50,18 @@ struct DataReadRequest: Decodable {
 	let length: Int
 }
 
+struct BundleReadRequest: Decodable {
+	let id: String
+	let offset: UInt64
+	let length: Int
+}
+
+struct BundlePutRequest: Decodable {
+	let id: String
+	let offset: UInt64
+	let data: Data
+}
+
 func validHostName(_ value: String) -> Bool {
 	value.range(of: "^[A-Za-z0-9][A-Za-z0-9._-]*$", options: .regularExpression) != nil
 }
@@ -165,6 +177,7 @@ final class AgentServer {
 	private let peerSigners: String?
 	private let dataDirectory: URL?
 	private let snapshotStore: DataSnapshotStore?
+	private let bundleStore: GitBundleStore?
 	private let store: ReplayStore
 	private let listener: NWListener
 
@@ -179,8 +192,10 @@ final class AgentServer {
 		self.dataDirectory = dataDirectory
 		if let dataDirectory {
 			snapshotStore = try DataSnapshotStore(live: dataDirectory)
+			bundleStore = try GitBundleStore(repository: GitRepository(root: dataDirectory), stateDirectory: stateDirectory)
 		} else {
 			snapshotStore = nil
+			bundleStore = nil
 		}
 		store = try ReplayStore(directory: stateDirectory)
 		listener = try NWListener(using: .tcp, on: endpointPort)
@@ -340,6 +355,80 @@ final class AgentServer {
 			} catch {
 				respond(connection, status: 403, body: "snapshot request was rejected")
 			}
+			return
+		}
+		if method == "POST" && path == "/v1/peer/repository/export" {
+			guard let peerSigners, let bundleStore, let peer = headers["x-bier-peer"], let time = headers["x-bier-time"],
+				let nonce = headers["x-bier-nonce"], let encoded = headers["x-bier-signature"], let signature = Data(base64Encoded: encoded) else {
+				respond(connection, status: 403, body: "peer is not authorised")
+				return
+			}
+			do {
+				try verifyPeer(method: method, path: path, peer: peer, signers: peerSigners, time: time, nonce: nonce, body: body, signature: signature)
+				if try store.record("peer-\(peer)-\(nonce)") { respond(connection, status: 409, body: "peer request was already processed"); return }
+				let encoder = JSONEncoder()
+				encoder.outputFormatting = .withoutEscapingSlashes
+				respond(connection, status: 200, data: try encoder.encode(bundleStore.beginExport()), contentType: "application/json")
+			} catch { respond(connection, status: 403, body: "repository export was rejected") }
+			return
+		}
+		if method == "POST" && path == "/v1/peer/repository/export/read" {
+			guard let peerSigners, let bundleStore, let peer = headers["x-bier-peer"], let time = headers["x-bier-time"],
+				let nonce = headers["x-bier-nonce"], let encoded = headers["x-bier-signature"], let signature = Data(base64Encoded: encoded),
+				let request = try? JSONDecoder().decode(BundleReadRequest.self, from: body) else {
+				respond(connection, status: 400, body: "invalid repository request")
+				return
+			}
+			do {
+				try verifyPeer(method: method, path: path, peer: peer, signers: peerSigners, time: time, nonce: nonce, body: body, signature: signature)
+				if try store.record("peer-\(peer)-\(nonce)") { respond(connection, status: 409, body: "peer request was already processed"); return }
+				respond(connection, status: 200, data: try bundleStore.readExport(request.id, offset: request.offset, length: request.length), contentType: "application/octet-stream")
+			} catch { respond(connection, status: 403, body: "repository export was rejected") }
+			return
+		}
+		if method == "POST" && path == "/v1/peer/repository/import/begin" {
+			guard let peerSigners, let bundleStore, let peer = headers["x-bier-peer"], let time = headers["x-bier-time"],
+				let nonce = headers["x-bier-nonce"], let encoded = headers["x-bier-signature"], let signature = Data(base64Encoded: encoded),
+				let descriptor = try? JSONDecoder().decode(GitBundleDescriptor.self, from: body) else {
+				respond(connection, status: 400, body: "invalid repository request")
+				return
+			}
+			do {
+				try verifyPeer(method: method, path: path, peer: peer, signers: peerSigners, time: time, nonce: nonce, body: body, signature: signature)
+				if try store.record("peer-\(peer)-\(nonce)") { respond(connection, status: 409, body: "peer request was already processed"); return }
+				try bundleStore.beginImport(descriptor)
+				respond(connection, status: 200, body: "{\"status\":\"repository-ready\"}", contentType: "application/json")
+			} catch { respond(connection, status: 403, body: "repository import was rejected") }
+			return
+		}
+		if method == "POST" && path == "/v1/peer/repository/import/put" {
+			guard let peerSigners, let bundleStore, let peer = headers["x-bier-peer"], let time = headers["x-bier-time"],
+				let nonce = headers["x-bier-nonce"], let encoded = headers["x-bier-signature"], let signature = Data(base64Encoded: encoded),
+				let request = try? JSONDecoder().decode(BundlePutRequest.self, from: body) else {
+				respond(connection, status: 400, body: "invalid repository request")
+				return
+			}
+			do {
+				try verifyPeer(method: method, path: path, peer: peer, signers: peerSigners, time: time, nonce: nonce, body: body, signature: signature)
+				if try store.record("peer-\(peer)-\(nonce)") { respond(connection, status: 409, body: "peer request was already processed"); return }
+				try bundleStore.putImport(request.id, offset: request.offset, data: request.data)
+				respond(connection, status: 200, body: "{\"status\":\"repository-staged\"}", contentType: "application/json")
+			} catch { respond(connection, status: 403, body: "repository import was rejected") }
+			return
+		}
+		if method == "POST" && path == "/v1/peer/repository/import/commit" {
+			guard let peerSigners, let bundleStore, let peer = headers["x-bier-peer"], let time = headers["x-bier-time"],
+				let nonce = headers["x-bier-nonce"], let encoded = headers["x-bier-signature"], let signature = Data(base64Encoded: encoded),
+				let request = try? JSONDecoder().decode(SnapshotCommitRequest.self, from: body) else {
+				respond(connection, status: 400, body: "invalid repository request")
+				return
+			}
+			do {
+				try verifyPeer(method: method, path: path, peer: peer, signers: peerSigners, time: time, nonce: nonce, body: body, signature: signature)
+				if try store.record("peer-\(peer)-\(nonce)") { respond(connection, status: 409, body: "peer request was already processed"); return }
+				try bundleStore.commitImport(request.id)
+				respond(connection, status: 200, body: "{\"status\":\"repository-committed\"}", contentType: "application/json")
+			} catch { respond(connection, status: 403, body: "repository import was rejected") }
 			return
 		}
 		guard method == "POST", path == "/v1/probe",

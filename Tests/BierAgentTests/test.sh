@@ -26,6 +26,11 @@ printf 'mini %s\n' "$(cat "$work/controller.pub")" >"$work/peer_signers"
 mkdir -p "$work/data/Brewfiles" "$work/data/Safe"
 printf 'brew "wget"\n' >"$work/data/Brewfiles/main"
 printf 'encrypted\n' >"$work/data/Safe/test.gpg"
+git -C "$work/data" init -q --initial-branch=main
+git -C "$work/data" config user.email test@example.com
+git -C "$work/data" config user.name Test
+git -C "$work/data" add Brewfiles Safe
+git -C "$work/data" commit -qm 'initial data'
 printf '%s\n' '{"version":1,"id":"probe-1","target":"mini","type":"agent.probe","expires_at":"2099-01-01T00:00:00Z","issuer":"controller-test","payload":{}}' >"$work/recipe.json"
 ssh-keygen -q -Y sign -f "$work/controller" -n bier-recipe "$work/recipe.json"
 
@@ -76,6 +81,30 @@ status=$(curl -sS --max-time 2 -o "$work/received-data" -w '%{http_code}' \
 	-H "X-Bier-Signature: $peer_signature" --data-binary @"$work/data-read.json" http://127.0.0.1:53992/v1/peer/data/read)
 [ "$status" = 200 ]
 cmp "$work/data/Brewfiles/main" "$work/received-data"
+peer_nonce=agent-repository-export-0123456789
+printf 'POST\n/v1/peer/repository/export\nmini\n%s\n%s\n%s\n' "$peer_time" "$peer_nonce" "$empty_hash" >"$work/peer-request"
+rm -f "$work/peer-request.sig"
+ssh-keygen -q -Y sign -f "$work/controller" -n bier-peer "$work/peer-request"
+peer_signature=$(base64 <"$work/peer-request.sig" | tr -d '\n')
+status=$(curl -sS --max-time 2 -o "$work/repository-export.json" -w '%{http_code}' -X POST \
+	-H "X-Bier-Peer: mini" -H "X-Bier-Time: $peer_time" -H "X-Bier-Nonce: $peer_nonce" \
+	-H "X-Bier-Signature: $peer_signature" http://127.0.0.1:53992/v1/peer/repository/export)
+[ "$status" = 200 ]
+bundle_id=$(/usr/bin/plutil -extract id raw -o - "$work/repository-export.json")
+bundle_bytes=$(/usr/bin/plutil -extract bytes raw -o - "$work/repository-export.json")
+[ "$bundle_bytes" -gt 0 ]
+peer_nonce=agent-repository-read-0123456789
+printf '{"id":"%s","offset":0,"length":64}' "$bundle_id" >"$work/repository-read.json"
+bundle_hash=$(shasum -a 256 "$work/repository-read.json" | awk '{print $1}')
+printf 'POST\n/v1/peer/repository/export/read\nmini\n%s\n%s\n%s\n' "$peer_time" "$peer_nonce" "$bundle_hash" >"$work/peer-request"
+rm -f "$work/peer-request.sig"
+ssh-keygen -q -Y sign -f "$work/controller" -n bier-peer "$work/peer-request"
+peer_signature=$(base64 <"$work/peer-request.sig" | tr -d '\n')
+status=$(curl -sS --max-time 2 -o "$work/repository-chunk" -w '%{http_code}' \
+	-H 'Content-Type: application/json' -H "X-Bier-Peer: mini" -H "X-Bier-Time: $peer_time" -H "X-Bier-Nonce: $peer_nonce" \
+	-H "X-Bier-Signature: $peer_signature" --data-binary @"$work/repository-read.json" http://127.0.0.1:53992/v1/peer/repository/export/read)
+[ "$status" = 200 ]
+grep -aq '^# v2 git bundle' "$work/repository-chunk"
 peer_nonce=agent-snapshot-begin-0123456789
 snapshot_id=snapshot-begin-0123456789
 printf 'brew "tree"\n' >"$work/received"
