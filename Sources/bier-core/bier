@@ -1036,6 +1036,17 @@ cmd_peer_compare() {
 	fi
 }
 
+cmd_peer_sync() {
+	local peer=${1:-}
+	[ $# -eq 1 ] && peer_name_ok "$peer" || die 'usage: bier peer sync <host>'
+	need_repo
+	[ -r "$HOME/.ssh/id_ed25519" ] || die "no SSH identity at $HOME/.ssh/id_ed25519"
+	[ -x "$PEER_CLIENT" ] || die "the Swift peer client is not built; run install.sh"
+	info "Synchronising Bier data with $peer …"
+	"$PEER_CLIENT" sync "$peer" --local "$HOST" --identity "$HOME/.ssh/id_ed25519" --data "$DATA" --port "$PEER_PORT" ||
+		die "could not synchronise Bier data with $peer"
+}
+
 peer_seed() {
 	local peer=$1 mode=$2 command=seed body response remote snapshot files begin
 	[ "$mode" != if-empty ] || command=seed-if-empty
@@ -1363,6 +1374,7 @@ bier peer — manage Macs Bier may contact
   bier peer check <host>  check safe, non-interactive SSH access
   bier peer hello <host>  prove authenticated Bier Agent access
   bier peer compare <host> compare verified data without changing it
+  bier peer sync <host>   synchronise data and history with a peer
   bier peer seed <host>   copy data to a new, empty Bier peer
   bier peer trust [url]   alias for bier trust
   bier peer install <host> install a signed Bier agent via SSH
@@ -1386,6 +1398,7 @@ cmd_peer() {
 check) cmd_peer_check "$@" ;;
 hello) cmd_peer_hello "$@" ;;
 compare) cmd_peer_compare "$@" ;;
+sync) cmd_peer_sync "$@" ;;
 seed) cmd_peer_seed "$@" ;;
 trust) cmd_peer_trust "$@" ;;
 install) cmd_peer_install "$@" ;;
@@ -1393,7 +1406,7 @@ upgrade | update) cmd_peer_upgrade "$@" ;;
 uninstall) cmd_peer_uninstall "$@" ;;
 discover) cmd_peer_discover "$@" ;;
 help | -h | --help) cmd_peer_help ;;
-*) die 'usage: bier peer <discover|add|list|check|hello|compare|seed|trust|install|upgrade|uninstall|remove> [host]' ;;
+*) die 'usage: bier peer <discover|add|list|check|hello|compare|sync|seed|trust|install|upgrade|uninstall|remove> [host]' ;;
 	esac
 }
 
@@ -2887,6 +2900,7 @@ bier — keeps Brewfiles in sync across Macs
   bier peer check <host>  check safe, non-interactive SSH access
   bier peer hello <host>  prove authenticated Bier Agent access
   bier peer compare <host> compare verified data without changing it
+  bier peer sync <host>   synchronise data and history with a peer
   bier peer seed <host>   copy data to a new, empty Bier peer
   bier peer trust [url]   alias for bier trust
   bier peer discover      show Bier agents announced via Bonjour

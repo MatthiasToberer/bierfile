@@ -66,6 +66,24 @@ public struct GitRepository {
 		try run(["update-ref", "-d", "refs/remotes/bier/incoming"], in: root)
 	}
 
+	public func reconcileBundle(from bundle: URL) throws {
+		guard exists else { throw GitRepositoryError.notRepository }
+		try requireClean()
+		try fetch(bundle)
+		defer { _ = try? run(["update-ref", "-d", "refs/remotes/bier/incoming"], in: root) }
+		if isAncestor("HEAD", of: "refs/remotes/bier/incoming") {
+			try run(["reset", "--hard", "--quiet", "refs/remotes/bier/incoming"], in: root)
+			return
+		}
+		if isAncestor("refs/remotes/bier/incoming", of: "HEAD") { return }
+		do {
+			try run(["rebase", "refs/remotes/bier/incoming"], in: root)
+		} catch {
+			_ = try? run(["rebase", "--abort"], in: root)
+			throw GitRepositoryError.nonFastForward
+		}
+	}
+
 	private func adopt(bundle: URL) throws {
 		let manager = FileManager.default
 		let parent = root.deletingLastPathComponent()
@@ -83,6 +101,15 @@ public struct GitRepository {
 		guard status.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
 			throw GitRepositoryError.uncommittedChanges
 		}
+	}
+
+	private func fetch(_ bundle: URL) throws {
+		_ = try? run(["update-ref", "-d", "refs/remotes/bier/incoming"], in: root)
+		try run(["fetch", "--quiet", bundle.path, "HEAD:refs/remotes/bier/incoming"], in: root)
+	}
+
+	private func isAncestor(_ older: String, of newer: String) -> Bool {
+		(try? run(["merge-base", "--is-ancestor", older, newer], in: root)) != nil
 	}
 
 	@discardableResult

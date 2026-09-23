@@ -26,6 +26,19 @@ public struct PeerRepositoryClient<Transport: PeerTransport> {
 	public func pull(into repository: GitRepository) async throws {
 		let bundle = FileManager.default.temporaryDirectory.appendingPathComponent("bier-pull-\(UUID().uuidString).bundle")
 		defer { try? FileManager.default.removeItem(at: bundle) }
+		try await download(to: bundle)
+		try repository.importBundle(from: bundle)
+	}
+
+	public func synchronize(_ repository: GitRepository) async throws {
+		let bundle = FileManager.default.temporaryDirectory.appendingPathComponent("bier-sync-\(UUID().uuidString).bundle")
+		defer { try? FileManager.default.removeItem(at: bundle) }
+		try await download(to: bundle)
+		try repository.reconcileBundle(from: bundle)
+		try await push(from: repository)
+	}
+
+	private func download(to bundle: URL) async throws {
 		let descriptor = try JSONDecoder().decode(GitBundleDescriptor.self, from: try await transport.send(method: "POST", path: "/v1/peer/repository/export", body: Data()))
 		try validate(descriptor)
 		guard FileManager.default.createFile(atPath: bundle.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
@@ -48,7 +61,6 @@ public struct PeerRepositoryClient<Transport: PeerTransport> {
 			throw error
 		}
 		guard try fileSHA256(at: bundle) == descriptor.sha256 else { throw PeerSnapshotClientError.invalidManifest }
-		try repository.importBundle(from: bundle)
 	}
 
 	public func push(from repository: GitRepository) async throws {

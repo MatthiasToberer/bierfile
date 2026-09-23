@@ -15,8 +15,9 @@ Safe/
 ```
 
 `Safe/` is already encrypted by Bier before it reaches the protocol. Nothing
-outside these paths, including `.git`, configuration, SSH keys and source
-code, is transferable.
+outside these paths, including configuration, SSH keys and source code, is
+transferable. Git history travels separately as a verified Git bundle; the
+protocol never exposes the `.git` directory itself.
 
 ## Authentication
 
@@ -51,8 +52,15 @@ requests, stale snapshots and files not named by the manifest. It never
 partially changes the live data directory: an interrupted transfer is only
 staging data and is discarded.
 
-## Merge
+## Repository history
 
-After a complete snapshot arrives, Bier performs its normal local merge for
-`Brewfiles/`. `Safe/` remains encrypted and is copied as an opaque payload.
-The peer transport does not run Git commands or contact a Git server.
+Repository bundles use separate `export`, `export/read`, `import/begin`,
+`import/put` and `import/commit` operations. Bundle bytes have a declared size
+and SHA-256 digest and are transferred in bounded chunks. A fresh peer adopts
+history only when the checked-out bundle data exactly matches its snapshot.
+An existing peer accepts only history containing its current commit.
+
+The initiating Mac fetches the peer history, rebases its local commits and
+then sends the resulting common history back. A conflict aborts and restores
+the previous working state. The peer transport never accepts arbitrary Git or
+shell commands and never contacts a central Git server.

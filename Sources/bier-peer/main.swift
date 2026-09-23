@@ -11,7 +11,7 @@ private enum CLIError: LocalizedError {
 	var errorDescription: String? {
 		switch self {
 		case .usage:
-			return "usage: bier-peer <hello|seed|seed-if-empty|compare> <host> --local <name> --identity <path> [--data <path>] [--port <port>]"
+			return "usage: bier-peer <hello|seed|seed-if-empty|compare|sync> <host> --local <name> --identity <path> [--data <path>] [--port <port>]"
 		case .invalidHost:
 			return "the peer host or port is invalid"
 		case .missingData:
@@ -103,6 +103,10 @@ private enum BierPeerCLI {
 		case "compare":
 			guard let data = options.data else { throw CLIError.missingData }
 			try await compare(local: data, localHost: options.localHost, remote: options.displayHost, snapshots: snapshots)
+		case "sync":
+			guard let data = options.data else { throw CLIError.missingData }
+			try await repositories.synchronize(GitRepository(root: data))
+			print("Bier data is in sync on \(options.localHost) and \(options.displayHost).")
 		default:
 			throw CLIError.usage
 		}

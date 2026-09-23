@@ -193,7 +193,21 @@ test "$(cat "$work/target/Brewfiles/main")" = 'brew "jq"'
 printf 'brew "jq"\n' >"$work/source/Brewfiles/main"
 "$peer_cli" compare 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --data "$work/source" --port 53992 >"$work/compare-swift.log"
 grep -q 'Bier data is identical on mini and 127.0.0.1.' "$work/compare-swift.log"
-BIER_ROOT="$here/.." BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 BIER_PEER_CLIENT="$peer_cli" HOME="$work/home" \
+printf 'brew "wget"\n' >>"$work/target/Brewfiles/main"
+git -C "$work/target" add Brewfiles
+git -C "$work/target" commit -qm 'target changed'
+"$peer_cli" sync 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --data "$work/source" --port 53992 >"$work/sync-swift.log"
+grep -q 'Bier data is in sync on mini and 127.0.0.1.' "$work/sync-swift.log"
+test "$(git -C "$work/source" rev-parse HEAD)" = "$(git -C "$work/target" rev-parse HEAD)"
+test "$(cat "$work/source/Brewfiles/main")" = "$(cat "$work/target/Brewfiles/main")"
+printf 'brew "tree"\n' >>"$work/source/Brewfiles/main"
+git -C "$work/source" add Brewfiles
+git -C "$work/source" commit -qm 'source changed'
+BIER_ROOT="$root" BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 BIER_PEER_CLIENT="$peer_cli" HOME="$work/home" \
+	"$root/Sources/bier-core/bier" peer sync 127.0.0.1 >"$work/sync.log"
+grep -q 'Bier data is in sync on mini and 127.0.0.1.' "$work/sync.log"
+test "$(git -C "$work/source" rev-parse HEAD)" = "$(git -C "$work/target" rev-parse HEAD)"
+BIER_ROOT="$root" BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 BIER_PEER_CLIENT="$peer_cli" HOME="$work/home" \
 	"$root/Sources/bier-core/bier" peer compare 127.0.0.1 >"$work/compare.log"
 grep -q 'Bier data is identical on mini and 127.0.0.1.' "$work/compare.log"
 printf '%s\n' 'Swift Bier agent tests passed.'
