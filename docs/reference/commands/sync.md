@@ -3,14 +3,15 @@
 # bier sync
 
 ```
-bier sync [message]
+bier sync [--record] [message]
 ```
 
 The everyday command. Run it after every install.
 
 1. Records what is installed here and not on a list yet
    ([`bier dump`](dump.md)). In manual inventory mode this step is
-   skipped and the Brewfiles stay as you wrote them.
+   skipped and the Brewfiles stay as you wrote them, unless you pass
+   `--record` (the menu bar's "Record them and sync").
 2. Encrypts changed vault files into `Safe/`.
 3. Commits `Brewfiles/` and `Safe/`, then exchanges history with every
    paired Mac and merges. Each peer is visited twice, so the common

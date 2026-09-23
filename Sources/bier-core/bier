@@ -3016,7 +3016,14 @@ cmd_push() {
 # legacy private-server path until they add their first peer.
 cmd_sync() {
 	need_repo
-	if [ "$INVENTORY_MODE" = automatic ]; then
+	local record=no
+	# --record records even in manual mode: that is somebody asking for
+	# it, which is what manual mode waits for.
+	if [ "${1:-}" = --record ]; then
+		record=yes
+		shift
+	fi
+	if [ "$INVENTORY_MODE" = automatic ] || [ "$record" = yes ]; then
 		cmd_dump
 	else
 		info "Inventory is manual; keeping the Brewfiles as written."
@@ -3043,6 +3050,7 @@ cmd_update() {
 # Machine-readable state for the menu bar app. Tab-separated lines:
 #   STATE  ok|drift        glass full or empty
 #   HOST   <name>
+#   INVENTORY automatic|manual   in manual mode NEW does not count as drift
 #   VERSION <number>      so BierMenu notices that it is old itself
 #   NEWCODE <number>      a newer release waits on the code server
 #   OFFLINE <which>       a server could not be reached: data, code, or both
@@ -3098,13 +3106,19 @@ cmd_state() {
 		dirty=0
 	fi
 
-	if [ -z "$add" ] && [ -z "$gone" ] &&
+	# In manual mode what is installed and not listed is a choice, not
+	# something left to do. It is still reported, just no longer as drift:
+	# the glass could never have filled, since sync records nothing then.
+	local undone=$add
+	[ "$INVENTORY_MODE" = automatic ] || undone=$stale
+	if [ -z "$undone" ] && [ -z "$gone" ] &&
 		[ "$ahead" = "0" ] && [ "$behind" = "0" ] && [ "$dirty" = "0" ]; then
 		printf 'STATE\tok\n'
 	else
 		printf 'STATE\tdrift\n'
 	fi
 	printf 'HOST\t%s\n' "$HOST"
+	printf 'INVENTORY\t%s\n' "$INVENTORY_MODE"
 	printf 'VERSION\t%s\n' "$BIER_VERSION"
 	local release
 	release=$(latest_release)
@@ -3196,7 +3210,8 @@ bier — keeps Brewfiles in sync across Macs
   bier take               pull entries from other devices into main or here
   bier take --from-main   hand an entry from main to a single device
   bier push [message]     commit the Brewfiles and push them
-  bier sync [message]     record, fetch, merge, push — the everyday command
+  bier sync [--record] [message]
+                          record, fetch, merge, push — the everyday command
   bier upgrade [--force]  install a newer release of bier itself
   bier retire <name>      take a Mac out of the fleet — the one that
                           broke, or was wiped without uninstalling

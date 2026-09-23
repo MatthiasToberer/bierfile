@@ -8,7 +8,7 @@
 
 | Command | What it does |
 | --- | --- |
-| [`bier sync [message]`](sync.md) | record, exchange with peers, merge — the everyday command |
+| [`bier sync [--record] [message]`](sync.md) | record, exchange with peers, merge — the everyday command |
 | [`bier status`](status.md) | what differs on this Mac? |
 | [`bier list`](list.md) | overview of all Macs |
 | [`bier diff [host…]`](diff.md) | compare this Mac's lists with other Macs |

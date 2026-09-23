@@ -19,6 +19,7 @@ import ServiceManagement
 struct BierState {
 	var ok = false
 	var host = ""
+	var manual = false // inventory = manual: unrecorded software is a choice
 	var fresh: [String] = [] // installed here, not recorded yet
 	var stale: [String] = [] // removed elsewhere, still installed here
 	var gone: [String] = [] // recorded, but not installed here
@@ -141,6 +142,7 @@ enum Bier {
 			switch tag {
 			case "STATE": s.ok = f.count > 1 && f[1] == "ok"
 			case "HOST": if f.count > 1 { s.host = f[1] }
+			case "INVENTORY": s.manual = f.count > 1 && f[1] == "manual"
 			case "VERSION": if f.count > 1 { s.version = f[1] }
 			case "NEWCODE": if f.count > 1 { s.release = f[1] }
 			case "OFFLINE": if f.count > 1 { s.offline = f[1] }
@@ -360,9 +362,22 @@ class Controller: NSObject, NSMenuDelegate {
 
 		if state.ok {
 			menu.addItem(header("Everything in sync"))
-		} else {
+			menu.addItem(.separator())
+		}
+
+		// Manual inventory: not listed on purpose, until somebody asks.
+		// "Pour a round" would not have recorded them -- sync leaves the
+		// Brewfiles alone in this mode.
+		if state.manual && !state.fresh.isEmpty {
+			menu.addItem(header("\(state.fresh.count) installed, not in your Brewfiles"))
+			listing(state.fresh, into: menu)
+			menu.addItem(action("Record them and sync", #selector(doRecord)))
+			menu.addItem(.separator())
+		}
+
+		if !state.ok {
 			// Installed here, not recorded yet: quick and harmless.
-			if !state.fresh.isEmpty {
+			if !state.manual && !state.fresh.isEmpty {
 				menu.addItem(header("\(state.fresh.count) installed but not recorded"))
 				listing(state.fresh, into: menu)
 				menu.addItem(action("Pour a round: record and push",
@@ -498,6 +513,8 @@ class Controller: NSObject, NSMenuDelegate {
 	@objc private func doCheck() { refresh(fetch: true) }
 
 	@objc private func doSync() { runQuietly(["sync"], "Recording and pushing") }
+
+	@objc private func doRecord() { runQuietly(["sync", "--record"], "Recording and syncing") }
 
 	@objc private func doPull() { runQuietly(["state", "--fetch"], "Fetching") }
 
