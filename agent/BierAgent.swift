@@ -40,6 +40,12 @@ struct SnapshotCommitRequest: Decodable {
 	let id: String
 }
 
+struct DataReadRequest: Decodable {
+	let path: String
+	let offset: UInt64
+	let length: Int
+}
+
 func validHostName(_ value: String) -> Bool {
 	value.range(of: "^[A-Za-z0-9][A-Za-z0-9._-]*$", options: .regularExpression) != nil
 }
@@ -265,6 +271,22 @@ final class AgentServer {
 			} catch { respond(connection, status: 403, body: "peer request was rejected") }
 			return
 		}
+		if method == "POST" && path == "/v1/peer/data/read" {
+			guard let peerSigners, let dataDirectory, let peer = headers["x-bier-peer"], let time = headers["x-bier-time"],
+				let nonce = headers["x-bier-nonce"], let encoded = headers["x-bier-signature"], let signature = Data(base64Encoded: encoded),
+				let request = try? JSONDecoder().decode(DataReadRequest.self, from: body) else {
+				respond(connection, status: 400, body: "invalid data request")
+				return
+			}
+			do {
+				try verifyPeer(method: method, path: path, peer: peer, signers: peerSigners, time: time, nonce: nonce, body: body, signature: signature)
+				if try store.record("peer-\(peer)-\(nonce)") { respond(connection, status: 409, body: "peer request was already processed"); return }
+				respond(connection, status: 200, data: try readDataChunk(at: dataDirectory, path: request.path, offset: request.offset, length: request.length), contentType: "application/octet-stream")
+			} catch {
+				respond(connection, status: 403, body: "data request was rejected")
+			}
+			return
+		}
 		if method == "POST" && path == "/v1/peer/snapshot/begin" {
 			guard let peerSigners, let snapshotStore, let peer = headers["x-bier-peer"], let time = headers["x-bier-time"],
 				let nonce = headers["x-bier-nonce"], let encoded = headers["x-bier-signature"], let signature = Data(base64Encoded: encoded),
@@ -336,7 +358,10 @@ final class AgentServer {
 	}
 
 	private func respond(_ connection: NWConnection, status: Int, body: String, contentType: String = "text/plain") {
-		let data = Data(body.utf8)
+		respond(connection, status: status, data: Data(body.utf8), contentType: contentType)
+	}
+
+	private func respond(_ connection: NWConnection, status: Int, data: Data, contentType: String) {
 		let reason = status == 200 ? "OK" : status == 400 ? "Bad Request" : status == 403 ? "Forbidden" : status == 409 ? "Conflict" : "Not Found"
 		let header = "HTTP/1.1 \(status) \(reason)\r\nContent-Type: \(contentType)\r\nContent-Length: \(data.count)\r\nConnection: close\r\n\r\n"
 		connection.send(content: Data(header.utf8) + data, completion: .contentProcessed { _ in connection.cancel() })

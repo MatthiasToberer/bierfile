@@ -34,6 +34,15 @@ struct SnapshotTest {
 			manager.fileExists(atPath: live.appendingPathComponent("Safe/test.gpg").path) else {
 			throw NSError(domain: "SnapshotTest", code: 1, userInfo: [NSLocalizedDescriptionKey: "committed snapshot is incomplete"])
 		}
+		guard try readDataChunk(at: live, path: "Brewfiles/main", offset: 0, length: maxSnapshotChunkBytes) == main else {
+			throw NSError(domain: "SnapshotTest", code: 1, userInfo: [NSLocalizedDescriptionKey: "data chunk differs from live data"])
+		}
+		try manager.createSymbolicLink(at: live.appendingPathComponent("Safe/link.gpg"), withDestinationURL: URL(fileURLWithPath: "/etc/passwd"))
+		do {
+			_ = try readDataChunk(at: live, path: "Safe/link.gpg", offset: 0, length: 1)
+			throw NSError(domain: "SnapshotTest", code: 1, userInfo: [NSLocalizedDescriptionKey: "symbolic link was readable"])
+		} catch DataSnapshotError.invalidPath {}
+		try manager.removeItem(at: live.appendingPathComponent("Safe/link.gpg"))
 
 		let interrupted = "snapshot-interrupted-0123456789"
 		let interruptedData = Data("interrupted\n".utf8)

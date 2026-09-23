@@ -59,6 +59,18 @@ grep -q 'Brewfiles/main' "$work/response" || { cat "$work/response" >&2; exit 1;
 grep -q 'Safe/test.gpg' "$work/response" || { cat "$work/response" >&2; exit 1; }
 manifest_hash=$(shasum -a 256 "$work/data/Brewfiles/main" | awk '{print $1}')
 grep -q "$manifest_hash" "$work/response" || { cat "$work/response" >&2; exit 1; }
+peer_nonce=agent-data-read-0123456789
+printf '{"path":"Brewfiles/main","offset":0,"length":32768}' >"$work/data-read.json"
+snapshot_hash=$(shasum -a 256 "$work/data-read.json" | awk '{print $1}')
+printf 'POST\n/v1/peer/data/read\nmini\n%s\n%s\n%s\n' "$peer_time" "$peer_nonce" "$snapshot_hash" >"$work/peer-request"
+rm -f "$work/peer-request.sig"
+ssh-keygen -q -Y sign -f "$work/controller" -n bier-peer "$work/peer-request"
+peer_signature=$(base64 <"$work/peer-request.sig" | tr -d '\n')
+status=$(curl -sS --max-time 2 -o "$work/received-data" -w '%{http_code}' \
+	-H 'Content-Type: application/json' -H "X-Bier-Peer: mini" -H "X-Bier-Time: $peer_time" -H "X-Bier-Nonce: $peer_nonce" \
+	-H "X-Bier-Signature: $peer_signature" --data-binary @"$work/data-read.json" http://127.0.0.1:53992/v1/peer/data/read)
+[ "$status" = 200 ]
+cmp "$work/data/Brewfiles/main" "$work/received-data"
 peer_nonce=agent-snapshot-begin-0123456789
 snapshot_id=snapshot-begin-0123456789
 printf 'brew "tree"\n' >"$work/received"

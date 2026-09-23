@@ -12,6 +12,27 @@ enum DataSnapshotError: Error {
 
 let maxSnapshotChunkBytes = 32 * 1024
 
+func validDataPath(_ path: String) -> Bool {
+	(path == ".gitattributes" || path.hasPrefix("Brewfiles/") || path.hasPrefix("Safe/")) &&
+		!path.contains("..") && !path.hasPrefix("/") && !path.hasSuffix("/")
+}
+
+func readDataChunk(at root: URL, path: String, offset: UInt64, length: Int) throws -> Data {
+	guard validDataPath(path), length >= 0, length <= maxSnapshotChunkBytes else { throw DataSnapshotError.invalidPath }
+	var target = root
+	for component in path.split(separator: "/") {
+		target.appendPathComponent(String(component))
+		let values = try target.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey])
+		if values.isSymbolicLink == true { throw DataSnapshotError.invalidPath }
+	}
+	let values = try target.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+	guard values.isRegularFile == true, offset <= UInt64(values.fileSize ?? 0) else { throw DataSnapshotError.invalidOffset }
+	let handle = try FileHandle(forReadingFrom: target)
+	defer { try? handle.close() }
+	try handle.seek(toOffset: offset)
+	return try handle.read(upToCount: length) ?? Data()
+}
+
 private struct SnapshotSession {
 	let entries: [String: DataManifestEntry]
 	var received: [String: UInt64]
@@ -101,7 +122,6 @@ final class DataSnapshotStore {
 	}
 
 	private func validate(path: String) throws {
-		guard path == ".gitattributes" || path.hasPrefix("Brewfiles/") || path.hasPrefix("Safe/"),
-			!path.contains(".."), !path.hasPrefix("/"), !path.hasSuffix("/") else { throw DataSnapshotError.invalidPath }
+		guard validDataPath(path) else { throw DataSnapshotError.invalidPath }
 	}
 }
