@@ -2,22 +2,23 @@
 #
 # Builds BierMenu.app. Needs only the Command Line Tools, no Xcode project.
 #
-#   ./app/build.sh              builds into app/build/BierMenu.app
-#   ./app/build.sh --install    builds and copies to /Applications
+#   ./Sources/bier-trayapp/build.sh            builds BierMenu.app
+#   ./Sources/bier-trayapp/build.sh --install  builds and installs it
 
 set -eu
 
 HERE=$(cd "$(dirname "$0")" && pwd)
+ROOT=$(cd "$HERE/../.." && pwd)
 BUILD=$HERE/build
 APP=$BUILD/BierMenu.app
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 
-# The version number lives in bin/bier and is taken from there, so that
+# The version number lives in bier-core/bier and is taken from there, so that
 # app and script never drift apart. Hence an unquoted here-document:
 # $VERSION is meant to be substituted.
-VERSION=$(sed -nE 's/^BIER_VERSION=(.*)$/\1/p' "$HERE/../bin/bier")
+VERSION=$(sed -nE 's/^BIER_VERSION=(.*)$/\1/p' "$ROOT/Sources/bier-core/bier")
 [ -n "$VERSION" ] || VERSION=0
 
 cat >"$APP/Contents/Info.plist" <<EOF

@@ -14,5 +14,5 @@ protocol extends this interface; it must never become a remote shell service.
 Build and test it on macOS:
 
 ```sh
-./agent/test.sh
+./Tests/BierAgentTests/test.sh
 ```

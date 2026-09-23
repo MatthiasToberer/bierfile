@@ -2,6 +2,7 @@
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
+root=$(cd "$here/../.." && pwd)
 work=$(mktemp -d /private/tmp/bier-agent-swift.XXXXXX)
 pid=
 cleanup() {
@@ -12,12 +13,12 @@ cleanup() {
 trap cleanup EXIT
 
 agent="$work/bier-agent"
-"$here/build.sh" "$agent" >/dev/null
-swift build --package-path "$here/.." --product bier-peer >/dev/null
-peer_cli=$(swift build --package-path "$here/.." --show-bin-path)/bier-peer
-swiftc -O -framework Foundation -framework CryptoKit -o "$work/snapshot-test" "$here/../Sources/BierCore/DataManifest.swift" "$here/../Sources/BierCore/DataSnapshot.swift" "$here/SnapshotTest.swift"
+"$root/Sources/bier-agent/build.sh" "$agent" >/dev/null
+swift build --package-path "$root" --product bier-peer >/dev/null
+peer_cli=$(swift build --package-path "$root" --show-bin-path)/bier-peer
+swiftc -O -framework Foundation -framework CryptoKit -o "$work/snapshot-test" "$root/Sources/bier-core/swift/DataManifest.swift" "$root/Sources/bier-core/swift/DataSnapshot.swift" "$here/SnapshotTest.swift"
 "$work/snapshot-test"
-swiftc -O -framework Foundation -framework CryptoKit -o "$work/git-repository-test" "$here/../Sources/BierCore/DataManifest.swift" "$here/../Sources/BierCore/DataSnapshot.swift" "$here/../Sources/BierCore/GitRepository.swift" "$here/../Sources/BierCore/GitBundleStore.swift" "$here/GitRepositoryTest.swift"
+swiftc -O -framework Foundation -framework CryptoKit -o "$work/git-repository-test" "$root/Sources/bier-core/swift/DataManifest.swift" "$root/Sources/bier-core/swift/DataSnapshot.swift" "$root/Sources/bier-core/swift/GitRepository.swift" "$root/Sources/bier-core/swift/GitBundleStore.swift" "$here/GitRepositoryTest.swift"
 "$work/git-repository-test"
 ssh-keygen -q -t ed25519 -N '' -f "$work/controller"
 printf 'controller-test %s\n' "$(cat "$work/controller.pub")" >"$work/allowed_signers"
@@ -158,6 +159,6 @@ printf 'brew "jq"\n' >"$work/source/Brewfiles/main"
 "$peer_cli" compare 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --data "$work/source" --port 53992 >"$work/compare-swift.log"
 grep -q 'Bier data is identical on mini and 127.0.0.1.' "$work/compare-swift.log"
 BIER_ROOT="$here/.." BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 BIER_PEER_CLIENT="$peer_cli" HOME="$work/home" \
-	"$here/../bin/bier" peer compare 127.0.0.1 >"$work/compare.log"
+	"$root/Sources/bier-core/bier" peer compare 127.0.0.1 >"$work/compare.log"
 grep -q 'Bier data is identical on mini and 127.0.0.1.' "$work/compare.log"
 printf '%s\n' 'Swift Bier agent tests passed.'

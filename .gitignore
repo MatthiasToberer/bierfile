@@ -1,6 +1,6 @@
 .DS_Store
-app/build/
-cli/build/
+Sources/bier-trayapp/build/
+Sources/bier-peer/build/
 .build/
 
 # Nothing below belongs to the published project. Notes, scratch files

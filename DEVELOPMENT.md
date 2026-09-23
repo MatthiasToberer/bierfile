@@ -7,8 +7,10 @@ For using it, see [README.md](README.md) and [GUIDE.md](GUIDE.md).
 
 ## Layout
 
-    bin/bier             the program, a single shell script
-    app/                 BierMenu, the menu bar app in Swift
+    Sources/bier-core/       the command and shared Swift code
+    Sources/bier-agent/      the peer agent
+    Sources/bier-peer/       the native peer client
+    Sources/bier-trayapp/    BierMenu, the menu bar app
     test/                test suite with a Homebrew stand-in
     install.sh           setup on one Mac
     .githooks/pre-push   keeps a red state off the server
@@ -184,8 +186,8 @@ emergency: `git push --no-verify`.
       Device  mini
       App     0.11.0 (/Applications/BierMenu.app)
 
-`BIER_VERSION` appears in exactly one place, in `bin/bier`.
-`app/build.sh` reads it from there into the app bundle, `bier state`
+`BIER_VERSION` appears in exactly one place, in `Sources/bier-core/bier`.
+`Sources/bier-trayapp/build.sh` reads it from there into the app bundle, `bier state`
 reports it. That is how BierMenu notices that it is older than the script
 and offers an upgrade in the menu. **Bump it on behavioural changes** — an
 old app quietly running on after an install has happened before.
@@ -350,11 +352,11 @@ recover, and `bier vault --init` says so before it takes one.
 
 ## Looking at the icon
 
-`app/preview-icon.swift` writes both resting states, six frames of the
+`Sources/bier-trayapp/preview-icon.swift` writes both resting states, six frames of the
 animation, a strip with all of them side by side, and `pixel.png`:
 
 ```sh
-swiftc -o /tmp/preview app/Glass.swift app/preview-icon.swift -framework AppKit
+swiftc -o /tmp/preview Sources/bier-trayapp/Glass.swift Sources/bier-trayapp/preview-icon.swift -framework AppKit
 /tmp/preview /tmp/glass
 open /tmp/glass/pixel.png
 ```

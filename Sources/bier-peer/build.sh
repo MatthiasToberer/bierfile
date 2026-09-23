@@ -2,7 +2,7 @@
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
-root=$(cd "$here/.." && pwd)
+root=$(cd "$here/../.." && pwd)
 out=${1:-"$here/build/bier-peer"}
 
 swift build --package-path "$root" -c release --product bier-peer >/dev/null

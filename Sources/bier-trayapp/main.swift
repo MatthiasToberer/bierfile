@@ -62,7 +62,7 @@ enum Bier {
 				if root.hasPrefix("~/") {
 					root = (root as NSString).expandingTildeInPath
 				}
-				let candidate = root + "/bin/bier"
+				let candidate = root + "/Sources/bier-core/bier"
 				if FileManager.default.isExecutableFile(atPath: candidate) {
 					return candidate
 				}

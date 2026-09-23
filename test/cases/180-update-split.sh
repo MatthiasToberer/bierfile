@@ -29,4 +29,4 @@ assert_contains "$OUT" "up to date" "nothing newer on the code server"
 assert_eq "$before" "$(cat "$(bf mini mini)")" \
 	"upgrade must not touch the Brewfiles"
 
-assert_file_has "$WORK/code-mini/bin/bier" 'install.sh" --yes --no-inventory'
+assert_file_has "$WORK/code-mini/Sources/bier-core/bier" 'install.sh" --yes --no-inventory'

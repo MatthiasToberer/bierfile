@@ -11,23 +11,20 @@ let package = Package(
 		.executable(name: "bier-peer", targets: ["BierPeer"])
 	],
 	targets: [
-		.target(name: "BierCore"),
+		.target(name: "BierCore", path: "Sources/bier-core/swift"),
 		.executableTarget(
 			name: "BierAgent",
 			dependencies: ["BierCore"],
-			path: "agent",
-				exclude: [
-				"GitRepositoryTest.swift",
+			path: "Sources/bier-agent",
+			exclude: [
 				"PEER-DATA-PROTOCOL.md",
 				"README.md",
-				"SnapshotTest.swift",
-				"build.sh",
-				"test.sh"
+				"build.sh"
 			],
 			sources: ["BierAgent.swift"],
 			swiftSettings: [.define("BIER_PACKAGE")]
 		),
-		.executableTarget(name: "BierPeer", dependencies: ["BierCore"]),
+		.executableTarget(name: "BierPeer", dependencies: ["BierCore"], path: "Sources/bier-peer", exclude: ["build.sh"]),
 		.testTarget(
 			name: "BierCoreTests",
 			dependencies: ["BierCore"],

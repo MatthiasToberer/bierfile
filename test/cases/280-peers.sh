@@ -90,7 +90,7 @@ assert_contains "$OUT" 'Done. mini is ready on studio.local.'
 assert_file_has "$WORK/scp.args" 'allowed_signers.new'
 assert_file_has "$WORK/scp.args" 'com.bier.agent.plist.new'
 assert_file_has "$WORK/ssh.args" 'fetch --quiet --depth 1 origin'
-assert_file_has "$WORK/ssh.args" 'source.new/agent/build.sh'
+assert_file_has "$WORK/ssh.args" 'source.new/Sources/bier-agent/build.sh'
 assert_file_has "$WORK/ssh.args" 'peer_signers'
 assert_file_has "$WORK/curl.args" 'http://studio.local:53991/v1/health'
 assert_ok bier mini peer list

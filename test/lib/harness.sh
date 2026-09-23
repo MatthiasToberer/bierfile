@@ -109,8 +109,8 @@ world() {
 
 	# --- Code ---
 	seed=$WORK/seed-code
-	mkdir -p "$seed/bin"
-	cp "$REPO/bin/bier" "$seed/bin/bier"
+	mkdir -p "$seed/Sources/bier-core"
+	cp "$REPO/Sources/bier-core/bier" "$seed/Sources/bier-core/bier"
 	git init -q --initial-branch=main "$seed"
 	git -C "$seed" config user.email test@example.com
 	git -C "$seed" config user.name Test
@@ -201,7 +201,7 @@ bier() {
 		BIER_VAULT=$WORK/home-$host/.bierfilevault \
 		BIER_TEST_SYSTEM=$WORK/sys-$host \
 		XDG_CONFIG_HOME=$WORK/config-$host \
-		"$WORK/code-$host/bin/bier" "$@" <"$WORK/.in" >"$WORK/.out" 2>&1 || rc=$?
+		"$WORK/code-$host/Sources/bier-core/bier" "$@" <"$WORK/.in" >"$WORK/.out" 2>&1 || rc=$?
 	OUT=$(cat "$WORK/.out")
 	assert_sane "$OUT"
 	return $rc

@@ -11,7 +11,7 @@ SYS
 
 # Whatever this build calls itself — hard-coding it here would go stale
 # with the next bump.
-version=$(grep -m1 '^BIER_VERSION=' "$WORK/code-mini/bin/bier" | cut -d= -f2)
+version=$(grep -m1 '^BIER_VERSION=' "$WORK/code-mini/Sources/bier-core/bier" | cut -d= -f2)
 
 # Nothing tagged: no release is announced, and upgrade falls back to the
 # branch, which is level.

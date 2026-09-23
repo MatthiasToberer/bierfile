@@ -101,8 +101,8 @@ stop_app() {
 if [ "$UNINSTALL" = yes ] && [ "$DRY" = yes ]; then
 	say "What --uninstall would do"
 	n=0
-	if [ -x "$HERE/bin/bier" ]; then
-		n=$("$HERE/bin/bier" vault 2>/dev/null |
+	if [ -x "$HERE/Sources/bier-core/bier" ]; then
+		n=$("$HERE/Sources/bier-core/bier" vault 2>/dev/null |
 			sed -n 's/^ *\([0-9]*\) entries in it/\1/p')
 	fi
 	ok "turn ${n:-0} vault files back into plain files"
@@ -128,11 +128,11 @@ if [ "$UNINSTALL" = yes ]; then
 	# The files first. Every link points into the vault, and removing
 	# bier without this would leave a home full of dead links and no
 	# .zshrc at all.
-	if [ -x "$HERE/bin/bier" ]; then
-		"$HERE/bin/bier" vault --unlink 2>/dev/null ||
+	if [ -x "$HERE/Sources/bier-core/bier" ]; then
+		"$HERE/Sources/bier-core/bier" vault --unlink 2>/dev/null ||
 			warn "could not put the vault files back — check by hand"
 		if [ -t 0 ]; then
-			"$HERE/bin/bier" retire --self ||
+			"$HERE/Sources/bier-core/bier" retire --self ||
 				warn "this Mac is still listed; take it out elsewhere with 'bier retire'"
 		else
 			warn "not on a terminal — take this Mac out elsewhere with 'bier retire'"
@@ -250,10 +250,10 @@ fi
 
 if [ "$DRY" = yes ]; then
 	say "What it would do"
-	if [ -L "$LINK" ] && [ "$(readlink "$LINK")" = "$HERE/bin/bier" ]; then
+	if [ -L "$LINK" ] && [ "$(readlink "$LINK")" = "$HERE/Sources/bier-core/bier" ]; then
 		ok "link       $LINK — already correct"
 	else
-		ok "link       $LINK -> $HERE/bin/bier"
+		ok "link       $LINK -> $HERE/Sources/bier-core/bier"
 	fi
 	case ":$PATH:" in
 	*":$BIN_DIR:"*) ok "PATH       $BIN_DIR is on it" ;;
@@ -275,12 +275,12 @@ if [ "$DRY" = yes ]; then
 	else
 		ok "data       would ask where your Brewfiles live"
 	fi
-	if "$HERE/bin/bier" vault 2>/dev/null | grep -q 'remembered on this Mac'; then
+	if "$HERE/Sources/bier-core/bier" vault 2>/dev/null | grep -q 'remembered on this Mac'; then
 		ok "vault      create the folder; the passphrase is already known"
 	else
 		ok "vault      create the folder and ask for a passphrase"
 	fi
-	v=$(sed -n 's/^BIER_VERSION=//p' "$HERE/bin/bier" | head -1)
+	v=$(sed -n 's/^BIER_VERSION=//p' "$HERE/Sources/bier-core/bier" | head -1)
 	if [ -d "$(app_target)" ]; then
 		ok "app        build $v and replace $(app_target)"
 	else
@@ -298,15 +298,15 @@ fi
 # --- native peer client -----------------------------------------------
 
 say "Building the Swift peer client"
-"$HERE/cli/build.sh" >/dev/null
+"$HERE/Sources/bier-peer/build.sh" >/dev/null
 ok "built"
 
 # --- bier onto the PATH ------------------------------------------------
 
 say "Making bier available"
 mkdir -p "$BIN_DIR"
-ln -sfn "$HERE/bin/bier" "$LINK"
-ok "$LINK -> $HERE/bin/bier"
+ln -sfn "$HERE/Sources/bier-core/bier" "$LINK"
+ok "$LINK -> $HERE/Sources/bier-core/bier"
 case ":$PATH:" in
 *":$BIN_DIR:"*)
 	ok "$BIN_DIR is on the PATH"
@@ -349,7 +349,7 @@ if [ -n "$found" ] && [ "$found" != "$LINK" ]; then
 	if [ -L "$found" ]; then
 		warn "It points at $(readlink "$found")"
 	fi
-	warn "Either remove that entry or call $HERE/bin/bier directly."
+	warn "Either remove that entry or call $HERE/Sources/bier-core/bier directly."
 fi
 
 # --- Git hook ----------------------------------------------------------
@@ -500,20 +500,20 @@ ok "$VAULTDIR"
 # The passphrase is asked here and nowhere else. Asking later, on the
 # day somebody first puts a file in, means the setup was never actually
 # finished -- and it is the day they are thinking about something else.
-if "$HERE/bin/bier" vault 2>/dev/null | grep -q 'remembered on this Mac'; then
+if "$HERE/Sources/bier-core/bier" vault 2>/dev/null | grep -q 'remembered on this Mac'; then
 	ok "the passphrase is already known here"
 elif [ "$YES" = yes ] || [ ! -t 0 ]; then
 	# --yes cannot invent a passphrase, and guessing is not an option.
 	warn "no passphrase yet — run 'bier vault --init' to set one"
 else
-	"$HERE/bin/bier" vault --init ||
+	"$HERE/Sources/bier-core/bier" vault --init ||
 		warn "not set; run 'bier vault --init' when you are ready"
 fi
 
 # --- Build and install the app -----------------------------------------
 
 say "Building BierMenu"
-"$HERE/app/build.sh" >/dev/null
+"$HERE/Sources/bier-trayapp/build.sh" >/dev/null
 ok "built"
 
 TARGET=$(app_target)
@@ -523,7 +523,7 @@ if stop_app; then
 	ok "stopped the running build"
 fi
 rm -rf "$TARGET"
-cp -R "$HERE/app/build/BierMenu.app" "$TARGET"
+cp -R "$HERE/Sources/bier-trayapp/build/BierMenu.app" "$TARGET"
 ok "installed: $TARGET"
 open "$TARGET"
 
@@ -554,10 +554,10 @@ if [ "$NO_INVENTORY" = yes ]; then
 	ok "unchanged — bier upgrade updates only the program"
 else
 	say "Recording this Mac's inventory"
-	"$HERE/bin/bier" dump
+	"$HERE/Sources/bier-core/bier" dump
 
 	if ask "commit and push to the git server?"; then
-		"$HERE/bin/bier" sync "$(hostname -s): inventory recorded"
+		"$HERE/Sources/bier-core/bier" sync "$(hostname -s): inventory recorded"
 	else
 		ok "not pushed — later with 'bier sync'"
 	fi
