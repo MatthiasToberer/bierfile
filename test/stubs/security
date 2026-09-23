@@ -1,32 +1,41 @@
 #!/usr/bin/env bash
 # Keychain stand-in, so no test reads or writes the real login keychain.
 #
-#   BIER_TEST_KEYCHAIN=locked   the item exists, but the secret is locked away
+#   BIER_TEST_KEYCHAIN=locked   locked, as over SSH: secrets can be neither
+#                               read nor written until it is unlocked
+#   BIER_TEST_UNLOCK=ok         unlock-keychain accepts the login password
 #   otherwise                   the keychain holds whatever this stub stored
 
 set -euo pipefail
 
 store=${WORK:?WORK is not set}/keychain
+unlocked=$WORK/keychain-unlocked
+locked() {
+	[ "${BIER_TEST_KEYCHAIN:-}" = locked ] && [ ! -f "$unlocked" ]
+}
+
 case ${1:-} in
 find-generic-password)
-	if [ "${BIER_TEST_KEYCHAIN:-}" = locked ]; then
-		case " $* " in
-		*" -w "*)
-			echo 'security: SecKeychainSearchCopyNext: User interaction is not allowed.' >&2
-			exit 36
-			;;
-		esac
-		exit 0
-	fi
 	if [ ! -f "$store" ]; then
 		echo 'security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.' >&2
 		exit 44
 	fi
 	case " $* " in
-	*" -w "*) cat "$store"; echo ;;
+	*" -w "*)
+		if locked; then
+			echo 'security: SecKeychainSearchCopyNext: User interaction is not allowed.' >&2
+			exit 36
+		fi
+		cat "$store"
+		echo
+		;;
 	esac
 	;;
 add-generic-password)
+	if locked; then
+		echo 'security: SecKeychainItemCreateFromContent (<default>): User interaction is not allowed.' >&2
+		exit 36
+	fi
 	while [ $# -gt 0 ]; do
 		[ "$1" != -w ] || { printf '%s' "$2" >"$store"; break; }
 		shift
@@ -35,6 +44,14 @@ add-generic-password)
 delete-generic-password)
 	[ -f "$store" ] || exit 44
 	rm -f "$store"
+	;;
+unlock-keychain)
+	printf '%s\n' "$*" >>"$WORK/security.args"
+	if [ "${BIER_TEST_UNLOCK:-}" != ok ]; then
+		echo 'security: SecKeychainUnlock: The user name or passphrase you entered is not correct.' >&2
+		exit 51
+	fi
+	: >"$unlocked"
 	;;
 *) exit 1 ;;
 esac

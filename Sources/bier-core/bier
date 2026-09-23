@@ -2048,23 +2048,37 @@ vault_pass() {
 		printf '%s' "$BIER_VAULT_PASS"
 		return 0
 	fi
-	local pass status why
+	local pass status=0 why
 	why=$(tmpfile)
-	if pass=$(security find-generic-password -s bier-vault -a vault -w 2>"$why"); then
-		printf '%s' "$pass"
-		return 0
-	else
-		status=$?
+	pass=$(security find-generic-password -s bier-vault -a vault -w 2>"$why") || status=$?
+	if [ "$status" = 36 ] && [ "${1:-}" != --no-unlock ] && keychain_unlock; then
+		status=0
+		pass=$(security find-generic-password -s bier-vault -a vault -w 2>"$why") || status=$?
 	fi
 	# 44 is "no such item". Anything else means the passphrase is there
 	# but locked away -- over SSH, typically. Reporting that as "no
 	# passphrase yet" sent people to set a new one.
-	[ "$status" = 44 ] && return 0
+	case $status in
+	0) printf '%s' "$pass"; return 0 ;;
+	44) return 0 ;;
+	esac
+	[ "${1:-}" != --no-unlock ] || return 1
 	die "the keychain holds the vault passphrase but would not hand it out:
      $(cat "$why")
 
      Unlock the login keychain and try again:
        security unlock-keychain ~/Library/Keychains/login.keychain-db"
+}
+
+# Over SSH the login keychain stays locked, and security answers every
+# request with status 36, "User interaction is not allowed". That is
+# what kept the passphrase out of the keychain during installation.
+# With somebody at the terminal, unlocking it is one password away.
+keychain_unlock() {
+	[ -t 0 ] || [ -n "${BIER_TEST_TTY:-}" ] || return 1
+	info "The login keychain is locked, as it usually is over SSH." >&2
+	info "Unlock it with your macOS login password (not the vault passphrase):" >&2
+	security unlock-keychain "$HOME/Library/Keychains/login.keychain-db"
 }
 
 # Whether this Mac remembers a passphrase, without stopping when the
@@ -2078,7 +2092,7 @@ vault_pass_state() {
 	security find-generic-password -s bier-vault -a vault >/dev/null 2>&1 || status=$?
 	if [ "$status" != 0 ]; then
 		echo missing
-	elif (vault_pass >/dev/null 2>&1); then
+	elif vault_pass --no-unlock >/dev/null 2>&1; then
 		echo known
 	else
 		echo locked
@@ -2087,16 +2101,22 @@ vault_pass_state() {
 
 vault_pass_store() {
 	[ -z "${BIER_VAULT_PASS:-}" ] || return 0
-	local why
+	local why status=0
 	# Say what security said. Swallowing it left "could not write the
 	# passphrase to the keychain" and no way to find out why.
-	why=$(security add-generic-password -s bier-vault -a vault -w "$1" -U 2>&1) ||
+	why=$(security add-generic-password -s bier-vault -a vault -w "$1" -U 2>&1) || status=$?
+	if [ "$status" = 36 ] && keychain_unlock; then
+		status=0
+		why=$(security add-generic-password -s bier-vault -a vault -w "$1" -U 2>&1) || status=$?
+	fi
+	[ "$status" = 0 ] ||
 		die "the keychain would not take the passphrase:
      $why
 
      A locked or missing login keychain is the usual reason. Unlock it
-     in Keychain Access, or work without it for now by putting the
-     passphrase in BIER_VAULT_PASS."
+     with 'security unlock-keychain ~/Library/Keychains/login.keychain-db',
+     or work without it for now by putting the passphrase in
+     BIER_VAULT_PASS."
 }
 
 vault_encrypt() {
@@ -2515,9 +2535,11 @@ vault_open() {
 		return 0
 		;;
 	locked)
-		info "The safe holds files, but the keychain is locked; they stay closed."
-		info "  security unlock-keychain ~/Library/Keychains/login.keychain-db"
-		return 0
+		if ! keychain_unlock; then
+			info "The safe holds files, but the keychain is locked; they stay closed."
+			info "  security unlock-keychain ~/Library/Keychains/login.keychain-db"
+			return 0
+		fi
 		;;
 	esac
 	pass=$(vault_pass)
