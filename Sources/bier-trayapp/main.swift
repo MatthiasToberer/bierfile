@@ -41,11 +41,11 @@ struct BierState {
 // MARK: - Calling bier
 
 enum Bier {
-	/// Where the guide lives. Opening the local GUIDE.md hands macOS a
-	/// .md file, and a Mac with no handler for those does nothing at all
-	/// — the menu entry looked broken. The rendered page needs only a
-	/// browser, and every Mac has one.
-	static let guideURL = "https://github.com/MatthiasToberer/bierfile/blob/main/GUIDE.md"
+	/// Where the guide lives. Opening a local .md file hands macOS a
+	/// file that a Mac with no handler for it ignores — the menu entry
+	/// looked broken. The rendered page needs only a browser, and every
+	/// Mac has one. GUIDE.md stays as a pointer for older apps.
+	static let guideURL = "https://github.com/MatthiasToberer/bierfile/blob/main/docs/README.md"
 
 	/// GUI programs do not inherit the shell's PATH. Homebrew and the
 	/// Command Line Tools therefore have to be added explicitly.

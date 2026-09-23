@@ -1,313 +1,92 @@
+<div align="center">
+
+<img src="docs/assets/bier.svg" width="88" alt="">
+
 # bier
 
-**Keeps the software inventory of several Macs identical** — with
-Homebrew, direct peer-to-peer exchange and a beer glass in the menu bar.
+**Your Macs, on tap.**
 
-> **On the name.** *bier* is German for *beer*, and the glass in the menu
-> bar fills up when everything is in order. It is also a thank-you to
-> [Homebrew](https://brew.sh): no brew, no beer. `bier` is a thin layer
-> on top of `brew bundle` and would not exist without the work of the
-> Homebrew maintainers.
+Keeps the software and dotfiles of several Macs identical —
+built on Homebrew, synced peer-to-peer, no server.
 
-You install something on the desktop machine, forget about it, and six
-months later it is missing on the laptop. `bier` writes down what is
-installed, keeps that list in a local git repository, and tells you on every
-device what differs — **full** means everything is in order, **empty**
-means there is something to do here.
+[![Release](https://img.shields.io/github/v/release/MatthiasToberer/bierfile?color=b87308&label=release)](https://github.com/MatthiasToberer/bierfile/releases)
+![Platform](https://img.shields.io/badge/platform-macOS-333)
+[![License](https://img.shields.io/github/license/MatthiasToberer/bierfile?color=1a7f37)](LICENSE)
 
-It is a native macOS tool with a small menu bar app and a deliberately
-limited peer agent. Nothing runs in the cloud and no central data server is
-required; paired Macs exchange their signed Git history directly.
+[Install](#quick-start) · [Documentation](docs/README.md) · [Tutorials](docs/README.md#tutorials) · [Security](SECURITY.md) · [Releases](https://github.com/MatthiasToberer/bierfile/releases)
 
-> [!WARNING]
-> **Make a backup before you use `bier` for the first time.**
->
-> `bier` installs and **uninstalls** software on your Mac — `bier
-> uninstall`, `bier prune` and `bier install` really do reach through.
-> Removing a program can take its settings and data with it, and a wrong
-> entry in a list affects *all* of your devices.
->
-> This is a hobby project, provided without any warranty. Use it at your
-> own risk; I accept no liability for lost data or removed software. Keep
-> a working backup — Time Machine or something equivalent — and make sure
-> it actually works.
+</div>
 
----
+<!-- Screenshot: BierMenu full and empty, light and dark menu bar → docs/assets/biermenu.png -->
 
-## What it does
+## Why bier
 
-- **Record and sync.** `bier sync` writes down what is on this Mac and
-  pushes it to the others.
-- **Show the differences.** What is installed here but recorded nowhere?
-  What is on the list but missing from this device?
-- **Allow differences.** Not everything belongs everywhere. A device may
-  have extras without them being forced on the others.
-- **Carry removals across.** A plain "what is installed" snapshot cannot
-  do that. `bier` uses the git history to tell whether a program was
-  newly added or removed elsewhere — and treats the two differently.
-- **Work without git knowledge.** `bier sync` fetches, pushes and merges;
-  `bier upgrade` puts a newer program in place. Neither asks anything nor
-  demands anything.
-- **Sit in the menu bar.** One glance tells you whether this Mac differs.
+You install something on the desktop, forget about it, and six months
+later it is missing on the laptop. bier writes down what is installed,
+shares it directly with your other Macs, and shows a beer glass in the
+menu bar: **full** — all in order, **empty** — something to do here.
 
-## How it works
+| | |
+| --- | --- |
+| **One list, plus extras** | `main` applies to every Mac, a small list per Mac sits on top. Both are plain [Brewfiles](https://docs.brew.sh/Brew-Bundle-and-Brewfile). |
+| **Removals travel too** | The git history tells "removed elsewhere" from "new here". `bier prune` follows along. |
+| **Encrypted dotfiles** | `bier vault add ~/.zshrc` — AES-256, one shared passphrase, groups per Mac. |
+| **No server, no SSH** | Pair once with a one-time code. Macs exchange signed Git history directly. |
+| **No git knowledge needed** | `bier sync` asks nothing and merges on its own. |
+| **Signed releases** | `bier trust` pins a signing key published away from GitHub. |
 
-Two lists in
-[Brewfile format](https://docs.brew.sh/Brew-Bundle-and-Brewfile) together
-describe what a device is supposed to have:
+## Quick start
 
-    Brewfiles/main       what should run on every Mac
-    Brewfiles/<host>     what this one Mac has on top
-
-Both are valid Brewfiles and can be handed straight to
-`brew bundle install --file`. You create `main` once from the inventory
-of your main machine; after that every Mac only writes its own list of
-extras.
-
-From this follows the rule that carries everything: **a device file can
-only add, never subtract.** So anything a device must explicitly *not*
-have cannot live in `main`. That sounds like a limitation, but it spares
-you a whole class of special cases — and `bier take` moves entries in
-both directions when you change your mind.
-
-## Requirements
-
-- macOS with [Homebrew](https://brew.sh)
-- the Command Line Tools (`xcode-select --install`) for the app
-- no account or key on a data server; the installer creates a private
-  Ed25519 peer identity for this Mac
-
-## Installation
-
-On the Mac whose software should serve as the template:
+Requires macOS, [Homebrew](https://brew.sh) and the Command Line Tools
+(`xcode-select --install`).
 
 ```sh
+# on the first Mac
 git clone https://github.com/MatthiasToberer/bierfile.git ~/bierfile
 ~/bierfile/install.sh
+bier main                        # once: this Mac becomes the baseline
+
+# on every further Mac
+git clone https://github.com/MatthiasToberer/bierfile.git ~/bierfile
+~/bierfile/install.sh
+bier peer offer                  # shows a one-time code
+#   …then on the first Mac:  bier peer pair second-mac.local
+bier install
 ```
 
-`install.sh` checks the requirements, creates the local data repository at
-`~/bierdata`, installs the peer agent, builds the menu bar app and records
-this Mac's inventory. Another local data folder can be passed in:
+From then on, one command after every install:
 
 ```sh
-~/bierfile/install.sh --data ~/my-bierdata
+bier sync
 ```
 
-Then, once and only once, set the shared baseline:
+Step by step, assuming nothing:
+**[The seven-minute pilsner →](docs/tutorials/seven-minute-pilsner.md)**
 
-```sh
-bier main
-```
+> [!WARNING]
+> **Back up first.** bier installs *and uninstalls* software on every
+> paired Mac, and a wrong entry in a list reaches all of them. This is a
+> hobby project without warranty — keep a working Time Machine backup.
+> [What can go wrong →](docs/reference/troubleshooting.md)
 
-On every further Mac, run the same `git clone` and `install.sh`. Then open a
-pairing window there:
+## Documentation
 
-```sh
-bier peer offer
-```
-
-It displays a one-time code. On the first Mac:
-
-```sh
-bier peer pair second-mac.local
-```
-
-Enter the code. Both Macs now know and trust one another, and the first
-Mac's Bier data is copied automatically if the second installation is still
-untouched. Finally run `bier install` on the second Mac to install the shared
-software. No SSH login and no private GitHub repository are needed.
-
-For a small trial instead of your full inventory, install both Macs with
-`./install.sh --manual-inventory`. Put only `cask "firefox"` in
-`~/bierdata/Brewfiles/main`, add a harmless test file with
-`bier vault add ~/.fakezshrc`, and run `bier sync` before pairing. Manual mode
-keeps the Brewfile exactly as you wrote it.
-
-Step by step and assuming nothing: **[GUIDE.md](GUIDE.md)**.
-
-## Everyday use
-
-```sh
-bier sync              # record here and exchange directly with your peers
-bier status            # what differs here?
-bier list              # what do the others have on top?
-bier take              # adopt some of it
-bier uninstall ghidra  # get rid of it everywhere
-bier prune             # remove here what was deleted elsewhere
-bier upgrade           # put a newer bier in place
-```
-
-Most of the time you only need the first one.
-
-If you want to curate the shared inventory yourself instead of recording
-every installed application, use `bier config inventory manual`. In that
-mode `bier sync` leaves the Brewfiles exactly as written and only exchanges
-them and the encrypted vault. `bier dump` remains available when explicitly
-requested. Switch back with `bier config inventory automatic`.
-
-## Files, not only packages
-
-Packages are half of what makes a Mac yours. The other half is the
-files: `.zshrc`, an editor's configuration, notes you want everywhere.
-
-```sh
-bier vault add ~/.zshrc
-```
-
-The file moves into the vault and a symlink stays behind, so it goes on
-living where the program that reads it expects it. `bier sync` encrypts
-it and uploads it; the next `bier sync` on another Mac decrypts it and
-puts the link there. Editing it on either Mac edits the same file.
-
-Encrypted with gpg, AES-256, under **one passphrase your Macs share**.
-A new Mac needs nothing but that passphrase. The plain files live in
-`~/.bierfilevault`, outside every repository, so nothing can commit
-them by accident.
-
-Not everything belongs on every Mac:
-
-```sh
-bier vault group laptops mini macbook
-bier vault add --for laptops ~/.zshrc
-```
-
-A Mac outside the group still receives the encrypted copy. It simply
-never opens it.
-
-**The passphrase cannot be recovered.** Keep a copy where you keep your
-other passwords, before you put anything in the vault. `Safe/`
-carries an unencrypted note explaining how to get the files back with
-`gpg` alone, without bier.
-
-## Commands
-
-| Command | what it does |
+| | |
 | --- | --- |
-| `bier dump [--adopt]` | record what this Mac has on top of `main` |
-| `bier sync [message]` | `dump`, commit, exchange directly with peers — the everyday command |
-| `bier config inventory manual` | synchronize only explicitly curated Brewfiles |
-| `bier upgrade [--force]` | install a newer release of `bier` itself |
-| `bier status` | check the system against the lists |
-| `bier list` | overview of all devices |
-| `bier diff [host…]` | compare the inventory with other devices |
-| `bier install` | bring `main` and this device's own list onto the system |
-| `bier take` | pull entries from other devices into `main` or here |
-| `bier take --from-main` | hand an entry from `main` to a single device |
-| `bier main` | create `main` from this Mac — once in a lifetime |
-| `bier uninstall <pkg>` | uninstall and drop from every list |
-| `bier prune` | remove what was deleted on another Mac |
-| `bier push [message]` | commit the lists and upload them |
-| `bier vault add <path>` | take a file or folder into the vault |
-| `bier vault group` | which Macs a vault file is meant for |
-| `bier retire <name>` | take a Mac out of the fleet |
-| `bier trust [url]` | verify Bier program releases against a key published elsewhere |
-| `bier peer trust [url]` | alias for `bier trust`; the agent uses the same signed Bier release |
-| `bier config` | show which settings are in effect |
-| `bier version` | version, commit and paths |
-| `bier help` | the same overview in the terminal |
+| **[Getting started](docs/README.md#getting-started)** | Installation, a first trial run |
+| **[Tutorials](docs/README.md#tutorials)** | The quick round, the seven-minute pilsner, worked examples |
+| **[Concepts](docs/README.md#concepts)** | The two lists, how removals travel, simultaneous changes |
+| **[Using bier](docs/README.md#using-bier)** | Everyday sync, adopting entries, removing software, the menu bar |
+| **[Vault](docs/README.md#vault)** | Dotfiles, groups, recovery without bier |
+| **[Peers & security](docs/README.md#peers--security)** | Pairing, threat model, signed releases |
+| **[Reference](docs/README.md#reference)** | Every command, configuration, troubleshooting |
+| **[Contributing](docs/README.md#contributing)** | Architecture, design decisions, tests and releases |
 
-## Adopting an entry
+## Thanks
 
-`bier list` shows what the other devices have on top. `bier take` lets
-you pick and asks where it should go:
+*bier* is German for *beer* — and a thank-you to
+[Homebrew](https://brew.sh): no brew, no beer. bier is a thin layer on
+top of `brew bundle` and would not exist without the work of the Homebrew
+maintainers.
 
-```
-What other devices have on top of main:
-
-   1  cask "font-meslo-lg-nerd-font"               macbook
-   2  mas "WireGuard"                              macbook
-
-Numbers (e.g. 1 3-5), empty = cancel: 1
-Where to?  [m] into main, for all devices   [h] only mini   [c] cancel: m
-```
-
-- **into `main`** — applies to every device from now on and therefore
-  disappears from the device lists. Listing it twice would be wrong.
-- **only this Mac** — goes into this device's own list, the others keep
-  theirs. Both then have it device-specifically.
-
-The other direction, `bier take --from-main`, takes an entry out of the
-shared inventory and hands it to a single device. That turns "runs
-everywhere" into "runs here only".
-
-## Removing something
-
-A snapshot of the system cannot carry removals across — it only sees what
-is there. So removing is a command of its own:
-
-```sh
-bier uninstall ghidra
-```
-
-That uninstalls it, drops the entry from every list and shares the change. On the
-other Mac ghidra is still installed afterwards but no longer on any list
-— the same state as a freshly installed package.
-
-The two can still be told apart, because **the git history knows**: if an
-entry used to be on a list and is now gone, it was a removal; if it was
-never there, it is new. `bier status` separates them:
-
-```
-Installed on mini but not recorded (bier dump):
-  + brew "htop"
-Removed on another device, still here (bier prune):
-  ~ brew "ghidra"
-```
-
-`bier prune` clears out the second kind, after asking.
-
-## The menu bar
-
-**BierMenu** shows the state of this Mac without you having to ask:
-
-- **full mug with a head of foam** — system and lists agree
-- **empty mug** — something differs here
-- **the level moves** — it is checking
-
-A click shows what differs, separated by kind: *not recorded* is done in
-the background with one click, *remove* and *install missing* open a
-terminal — those take time, ask for a password and can fail, so you
-should be able to watch.
-
-What **other** devices have more or less of is deliberately absent. It
-says nothing about whether there is anything to do on *this* Mac. That is
-what `bier list` is for.
-
-The app computes nothing itself; it calls `bier state`, every 15 minutes
-and whenever the menu is opened.
-
-## When two Macs change something at once
-
-Lists of packages have no order, and almost always *both* sides are
-right. `bier` therefore sets `merge=union` for the lists: git merges
-simultaneous changes itself instead of leaving a conflict behind. Should
-one survive anyway, `bier sync` resolves it by the same rule — keep
-both sides, carry on. Duplicate lines do not bother Homebrew and
-disappear with the next `bier sync`.
-
-If it really cannot be done, `bier` aborts and rolls everything back
-rather than leaving something half finished.
-
-## Where things live
-
-Your lists live in a private local repository, not in this program repository.
-They are shared only with paired Macs. `install.sh` sets up both and records the paths in
-`~/.config/bier/config`:
-
-    root = /Users/yourname/bierfile     # this program
-    data = /Users/yourname/bierdata     # your lists
-    host = mini                         # what this device is called
-
-`bier config` shows what is currently in effect.
-
-## Further reading
-
-- **[GUIDE.md](GUIDE.md)** — setup and everyday use step by step, with
-  examples for two and three Macs. Assumes nothing.
-- **[DEVELOPMENT.md](DEVELOPMENT.md)** — how it is built, which design
-  decisions were made and why, and how the tests work.
-
-## Licence
-
-MIT — see [LICENSE](LICENSE).
+MIT licence — see [LICENSE](LICENSE).
