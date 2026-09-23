@@ -56,9 +56,9 @@ These override the matching config values for one invocation:
 | `~/bierdata/Brewfiles/` | `main` and one list per Mac |
 | `~/bierdata/Safe/` | the encrypted vault, plus `README-recovery.txt` |
 | `~/.bierfilevault/` | the plain vault files, outside every repository |
-| `~/.config/bier/` | config and pinned release keys (`allowed_signers`) |
+| `~/.config/bier/` | config, pinned release keys (`allowed_signers`) and the addresses of paired Macs (`peers`) |
 | `~/.local/bin/bier` | link to the command |
-| `~/.local/share/bier/agent/` | the peer agent, its identity and known peers |
+| `~/.local/share/bier/agent/` | the agent binary, this Mac's peer identity, the public keys of paired Macs (`peer_signers`) and the agent's state |
 | `~/Library/LaunchAgents/com.bier.agent.plist` | starts the agent |
 | `/Applications/BierMenu.app` | the menu bar app |
 | keychain item `bier-vault` | this Mac's copy of the vault passphrase |

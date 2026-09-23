@@ -75,6 +75,8 @@ would rather have every step explained.
 
 ## Contributing
 
+- **[System overview](contributing/system-overview.md)** — bier,
+  bier-agent and Bierkasten: components, keys, endpoints and flows
 - **[Architecture](contributing/architecture.md)**
 - **[Design decisions](contributing/design-decisions.md)** — and the
   traps that have already sprung

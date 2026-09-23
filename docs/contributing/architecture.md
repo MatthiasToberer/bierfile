@@ -2,7 +2,9 @@
 
 # Architecture
 
-How bier is built. For using it, see the [documentation](../README.md).
+How bier is built. For how bier, the agent and Bierkasten work together
+at runtime, start with the [system overview](system-overview.md). For
+using bier, see the [documentation](../README.md).
 
 ## Layout
 

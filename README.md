@@ -82,7 +82,7 @@ Step by step, assuming nothing:
 | **[Vault](docs/README.md#vault)** | Dotfiles, groups, recovery without bier |
 | **[Peers & security](docs/README.md#peers--security)** | Pairing, threat model, signed releases |
 | **[Reference](docs/README.md#reference)** | Every command, configuration, troubleshooting |
-| **[Contributing](docs/README.md#contributing)** | Architecture, design decisions, tests and releases |
+| **[Contributing](docs/README.md#contributing)** | System overview of bier, bier-agent and Bierkasten; design decisions, tests, releases |
 
 ## Thanks
 
