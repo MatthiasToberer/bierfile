@@ -3,7 +3,11 @@ import Foundation
 enum DataSnapshotError: Error {
 	case invalidPath
 	case unknownSnapshot
+	case duplicatePath
+	case oversizedChunk
 }
+
+let maxSnapshotChunkBytes = 32 * 1024
 
 final class DataSnapshotStore {
 	private let live: URL
@@ -27,10 +31,12 @@ final class DataSnapshotStore {
 	func put(_ id: String, path: String, data: Data) throws {
 		try validate(id)
 		guard path == ".gitattributes" || path.hasPrefix("Brewfiles/") || path.hasPrefix("Safe/"),
-			!path.contains(".."), !path.hasPrefix("/") else { throw DataSnapshotError.invalidPath }
+			!path.contains(".."), !path.hasPrefix("/"), !path.hasSuffix("/") else { throw DataSnapshotError.invalidPath }
+		guard data.count <= maxSnapshotChunkBytes else { throw DataSnapshotError.oversizedChunk }
 		let directory = staging.appendingPathComponent(id)
 		guard FileManager.default.fileExists(atPath: directory.path) else { throw DataSnapshotError.unknownSnapshot }
 		let target = directory.appendingPathComponent(path)
+		guard !FileManager.default.fileExists(atPath: target.path) else { throw DataSnapshotError.duplicatePath }
 		try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
 		try data.write(to: target, options: .atomic)
 		try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: target.path)

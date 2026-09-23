@@ -39,6 +39,12 @@ struct SnapshotTest {
 			throw NSError(domain: "SnapshotTest", code: 1, userInfo: [NSLocalizedDescriptionKey: "invalid path was accepted"])
 		} catch DataSnapshotError.invalidPath {}
 
+		do {
+			try store.put(interrupted, path: "Brewfiles/main", data: Data("first\n".utf8))
+			try store.put(interrupted, path: "Brewfiles/main", data: Data("second\n".utf8))
+			throw NSError(domain: "SnapshotTest", code: 1, userInfo: [NSLocalizedDescriptionKey: "duplicate path was accepted"])
+		} catch DataSnapshotError.duplicatePath {}
+
 		print("Swift Bier snapshot tests passed.")
 	}
 }
