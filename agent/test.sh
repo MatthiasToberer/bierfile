@@ -57,6 +57,8 @@ status=$(curl -sS --max-time 2 -o "$work/response" -w '%{http_code}' \
 [ "$status" = 200 ]
 grep -q 'Brewfiles/main' "$work/response" || { cat "$work/response" >&2; exit 1; }
 grep -q 'Safe/test.gpg' "$work/response" || { cat "$work/response" >&2; exit 1; }
+manifest_hash=$(shasum -a 256 "$work/data/Brewfiles/main" | awk '{print $1}')
+grep -q "$manifest_hash" "$work/response" || { cat "$work/response" >&2; exit 1; }
 peer_nonce=agent-snapshot-begin-0123456789
 snapshot_id=snapshot-begin-0123456789
 printf '{"id":"%s"}' "$snapshot_id" >"$work/snapshot-begin.json"
