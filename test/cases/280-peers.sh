@@ -84,6 +84,8 @@ unset BIER_TEST_SSH
 assert_ok bier mini peer install studio.local
 assert_contains "$OUT" '3/4  Installing verified Bier agent v0.32.0'
 assert_contains "$OUT" '4/4  Checking whether the agent is reachable'
+assert_contains "$OUT" 'Checking the Bier data store on studio.local'
+assert_contains "$OUT" 'studio.local now has the Bier data from mini.'
 assert_contains "$OUT" 'Done. mini is ready on studio.local.'
 assert_file_has "$WORK/scp.args" 'allowed_signers.new'
 assert_file_has "$WORK/scp.args" 'com.bier.agent.plist.new'

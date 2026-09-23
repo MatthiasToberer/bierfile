@@ -1023,19 +1023,21 @@ cmd_peer_compare() {
 	fi
 }
 
-cmd_peer_seed() {
-	local peer=${1:-} body response remote snapshot files begin
-	[ $# -eq 1 ] && peer_name_ok "$peer" || die 'usage: bier peer seed <host>'
-	need_repo
-	[ -r "$HOME/.ssh/id_ed25519" ] || die "no SSH identity at $HOME/.ssh/id_ed25519"
+peer_seed() {
+	local peer=$1 mode=$2 body response remote snapshot files begin
 	body=$(tmpfile)
 	response=$(tmpfile)
 	info "1/3  Checking the Bier data store on $peer …"
 	peer_http_request GET /v1/peer/manifest "$peer" "$body" "$response" ||
 		die "cannot read the Bier data store on $peer"
 	remote=$(cat "$response")
-	printf '%s' "$remote" | grep -Eq '"entries"[[:space:]]*:[[:space:]]*\[[[:space:]]*\]' ||
+	if ! printf '%s' "$remote" | grep -Eq '"entries"[[:space:]]*:[[:space:]]*\[[[:space:]]*\]'; then
+		if [ "$mode" = if-empty ]; then
+			info '     Existing peer data was kept unchanged.'
+			return 0
+		fi
 		die "the Bier data store on $peer is not empty; refusing to replace it"
+	fi
 	info '     The peer is empty.'
 	info '2/3  Preparing the local Bier data snapshot …'
 	snapshot=$(uuidgen | tr -d '-' | tr '[:upper:]' '[:lower:]')
@@ -1047,6 +1049,14 @@ cmd_peer_seed() {
 	peer_send_snapshot "$peer" "$snapshot" "$files" "$begin" "$response" ||
 		die "the Bier data snapshot was not accepted by $peer"
 	info "Done. $peer now has the Bier data from $HOST."
+}
+
+cmd_peer_seed() {
+	local peer=${1:-}
+	[ $# -eq 1 ] && peer_name_ok "$peer" || die 'usage: bier peer seed <host>'
+	need_repo
+	[ -r "$HOME/.ssh/id_ed25519" ] || die "no SSH identity at $HOME/.ssh/id_ed25519"
+	peer_seed "$peer" required
 }
 
 # A remote installation adds a LaunchAgent, an agent directory, a remembered
@@ -1219,6 +1229,9 @@ launchctl bootstrap \"gui/\$(id -u)\" \"\$HOME/Library/LaunchAgents/com.bier.age
 	curl -fsS --max-time 5 "http://$network_host:53991/v1/health" |
 		grep -q '"status":"ok"' || die "the Bier agent on $peer did not answer on TCP port 53991"
 	peer_remember "$peer"
+	if [ -n "$DATA" ] && [ -d "$DATA/.git" ]; then
+		peer_seed "$peer" if-empty
+	fi
 	info "Done. $agent is ready on $peer."
 }
 
