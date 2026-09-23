@@ -17,7 +17,7 @@ swift build --package-path "$here/.." --product bier-peer >/dev/null
 peer_cli=$(swift build --package-path "$here/.." --show-bin-path)/bier-peer
 swiftc -O -framework Foundation -framework CryptoKit -o "$work/snapshot-test" "$here/../Sources/BierCore/DataManifest.swift" "$here/../Sources/BierCore/DataSnapshot.swift" "$here/SnapshotTest.swift"
 "$work/snapshot-test"
-swiftc -O -framework Foundation -framework CryptoKit -o "$work/git-repository-test" "$here/../Sources/BierCore/DataManifest.swift" "$here/../Sources/BierCore/GitRepository.swift" "$here/GitRepositoryTest.swift"
+swiftc -O -framework Foundation -framework CryptoKit -o "$work/git-repository-test" "$here/../Sources/BierCore/DataManifest.swift" "$here/../Sources/BierCore/DataSnapshot.swift" "$here/../Sources/BierCore/GitRepository.swift" "$here/../Sources/BierCore/GitBundleStore.swift" "$here/GitRepositoryTest.swift"
 "$work/git-repository-test"
 ssh-keygen -q -t ed25519 -N '' -f "$work/controller"
 printf 'controller-test %s\n' "$(cat "$work/controller.pub")" >"$work/allowed_signers"

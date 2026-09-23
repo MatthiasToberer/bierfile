@@ -65,6 +65,22 @@ struct GitRepositoryTest {
 		guard try String(contentsOf: target.appendingPathComponent("Brewfiles/main"), encoding: .utf8).contains("local-only") else {
 			throw GitRepositoryError.dataMismatch
 		}
+
+		let transferTarget = work.appendingPathComponent("transfer-target")
+		try manager.createDirectory(at: transferTarget.appendingPathComponent("Brewfiles"), withIntermediateDirectories: true)
+		try manager.copyItem(at: source.appendingPathComponent("Brewfiles/main"), to: transferTarget.appendingPathComponent("Brewfiles/main"))
+		let exporter = try GitBundleStore(repository: GitRepository(root: source), stateDirectory: work.appendingPathComponent("export-state"))
+		let descriptor = try exporter.beginExport()
+		let importer = try GitBundleStore(repository: GitRepository(root: transferTarget), stateDirectory: work.appendingPathComponent("import-state"))
+		try importer.beginImport(descriptor)
+		var offset: UInt64 = 0
+		while offset < descriptor.bytes {
+			let chunk = try exporter.readExport(descriptor.id, offset: offset, length: 17)
+			try importer.putImport(descriptor.id, offset: offset, data: chunk)
+			offset += UInt64(chunk.count)
+		}
+		try importer.commitImport(descriptor.id)
+		guard GitRepository(root: transferTarget).exists else { throw GitRepositoryError.notRepository }
 		print("Swift Bier Git repository tests passed.")
 	}
 }
