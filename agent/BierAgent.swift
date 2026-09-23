@@ -26,11 +26,13 @@ struct ProbeEnvelope: Decodable {
 
 struct SnapshotBeginRequest: Decodable {
 	let id: String
+	let manifest: DataManifest
 }
 
 struct SnapshotPutRequest: Decodable {
 	let id: String
 	let path: String
+	let offset: UInt64
 	let data: Data
 }
 
@@ -269,7 +271,7 @@ final class AgentServer {
 			do {
 				try verifyPeer(method: method, path: path, peer: peer, signers: peerSigners, time: time, nonce: nonce, body: body, signature: signature)
 				if try store.record("peer-\(peer)-\(nonce)") { respond(connection, status: 409, body: "peer request was already processed"); return }
-				try snapshotStore.begin(request.id)
+				try snapshotStore.begin(request.id, manifest: request.manifest)
 				respond(connection, status: 200, body: "{\"status\":\"snapshot-ready\"}", contentType: "application/json")
 			} catch {
 				respond(connection, status: 403, body: "snapshot request was rejected")
@@ -286,7 +288,7 @@ final class AgentServer {
 			do {
 				try verifyPeer(method: method, path: path, peer: peer, signers: peerSigners, time: time, nonce: nonce, body: body, signature: signature)
 				if try store.record("peer-\(peer)-\(nonce)") { respond(connection, status: 409, body: "peer request was already processed"); return }
-				try snapshotStore.put(request.id, path: request.path, data: request.data)
+				try snapshotStore.put(request.id, path: request.path, offset: request.offset, data: request.data)
 				respond(connection, status: 200, body: "{\"status\":\"snapshot-staged\"}", contentType: "application/json")
 			} catch {
 				respond(connection, status: 403, body: "snapshot request was rejected")

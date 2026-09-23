@@ -13,7 +13,7 @@ trap cleanup EXIT
 
 agent="$work/bier-agent"
 "$here/build.sh" "$agent" >/dev/null
-swiftc -O -framework Foundation -o "$work/snapshot-test" "$here/DataSnapshot.swift" "$here/SnapshotTest.swift"
+swiftc -O -framework Foundation -framework CryptoKit -o "$work/snapshot-test" "$here/DataManifest.swift" "$here/DataSnapshot.swift" "$here/SnapshotTest.swift"
 "$work/snapshot-test"
 ssh-keygen -q -t ed25519 -N '' -f "$work/controller"
 printf 'controller-test %s\n' "$(cat "$work/controller.pub")" >"$work/allowed_signers"
@@ -61,7 +61,10 @@ manifest_hash=$(shasum -a 256 "$work/data/Brewfiles/main" | awk '{print $1}')
 grep -q "$manifest_hash" "$work/response" || { cat "$work/response" >&2; exit 1; }
 peer_nonce=agent-snapshot-begin-0123456789
 snapshot_id=snapshot-begin-0123456789
-printf '{"id":"%s"}' "$snapshot_id" >"$work/snapshot-begin.json"
+printf 'brew "tree"\n' >"$work/received"
+received_bytes=$(wc -c <"$work/received" | tr -d ' ')
+received_hash=$(shasum -a 256 "$work/received" | awk '{print $1}')
+printf '{"id":"%s","manifest":{"version":1,"entries":[{"path":"Brewfiles/received","bytes":%s,"sha256":"%s"}]}}' "$snapshot_id" "$received_bytes" "$received_hash" >"$work/snapshot-begin.json"
 snapshot_hash=$(shasum -a 256 "$work/snapshot-begin.json" | awk '{print $1}')
 printf 'POST\n/v1/peer/snapshot/begin\nmini\n%s\n%s\n%s\n' "$peer_time" "$peer_nonce" "$snapshot_hash" >"$work/peer-request"
 rm -f "$work/peer-request.sig"
@@ -74,7 +77,8 @@ status=$(curl -sS --max-time 2 -o "$work/response" -w '%{http_code}' \
 grep -q '"status":"snapshot-ready"' "$work/response"
 test -d "$work/.bier-staging/$snapshot_id"
 peer_nonce=agent-snapshot-put-0123456789
-printf '{"id":"%s","path":"Brewfiles/received","data":"YnJldyAidHJlZSIK"}' "$snapshot_id" >"$work/snapshot-put.json"
+received_data=$(base64 <"$work/received" | tr -d '\n')
+printf '{"id":"%s","path":"Brewfiles/received","offset":0,"data":"%s"}' "$snapshot_id" "$received_data" >"$work/snapshot-put.json"
 snapshot_hash=$(shasum -a 256 "$work/snapshot-put.json" | awk '{print $1}')
 printf 'POST\n/v1/peer/snapshot/put\nmini\n%s\n%s\n%s\n' "$peer_time" "$peer_nonce" "$snapshot_hash" >"$work/peer-request"
 rm -f "$work/peer-request.sig"

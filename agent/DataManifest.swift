@@ -1,14 +1,14 @@
 import Foundation
 import CryptoKit
 
-struct DataManifestEntry: Encodable {
+struct DataManifestEntry: Codable, Equatable {
 	let path: String
 	let bytes: UInt64
 	let sha256: String
 }
 
-struct DataManifest: Encodable {
-	let version = 1
+struct DataManifest: Codable {
+	let version: Int
 	let entries: [DataManifestEntry]
 }
 
@@ -29,18 +29,22 @@ func fileSHA256(at url: URL) throws -> String {
 func collectDataManifest(at root: URL) throws -> DataManifest {
 	let manager = FileManager.default
 	var entries: [DataManifestEntry] = []
+	func collect(_ url: URL, relative: String) throws {
+		let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey, .fileSizeKey, .isSymbolicLinkKey])
+		if values.isSymbolicLink == true { throw DataManifestError.unsafePath(relative) }
+		if values.isRegularFile == true {
+			entries.append(DataManifestEntry(path: relative, bytes: UInt64(values.fileSize ?? 0), sha256: try fileSHA256(at: url)))
+			return
+		}
+		guard values.isDirectory == true else { return }
+		for child in try manager.contentsOfDirectory(at: url, includingPropertiesForKeys: nil).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+			try collect(child, relative: relative + "/" + child.lastPathComponent)
+		}
+	}
 	for name in [".gitattributes", "Brewfiles", "Safe"] {
 		let start = root.appendingPathComponent(name)
 		guard manager.fileExists(atPath: start.path) else { continue }
-		let iterator = manager.enumerator(at: root, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .isSymbolicLinkKey])
-		while let url = iterator?.nextObject() as? URL {
-			let relative = url.path.replacingOccurrences(of: root.path + "/", with: "")
-			guard relative == name || relative.hasPrefix(name + "/") else { continue }
-			let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey, .isSymbolicLinkKey])
-			if values.isSymbolicLink == true { throw DataManifestError.unsafePath(relative) }
-			guard values.isRegularFile == true else { continue }
-			entries.append(DataManifestEntry(path: relative, bytes: UInt64(values.fileSize ?? 0), sha256: try fileSHA256(at: url)))
-		}
+		try collect(start, relative: name)
 	}
-	return DataManifest(entries: entries.sorted { $0.path < $1.path })
+	return DataManifest(version: 1, entries: entries.sorted { $0.path < $1.path })
 }
