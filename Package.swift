@@ -7,7 +7,8 @@ let package = Package(
 	platforms: [.macOS(.v13)],
 	products: [
 		.library(name: "BierCore", targets: ["BierCore"]),
-		.executable(name: "bier-agent", targets: ["BierAgent"])
+		.executable(name: "bier-agent", targets: ["BierAgent"]),
+		.executable(name: "bier-peer", targets: ["BierPeer"])
 	],
 	targets: [
 		.target(name: "BierCore"),
@@ -25,6 +26,7 @@ let package = Package(
 			sources: ["BierAgent.swift"],
 			swiftSettings: [.define("BIER_PACKAGE")]
 		),
+		.executableTarget(name: "BierPeer", dependencies: ["BierCore"]),
 		.testTarget(
 			name: "BierCoreTests",
 			dependencies: ["BierCore"],

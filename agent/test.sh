@@ -13,6 +13,8 @@ trap cleanup EXIT
 
 agent="$work/bier-agent"
 "$here/build.sh" "$agent" >/dev/null
+swift build --package-path "$here/.." --product bier-peer >/dev/null
+peer_cli=$(swift build --package-path "$here/.." --show-bin-path)/bier-peer
 swiftc -O -framework Foundation -framework CryptoKit -o "$work/snapshot-test" "$here/../Sources/BierCore/DataManifest.swift" "$here/../Sources/BierCore/DataSnapshot.swift" "$here/SnapshotTest.swift"
 "$work/snapshot-test"
 ssh-keygen -q -t ed25519 -N '' -f "$work/controller"
@@ -141,10 +143,13 @@ for attempt in 1 2 3 4 5; do
 	if curl -fsS --max-time 1 http://127.0.0.1:53992/v1/health 2>/dev/null | grep -q '"status":"ok"'; then break; fi
 	sleep 1
 done
-BIER_ROOT="$here/.." BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 HOME="$work/home" \
-	"$here/../bin/bier" peer seed 127.0.0.1 >"$work/client.log"
+"$peer_cli" hello 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --port 53992 >"$work/hello-swift.log"
+grep -q 'Bier Agent on 127.0.0.1 accepted mini as a peer.' "$work/hello-swift.log"
+"$peer_cli" seed 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --data "$work/source" --port 53992 >"$work/client.log"
 grep -q 'Done. 127.0.0.1 now has the Bier data from mini.' "$work/client.log"
 test "$(cat "$work/target/Brewfiles/main")" = 'brew "jq"'
+"$peer_cli" compare 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --data "$work/source" --port 53992 >"$work/compare-swift.log"
+grep -q 'Bier data is identical on mini and 127.0.0.1.' "$work/compare-swift.log"
 BIER_ROOT="$here/.." BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 HOME="$work/home" \
 	"$here/../bin/bier" peer compare 127.0.0.1 >"$work/compare.log"
 grep -q 'Bier data is identical on mini and 127.0.0.1.' "$work/compare.log"
