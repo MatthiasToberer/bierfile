@@ -16,7 +16,8 @@ let package = Package(
 			name: "BierAgent",
 			dependencies: ["BierCore"],
 			path: "agent",
-			exclude: [
+				exclude: [
+				"GitRepositoryTest.swift",
 				"PEER-DATA-PROTOCOL.md",
 				"README.md",
 				"SnapshotTest.swift",
