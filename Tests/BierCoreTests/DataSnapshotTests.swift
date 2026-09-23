@@ -51,4 +51,16 @@ import Testing
 			try readDataChunk(at: root, path: "Safe/link.gpg", offset: 0, length: 1)
 		}
 	}
+
+	@Test func peerRequestCanonicalDataIncludesBodyHash() {
+		let request = PeerRequest(
+			method: "POST",
+			path: "/v1/peer/snapshot/commit",
+			peer: "mini",
+			time: "2026-09-23T12:00:00Z",
+			nonce: "01234567-89ab-cdef-0123-456789abcdef",
+			body: Data("{}".utf8)
+		)
+		#expect(String(data: request.canonicalData, encoding: .utf8) == "POST\n/v1/peer/snapshot/commit\nmini\n2026-09-23T12:00:00Z\n01234567-89ab-cdef-0123-456789abcdef\n44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\n")
+	}
 }

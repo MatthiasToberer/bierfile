@@ -1,6 +1,5 @@
 import Foundation
 import Network
-import CryptoKit
 
 #if BIER_PACKAGE
 import BierCore
@@ -106,7 +105,7 @@ func verifyRecipe(agent: String, signers: String, raw: Data, signature: Data) th
 }
 
 func peerPayload(method: String, path: String, peer: String, time: String, nonce: String, body: Data) -> Data {
-	let digest = SHA256.hash(data: body).map { String(format: "%02x", $0) }.joined()
+	let digest = sha256Hex(body)
 	return Data("\(method)\n\(path)\n\(peer)\n\(time)\n\(nonce)\n\(digest)\n".utf8)
 }
 
