@@ -864,7 +864,7 @@ cmd_peer_hello() {
 	time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 	nonce=$(uuidgen | tr '[:upper:]' '[:lower:]')
 	request=$(tmpfile)
-	printf 'GET\n/v1/peer/hello\n%s\n%s\n%s\n' "$HOST" "$time" "$nonce" >"$request"
+	printf 'GET\n/v1/peer/hello\n%s\n%s\n%s\n%s\n' "$HOST" "$time" "$nonce" e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 >"$request"
 	ssh-keygen -q -Y sign -f "$key" -n bier-peer "$request" ||
 		die "cannot sign the peer request with $key"
 	signature=$(base64 <"$request.sig" | tr -d '\n')
