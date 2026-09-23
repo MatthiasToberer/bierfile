@@ -69,6 +69,27 @@ export BIER_RELEASE_TRUST_URL
 
 mkdir -p "$WORK/home-mini/.ssh"
 ssh-keygen -q -t ed25519 -N '' -f "$WORK/home-mini/.ssh/id_ed25519"
+cat >"$WORK/peer-client" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >>"$BIER_TEST_PEER_LOG"
+printf '%s\n' 'Bier data is in sync.'
+EOF
+chmod +x "$WORK/peer-client"
+BIER_PEER_CLIENT=$WORK/peer-client
+BIER_TEST_PEER_LOG=$WORK/peer-client.log
+export BIER_PEER_CLIENT BIER_TEST_PEER_LOG
+system mini <<'EOF'
+brew "wget"
+EOF
+assert_ok bier mini sync
+assert_contains "$OUT" 'In sync with Bier peers.'
+assert_file_has "$WORK/peer-client.log" 'sync admin@192.168.1.42'
+assert_eq "$(grep -c '^sync admin@192.168.1.42 ' "$WORK/peer-client.log")" 2 \
+	"bier sync has to collect and then distribute peer history"
+unset BIER_PEER_CLIENT BIER_TEST_PEER_LOG
+rm -f "$(bf mini mini)"
+git -C "$WORK/mini" add -A
+git -C "$WORK/mini" commit -qm 'clean up peer sync test'
 BIER_TEST_SSH=bootstrap
 export BIER_TEST_SSH
 assert_ok bier mini peer install first.local

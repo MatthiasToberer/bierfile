@@ -1783,7 +1783,7 @@ cmd_install() {
 	info "The inventory of $HOST is installed."
 }
 
-# Syncs the Brewfiles with the private server: record what is pending,
+# Syncs the Brewfiles with the legacy private server: record what is pending,
 # push what is ours, fetch what is theirs. Not a command of its own —
 # publish fetches before every push anyway, and update needs it here.
 sync_data() {
@@ -1815,6 +1815,25 @@ sync_data() {
 			printf '%s\n' "$incoming" | sed 's/^/  /'
 		fi
 	fi
+}
+
+sync_peers() {
+	local msg=$1 peer peers
+	git -C "$DATA" add Brewfiles
+	[ ! -d "$SAFE_DIR" ] || git -C "$DATA" add Safe
+	if git -C "$DATA" diff --cached --quiet; then
+		info "Nothing to commit."
+	else
+		git -C "$DATA" commit -q -m "$msg"
+		info "Commit: $msg"
+	fi
+	peers=$(peer_list)
+	[ -n "$peers" ] || die "no Bier peers are configured"
+	# First collect every peer's history. A second pass distributes the
+	# resulting common head to peers visited before the final merge.
+	for peer in $peers; do cmd_peer_sync "$peer"; done
+	for peer in $peers; do cmd_peer_sync "$peer"; done
+	info "In sync with Bier peers."
 }
 
 # The newest release published on the code server, without the leading
@@ -2721,12 +2740,17 @@ cmd_push() {
 }
 
 # The everyday command: record what changed here, then bring this Mac and
-# the server into line — in both directions.
+# its peers into line. Existing installations without peers retain the
+# legacy private-server path until they add their first peer.
 cmd_sync() {
 	need_repo
 	cmd_dump
 	vault_seal
-	sync_data "${1:-$HOST: inventory updated}"
+	if [ -x "$PEER_CLIENT" ] && [ -n "$(peer_list)" ]; then
+		sync_peers "${1:-$HOST: inventory updated}"
+	else
+		sync_data "${1:-$HOST: inventory updated}"
+	fi
 	vault_open
 }
 

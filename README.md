@@ -116,7 +116,7 @@ Step by step and assuming nothing: **[GUIDE.md](GUIDE.md)**.
 ## Everyday use
 
 ```sh
-bier sync              # record here, fetch there — after every install
+bier sync              # record here and exchange directly with your peers
 bier status            # what differs here?
 bier list              # what do the others have on top?
 bier take              # adopt some of it
@@ -166,7 +166,7 @@ carries an unencrypted note explaining how to get the files back with
 | Command | what it does |
 | --- | --- |
 | `bier dump [--adopt]` | record what this Mac has on top of `main` |
-| `bier sync [message]` | `dump`, commit, fetch, upload — the everyday command |
+| `bier sync [message]` | `dump`, commit, exchange directly with peers — the everyday command |
 | `bier upgrade [--force]` | install a newer release of `bier` itself |
 | `bier status` | check the system against the lists |
 | `bier list` | overview of all devices |
