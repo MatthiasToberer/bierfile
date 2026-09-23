@@ -8,7 +8,7 @@ url=${!#}
 printf '%s\n' "$*" >>"${WORK:?WORK is not set}/curl.args"
 case $url in
 file://*) cat "${url#file://}" ;;
-https://api.github.com/repos/MatthiasToberer/bierfile/releases/latest) printf '{"tag_name":"v0.34.0"}\n' ;;
+https://api.github.com/repos/MatthiasToberer/bierfile/releases/latest) printf '{"tag_name":"v0.35.0"}\n' ;;
 http://*:53991/v1/health) printf '{"status":"ok","version":"test"}\n' ;;
 http://*:53991/v1/peer/hello) printf '{"status":"peer-ok","agent":"test"}\n' ;;
 http://*:53991/v1/peer/manifest)

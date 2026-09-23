@@ -45,6 +45,7 @@ count_word() {
 
 CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/bier
 CONFIG_FILE=${BIER_CONFIG:-$CONFIG_DIR/config}
+PEER_IDENTITY=${BIER_PEER_IDENTITY:-$HOME/.local/share/bier/agent/identity}
 
 # Where the program lives when the config says nothing: the repository root.
 # this script. Resolve symlinks by hand, readlink -f is not everywhere on
@@ -360,7 +361,7 @@ peer_scp() {
 
 peer_http_request() {
 	local method=$1 path=$2 peer=$3 body=$4 response=$5
-	local key=$HOME/.ssh/id_ed25519 network_host request signature time nonce body_hash
+	local key=$PEER_IDENTITY network_host request signature time nonce body_hash
 	[ -r "$key" ] || return 1
 	network_host=${peer##*@}
 	time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -907,7 +908,7 @@ cmd_peer_check() {
 }
 
 cmd_peer_hello() {
-	local peer=${1:-} key=$HOME/.ssh/id_ed25519 body response output
+	local peer=${1:-} key=$PEER_IDENTITY body response output
 	[ $# -eq 1 ] && peer_name_ok "$peer" ||
 		die 'usage: bier peer hello <host>'
 	[ -r "$key" ] || die "no SSH identity at $key"
@@ -931,7 +932,7 @@ cmd_peer_hello() {
 cmd_peer_offer() {
 	[ $# -eq 0 ] || die 'usage: bier peer offer'
 	[ -x "$HOME/.local/share/bier/agent/bin/bier-agent" ] || die "the local Bier agent is not installed; run install.sh"
-	[ -r "$HOME/.ssh/id_ed25519.pub" ] || die "no SSH public key at $HOME/.ssh/id_ed25519.pub"
+	[ -r "$PEER_IDENTITY.pub" ] || die "the local Bier peer identity is missing; run install.sh"
 	local code expires tmp shown
 	code=$(uuidgen | tr -d '-' | tr '[:upper:]' '[:lower:]')
 	expires=$(date -v+10M +%s)
@@ -950,7 +951,7 @@ cmd_peer_pair() {
 	local peer=${1:-} code code_file
 	[ $# -eq 1 ] && peer_name_ok "$peer" || die 'usage: bier peer pair <host>'
 	[ -x "$PEER_CLIENT" ] || die "the Swift peer client is not built; run install.sh"
-	[ -r "$HOME/.ssh/id_ed25519" ] && [ -r "$HOME/.ssh/id_ed25519.pub" ] || die "no SSH identity at $HOME/.ssh/id_ed25519"
+	[ -r "$PEER_IDENTITY" ] && [ -r "$PEER_IDENTITY.pub" ] || die "the local Bier peer identity is missing; run install.sh"
 	code=${BIER_PAIR_CODE:-}
 	if [ -z "$code" ]; then
 		printf 'One-time code from %s: ' "$peer"
@@ -961,13 +962,13 @@ cmd_peer_pair() {
 	printf '%s\n' "$code" >"$code_file"
 	chmod 600 "$code_file"
 	info "Pairing with $peer …"
-	"$PEER_CLIENT" pair "$peer" --local "$HOST" --identity "$HOME/.ssh/id_ed25519" --code-file "$code_file" --peer-signers "$LOCAL_PEER_SIGNERS" --port "$PEER_PORT" ||
+	"$PEER_CLIENT" pair "$peer" --local "$HOST" --identity "$PEER_IDENTITY" --code-file "$code_file" --peer-signers "$LOCAL_PEER_SIGNERS" --port "$PEER_PORT" ||
 		die "pairing with $peer failed"
 	peer_remember "$peer"
 	info "Peer added: $peer"
 	if [ -n "$DATA" ] && [ -d "$DATA/.git" ]; then
 		info "Checking whether the new peer needs this Mac's Bier data …"
-		"$PEER_CLIENT" seed-if-pristine "$peer" --local "$HOST" --identity "$HOME/.ssh/id_ed25519" --data "$DATA" --port "$PEER_PORT" ||
+		"$PEER_CLIENT" seed-if-pristine "$peer" --local "$HOST" --identity "$PEER_IDENTITY" --data "$DATA" --port "$PEER_PORT" ||
 			die "paired successfully, but could not initialise the peer data"
 	fi
 }
@@ -1083,7 +1084,7 @@ cmd_peer_compare() {
 	need_repo
 	if [ -x "$PEER_CLIENT" ]; then
 		info "Reading and verifying Bier data from $peer …"
-		"$PEER_CLIENT" compare "$peer" --local "$HOST" --identity "$HOME/.ssh/id_ed25519" --data "$DATA" --port "$PEER_PORT" ||
+		"$PEER_CLIENT" compare "$peer" --local "$HOST" --identity "$PEER_IDENTITY" --data "$DATA" --port "$PEER_PORT" ||
 			die "could not compare Bier data with $peer"
 		return 0
 	fi
@@ -1115,10 +1116,10 @@ cmd_peer_sync() {
 	local peer=${1:-}
 	[ $# -eq 1 ] && peer_name_ok "$peer" || die 'usage: bier peer sync <host>'
 	need_repo
-	[ -r "$HOME/.ssh/id_ed25519" ] || die "no SSH identity at $HOME/.ssh/id_ed25519"
+	[ -r "$PEER_IDENTITY" ] || die "the local Bier peer identity is missing; run install.sh"
 	[ -x "$PEER_CLIENT" ] || die "the Swift peer client is not built; run install.sh"
 	info "Synchronising Bier data with $peer …"
-	"$PEER_CLIENT" sync "$peer" --local "$HOST" --identity "$HOME/.ssh/id_ed25519" --data "$DATA" --port "$PEER_PORT" ||
+	"$PEER_CLIENT" sync "$peer" --local "$HOST" --identity "$PEER_IDENTITY" --data "$DATA" --port "$PEER_PORT" ||
 		die "could not synchronise Bier data with $peer"
 }
 
@@ -1127,7 +1128,7 @@ peer_seed() {
 	[ "$mode" != if-empty ] || command=seed-if-empty
 	if [ -x "$PEER_CLIENT" ]; then
 		info "Checking and sending Bier data to $peer …"
-		"$PEER_CLIENT" "$command" "$peer" --local "$HOST" --identity "$HOME/.ssh/id_ed25519" --data "$DATA" --port "$PEER_PORT" ||
+		"$PEER_CLIENT" "$command" "$peer" --local "$HOST" --identity "$PEER_IDENTITY" --data "$DATA" --port "$PEER_PORT" ||
 			die "the Bier data snapshot was not accepted by $peer"
 		return 0
 	fi
@@ -1161,7 +1162,7 @@ cmd_peer_seed() {
 	local peer=${1:-}
 	[ $# -eq 1 ] && peer_name_ok "$peer" || die 'usage: bier peer seed <host>'
 	need_repo
-	[ -r "$HOME/.ssh/id_ed25519" ] || die "no SSH identity at $HOME/.ssh/id_ed25519"
+	[ -r "$PEER_IDENTITY" ] || die "the local Bier peer identity is missing; run install.sh"
 	peer_seed "$peer" required
 }
 
@@ -1261,7 +1262,7 @@ write_agent_launch_agent() {
     <string>--agent</string><string>$agent</string>
     <string>--allowed-signers</string><string>$home/.local/share/bier/agent/allowed_signers</string>
     <string>--peer-signers</string><string>$home/.local/share/bier/agent/peer_signers</string>
-    <string>--peer-key</string><string>$home/.ssh/id_ed25519.pub</string>
+    <string>--peer-key</string><string>$home/.local/share/bier/agent/identity.pub</string>
 	<string>--peers-file</string><string>$home/.config/bier/peers</string>
     <string>--data-dir</string><string>$data</string>
     <string>--port</string><string>53991</string>
@@ -1274,13 +1275,10 @@ EOF
 }
 
 cmd_peer_install() {
-	local peer=${1:-} tag home data agent plist network_host peer_key=$HOME/.ssh/id_ed25519.pub
+	local peer=${1:-} tag home data agent plist network_host peer_key=$PEER_IDENTITY.pub
 	[ $# -eq 1 ] && peer_name_ok "$peer" ||
 		die 'usage: bier peer install <host>'
-	[ -r "$peer_key" ] || die "SSH to $peer needs a public key on this Mac.
-
-     Create one once with:
-     ssh-keygen -t ed25519"
+	[ -r "$peer_key" ] || die "the local Bier peer identity is missing; run install.sh"
 	peer_authorize "$peer"
 	need_agent_release_trust
 	tag=$(latest_agent_tag)
@@ -1305,7 +1303,13 @@ if [ -n "$data" ] && [ -d "$data/.git" ]; then printf "%s\n" "$data"; else print
 	plist=$(tmpfile)
 	write_agent_launch_agent "$plist" "$home" "$agent" "$data"
 
-	peer_ssh "$peer" 'mkdir -p "$HOME/.local/share/bier/agent/bin" "$HOME/Library/LaunchAgents"' ||
+	peer_ssh "$peer" 'set -e
+mkdir -p "$HOME/.local/share/bier/agent/bin" "$HOME/Library/LaunchAgents"
+if [ ! -r "$HOME/.local/share/bier/agent/identity" ] || [ ! -r "$HOME/.local/share/bier/agent/identity.pub" ]; then
+	rm -f "$HOME/.local/share/bier/agent/identity" "$HOME/.local/share/bier/agent/identity.pub"
+	ssh-keygen -q -t ed25519 -N "" -C "bier@$(hostname -s)" -f "$HOME/.local/share/bier/agent/identity"
+fi
+chmod 600 "$HOME/.local/share/bier/agent/identity" "$HOME/.local/share/bier/agent/identity.pub"' ||
 		die "cannot prepare the Bier agent directory on $peer"
 	peer_scp "$SIGNERS_FILE" "$peer:.local/share/bier/agent/allowed_signers.new" ||
 		die "cannot copy the public release keys to $peer"

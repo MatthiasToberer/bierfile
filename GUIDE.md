@@ -4,7 +4,7 @@
 
 You install something on one machine, forget about it, and six months
 later it is missing on the other. `bier` writes down what is installed,
-keeps that list in a git repository, and shows you a beer glass in the
+keeps that list in a local git repository, and shows you a beer glass in the
 menu bar: **full** means everything is in order, **empty** means
 something differs.
 
@@ -37,17 +37,16 @@ The overview in short form is [README.md](README.md).
 
 **You need:** macOS, [Homebrew](https://brew.sh), the Command Line Tools
 (`xcode-select --install`; if that is refused, from
-[developer.apple.com](https://developer.apple.com/download/all)), an
-**SSH key this Mac's server knows** (`ssh-keygen -t ed25519`, then the
-`.pub` onto the server), and an **empty, private git repository** for
-your lists.
+[developer.apple.com](https://developer.apple.com/download/all)). The installer
+creates this Mac's private peer identity; no SSH login or central data
+repository is required.
 
 **On the first Mac** — the one whose software should serve as the
 template:
 
 ```sh
-git clone git@github.com:MatthiasToberer/bierfile.git ~/bierfile
-~/bierfile/install.sh   # asks for your private repository
+git clone https://github.com/MatthiasToberer/bierfile.git ~/bierfile
+~/bierfile/install.sh
 bier main
 ```
 
@@ -58,16 +57,28 @@ or type `exec zsh`.
 **On every further Mac:**
 
 ```sh
-git clone git@github.com:MatthiasToberer/bierfile.git ~/bierfile
+git clone https://github.com/MatthiasToberer/bierfile.git ~/bierfile
 ~/bierfile/install.sh
-bier install          # brings the software from main onto the system
-bier sync
+bier peer offer       # shows a one-time code
+```
+
+Back on the first Mac:
+
+```sh
+bier peer pair second-mac.local
+```
+
+Enter the displayed code. The Macs trust each other and the first Mac's Bier
+data is copied to the untouched second installation. Then on the second Mac:
+
+```sh
+bier install
 ```
 
 **Everyday use:**
 
 ```sh
-bier sync             # record here, fetch there — after every install
+bier sync             # record here, exchange directly — after every install
 bier vault add ~/.zshrc   # a file, not only packages
 bier status           # what differs here?
 bier list             # what do the others have on top?
@@ -136,51 +147,14 @@ git config --global user.name "Your Name"
 git config --global user.email "you@example.com"
 ```
 
-**An SSH key for your repository.** A fresh Mac has none, and the server
-has to be told about this one before anything can be fetched from it.
+**A peer identity.** The installer creates a private Ed25519 identity used only
+by Bier. During pairing its public half is exchanged automatically. It is not
+an SSH login key and needs no account on another machine.
 
-```sh
-ls ~/.ssh/id_ed25519.pub
-```
-
-`No such file` means you have none yet:
-
-```sh
-ssh-keygen -t ed25519 -C "$(hostname -s)"
-```
-
-Press Enter through the questions; a passphrase is optional. Now the
-server has to learn the **public** half — the file ending in `.pub`,
-never the other one:
-
-```sh
-cat ~/.ssh/id_ed25519.pub
-```
-
-On GitHub that text goes into *Settings → SSH and GPG keys → New SSH
-key*. On your own server it goes into `~/.ssh/authorized_keys` of the
-account git logs in as — `ssh-copy-id user@server` does it for you if
-you can log in with a password.
-
-Then check it, before install.sh tries:
-
-```sh
-ssh -T git@github.com          # or: ssh git@your-server
-```
-
-A greeting, or a message about shell access, means it works. `Permission
-denied (publickey)` means the server does not know the key yet.
-
-**A git repository of your own for your lists.** Git is the program
-developers use to keep files in step between machines. `bier` uses it to
-move the inventory lists between your Macs. You need an empty
-*repository* on a server all of your Macs can reach with an SSH key — a
-small Linux box on your network, a NAS, or a repository on GitHub.
-
-**Set it to private.** The lists reveal which software is on your Macs;
-that is nobody else's business. It is also why they do not live in the
-repository of `bier` itself but in your own. Throughout this guide the
-address reads `git@your-server:bierfile.git`; put your own in its place.
+**No data server.** The installer creates `~/bierdata` as a local Git
+repository. Its history is exchanged only with Macs you pair explicitly.
+The lists reveal which software you use, so Bier does not put them in its
+public program repository or upload them to a service.
 
 ### Step 1: The first device
 
@@ -188,7 +162,7 @@ Pick the Mac whose software should serve as the **template**. With two
 machines that is usually the one you work on most.
 
 ```sh
-git clone git@github.com:MatthiasToberer/bierfile.git ~/bierfile
+git clone https://github.com/MatthiasToberer/bierfile.git ~/bierfile
 ```
 
 `clone` fetches the program from the server and puts it in a folder
@@ -211,15 +185,13 @@ The setup script. It tells you what it is doing at every step:
    to `~/.zshrc`.
 3. **Installs a git hook** that runs the tests before program changes are
    uploaded. For you as a user nothing changes.
-4. **Asks for your private repository** for the inventory lists, clones
-   it to `~/bierdata` and creates the basic structure inside. If you have
-   the address to hand you can skip the question:
-   `~/bierfile/install.sh --data git@your-server:bierfile.git`
+4. **Creates `~/bierdata`** as the private local repository for the inventory
+   lists. Use `--data ~/another-folder` if you prefer another location.
 5. **Creates the configuration** at `~/.config/bier/config`. It holds
    three things: where the program lives (`root`), where your lists live
    (`data`) and what this Mac is called (`host`).
 6. **Builds the menu bar app** and puts it in `/Applications`.
-7. **Records the inventory** of this Mac and asks whether to upload it.
+7. **Installs the local peer agent** and records this Mac's inventory.
 
 After that a beer glass hangs in the menu bar at the top right.
 
@@ -231,8 +203,8 @@ bier main
 
 That declares this Mac's inventory the shared baseline. Every program
 installed here ends up in the file `Brewfiles/main`, and from now on that
-applies to **all** of your Macs. The command uploads the result right
-away.
+applies to **all** of your Macs. Paired Macs receive it during the next
+exchange.
 
 Have a look:
 
@@ -255,12 +227,27 @@ it — naturally, `main` just came from it.
 On the second Mac, exactly as before:
 
 ```sh
-git clone git@github.com:MatthiasToberer/bierfile.git ~/bierfile
+git clone https://github.com/MatthiasToberer/bierfile.git ~/bierfile
 ~/bierfile/install.sh
 ```
 
-At the fourth step you give the same address for your private repository
-as on the first Mac — the lists are already there.
+The second installation initially has only empty scaffolding. Open pairing
+there:
+
+```sh
+bier peer offer
+```
+
+It prints the exact command for the first Mac and a one-time code valid for
+ten minutes. Run the command on the first Mac, for example:
+
+```sh
+bier peer pair macbook.local
+```
+
+Enter the code. Both Macs store each other's public key and address. Because
+the second repository is still untouched, Bier also copies the first Mac's
+data and full history automatically. The code is then invalid.
 
 Do **not** type `bier main` here. The command would replace the shared
 inventory with this machine's — that is, overwrite it with a nearly empty
@@ -299,7 +286,7 @@ When it is through:
 bier sync
 ```
 
-`sync` records the current inventory and uploads it. From here the second
+`sync` records the current inventory and exchanges it with the peer. From here the second
 Mac has caught up, and the beer glass is full.
 
 ### Step 3: Everyday use
@@ -315,7 +302,7 @@ In the menu the differences are separated by kind, because they cost
 different amounts:
 
 - *installed but not recorded* — you installed something and have not
-  uploaded it yet. "Pour a round" does that in seconds.
+  shared it yet. "Pour a round" does that in seconds.
 - *recorded but not installed* — something was added on another Mac.
   "Install missing" opens a terminal, because it can take a while.
 - *removed elsewhere, still here* — something was removed on another Mac.
@@ -328,7 +315,7 @@ bier sync
 ```
 
 After every installation. It records what is new here, fetches what
-happened on the other Macs, merges and uploads. It asks nothing and
+happened on the other Macs, merges and sends back the shared history. It asks nothing and
 resolves conflicts on its own.
 
 The program itself is a separate matter, and a rarer one:
@@ -491,7 +478,7 @@ and the next `bier install` brings it back. Instead:
 bier uninstall ghidra
 ```
 
-That uninstalls it, drops it from **every** list and uploads the change.
+That uninstalls it, drops it from **every** list and shares the change.
 
 On the other Mac it is still installed afterwards. There `bier` speaks up
 by itself:
@@ -590,7 +577,7 @@ inventory. That is exactly what the two drawers are for.
 
 If it later turns out that macbook's font belongs everywhere after all,
 you type `bier take` on any Mac, pick it and answer `m`. From the next
-`bier sync` onwards all three fetch it.
+`bier sync` onwards all three receive it.
 
 ### Getting rid of something everywhere
 
@@ -605,7 +592,7 @@ handbrake (cask)
 ==> Uninstalling Cask handbrake
 Brewfiles/mini written: 0 on top of 137 in main
 Commit: mini: removed handbrake
-In sync with origin.
+In sync with Bier peers.
 ```
 
 On the other two Macs, next time you look at the menu:

@@ -186,7 +186,7 @@ done
 pair_code=0123456789abcdef0123456789abcdef
 pair_expiry=$(date -v+10M +%s)
 printf '{"version":1,"code":"%s","expires":%s,"attempts":0}\n' "$pair_code" "$pair_expiry" >"$work/state-client/pairing-offer.json"
-BIER_ROOT="$root" BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 BIER_PEER_CLIENT="$peer_cli" BIER_PAIR_CODE="$pair_code" HOME="$work/home" \
+BIER_ROOT="$root" BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 BIER_PEER_CLIENT="$peer_cli" BIER_PEER_IDENTITY="$work/home/.ssh/id_ed25519" BIER_PAIR_CODE="$pair_code" HOME="$work/home" \
 	"$root/Sources/bier-core/bier" peer pair 127.0.0.1 >"$work/pair.log"
 grep -q 'Paired mini with target on 127.0.0.1.' "$work/pair.log"
 grep -q 'Done. 127.0.0.1 now has the Bier data from mini.' "$work/pair.log"
@@ -217,11 +217,11 @@ test "$(cat "$work/source/Brewfiles/main")" = "$(cat "$work/target/Brewfiles/mai
 printf 'brew "tree"\n' >>"$work/source/Brewfiles/main"
 git -C "$work/source" add Brewfiles
 git -C "$work/source" commit -qm 'source changed'
-BIER_ROOT="$root" BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 BIER_PEER_CLIENT="$peer_cli" HOME="$work/home" \
+BIER_ROOT="$root" BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 BIER_PEER_CLIENT="$peer_cli" BIER_PEER_IDENTITY="$work/home/.ssh/id_ed25519" HOME="$work/home" \
 	"$root/Sources/bier-core/bier" peer sync 127.0.0.1 >"$work/sync.log"
 grep -q 'Bier data is in sync on mini and 127.0.0.1.' "$work/sync.log"
 test "$(git -C "$work/source" rev-parse HEAD)" = "$(git -C "$work/target" rev-parse HEAD)"
-BIER_ROOT="$root" BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 BIER_PEER_CLIENT="$peer_cli" HOME="$work/home" \
+BIER_ROOT="$root" BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 BIER_PEER_CLIENT="$peer_cli" BIER_PEER_IDENTITY="$work/home/.ssh/id_ed25519" HOME="$work/home" \
 	"$root/Sources/bier-core/bier" peer compare 127.0.0.1 >"$work/compare.log"
 grep -q 'Bier data is identical on mini and 127.0.0.1.' "$work/compare.log"
 printf '%s\n' 'Swift Bier agent tests passed.'

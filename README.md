@@ -1,7 +1,7 @@
 # bier
 
 **Keeps the software inventory of several Macs identical** — with
-Homebrew, a git repository and a beer glass in the menu bar.
+Homebrew, direct peer-to-peer exchange and a beer glass in the menu bar.
 
 > **On the name.** *bier* is German for *beer*, and the glass in the menu
 > bar fills up when everything is in order. It is also a thank-you to
@@ -11,13 +11,13 @@ Homebrew, a git repository and a beer glass in the menu bar.
 
 You install something on the desktop machine, forget about it, and six
 months later it is missing on the laptop. `bier` writes down what is
-installed, keeps that list in a git repository, and tells you on every
+installed, keeps that list in a local git repository, and tells you on every
 device what differs — **full** means everything is in order, **empty**
 means there is something to do here.
 
-It is a shell script with no dependencies beyond Homebrew and git, plus a
-small menu bar app in Swift. Nothing runs in the cloud, nothing phones
-home; your lists live in a repository that belongs to you.
+It is a native macOS tool with a small menu bar app and a deliberately
+limited peer agent. Nothing runs in the cloud and no central data server is
+required; paired Macs exchange their signed Git history directly.
 
 > [!WARNING]
 > **Make a backup before you use `bier` for the first time.**
@@ -74,11 +74,8 @@ both directions when you change your mind.
 
 - macOS with [Homebrew](https://brew.sh)
 - the Command Line Tools (`xcode-select --install`) for the app
-- an **empty, private git repository** for your lists, reachable over SSH
-  from every device — GitHub, a NAS or a server of your own
-
-Keep that repository private: your lists reveal which software runs on
-your machines.
+- no account or key on a data server; the installer creates a private
+  Ed25519 peer identity for this Mac
 
 ## Installation
 
@@ -89,12 +86,12 @@ git clone https://github.com/MatthiasToberer/bierfile.git ~/bierfile
 ~/bierfile/install.sh
 ```
 
-`install.sh` checks the requirements, makes `bier` callable, asks for the
-address of your private repository, builds the menu bar app and records
-this Mac's inventory. The address can also be passed in:
+`install.sh` checks the requirements, creates the local data repository at
+`~/bierdata`, installs the peer agent, builds the menu bar app and records
+this Mac's inventory. Another local data folder can be passed in:
 
 ```sh
-~/bierfile/install.sh --data git@github.com:yourname/bierfile.git
+~/bierfile/install.sh --data ~/my-bierdata
 ```
 
 Then, once and only once, set the shared baseline:
@@ -103,13 +100,29 @@ Then, once and only once, set the shared baseline:
 bier main
 ```
 
-On every further Mac the same `git clone` and `install.sh`, but
-**instead** of `bier main`:
+On every further Mac, run the same `git clone` and `install.sh`. Then open a
+pairing window there:
 
 ```sh
-bier install    # brings the software from main onto this device
-bier sync       # records what this Mac has on top
+bier peer offer
 ```
+
+It displays a one-time code. On the first Mac:
+
+```sh
+bier peer pair second-mac.local
+```
+
+Enter the code. Both Macs now know and trust one another, and the first
+Mac's Bier data is copied automatically if the second installation is still
+untouched. Finally run `bier install` on the second Mac to install the shared
+software. No SSH login and no private GitHub repository are needed.
+
+For a small trial instead of your full inventory, install both Macs with
+`./install.sh --manual-inventory`. Put only `cask "firefox"` in
+`~/bierdata/Brewfiles/main`, add a harmless test file with
+`bier vault add ~/.fakezshrc`, and run `bier sync` before pairing. Manual mode
+keeps the Brewfile exactly as you wrote it.
 
 Step by step and assuming nothing: **[GUIDE.md](GUIDE.md)**.
 
@@ -227,7 +240,7 @@ is there. So removing is a command of its own:
 bier uninstall ghidra
 ```
 
-That uninstalls it, drops the entry from every list and uploads. On the
+That uninstalls it, drops the entry from every list and shares the change. On the
 other Mac ghidra is still installed afterwards but no longer on any list
 — the same state as a freshly installed package.
 
@@ -278,9 +291,8 @@ rather than leaving something half finished.
 
 ## Where things live
 
-Your lists live in *your* private repository, not in this one — they are
-nobody else's business, and you would not have write access here anyway.
-`install.sh` sets up both and records the paths in
+Your lists live in a private local repository, not in this program repository.
+They are shared only with paired Macs. `install.sh` sets up both and records the paths in
 `~/.config/bier/config`:
 
     root = /Users/yourname/bierfile     # this program

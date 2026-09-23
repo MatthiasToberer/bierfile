@@ -69,6 +69,14 @@ export BIER_RELEASE_TRUST_URL
 
 mkdir -p "$WORK/home-mini/.ssh"
 ssh-keygen -q -t ed25519 -N '' -f "$WORK/home-mini/.ssh/id_ed25519"
+mkdir -p "$WORK/home-mini/.local/share/bier/agent/bin"
+ssh-keygen -q -t ed25519 -N '' -f "$WORK/home-mini/.local/share/bier/agent/identity"
+: >"$WORK/home-mini/.local/share/bier/agent/bin/bier-agent"
+chmod +x "$WORK/home-mini/.local/share/bier/agent/bin/bier-agent"
+assert_ok bier mini peer offer
+assert_contains "$OUT" 'Pairing is open for 10 minutes.'
+assert_contains "$OUT" 'One-time code:'
+test -f "$WORK/home-mini/.local/share/bier/agent/state/pairing-offer.json"
 cat >"$WORK/peer-client" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*" >>"$BIER_TEST_PEER_LOG"
@@ -105,7 +113,7 @@ unset BIER_TEST_SSH
 BIER_TEST_SSH_DATA=/Users/bier/configured-data
 export BIER_TEST_SSH_DATA
 assert_ok bier mini peer install studio.local
-assert_contains "$OUT" '3/4  Installing verified Bier agent v0.34.0'
+assert_contains "$OUT" '3/4  Installing verified Bier agent v0.35.0'
 assert_contains "$OUT" '4/4  Checking whether the agent is reachable'
 assert_contains "$OUT" 'Checking the Bier data store on studio.local'
 assert_contains "$OUT" 'studio.local now has the Bier data from mini.'
@@ -116,6 +124,7 @@ assert_file_has "$WORK/ssh.args" 'fetch --quiet --depth 1 origin'
 assert_file_has "$WORK/ssh.args" 'source.new/Sources/bier-agent/build.sh'
 assert_file_has "$WORK/ssh.args" 'bier-agent-data-directory'
 assert_file_has "$WORK/agent.plist" '<string>--data-dir</string><string>/Users/bier/configured-data</string>'
+assert_file_has "$WORK/agent.plist" '<string>--peer-key</string><string>/Users/bier/.local/share/bier/agent/identity.pub</string>'
 assert_file_has "$WORK/ssh.args" 'peer_signers'
 assert_file_has "$WORK/curl.args" 'http://studio.local:53991/v1/health'
 assert_ok bier mini peer list

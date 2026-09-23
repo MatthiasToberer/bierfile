@@ -22,7 +22,7 @@ protocol never exposes the `.git` directory itself.
 ## Authentication
 
 Every non-public request is signed with the Ed25519 peer identity registered
-by `bier peer install`. The signed canonical bytes are:
+by pairing or `bier peer install`. The signed canonical bytes are:
 
 ```text
 METHOD
@@ -36,6 +36,20 @@ SHA256(BODY)
 The agent permits a five-minute clock window and stores every accepted nonce.
 A repeated request is rejected. `GET /v1/peer/hello` is the first completed
 use of this rule.
+
+## Pairing
+
+`bier peer offer` creates a random 128-bit one-time code on the receiving Mac.
+It expires after ten minutes and locks after five wrong attempts. The other
+Mac proves knowledge of that code with HMAC-SHA256; the code itself never
+crosses the network. The receiver authenticates its response with the same
+code, so neither side can be replaced by a machine between them.
+
+On success both Ed25519 public keys and both `.local` addresses are remembered.
+The offer is deleted immediately. If the receiving data repository is still
+empty or contains only the installer scaffolding, the initiating Mac then
+copies its snapshot and complete Git history. Existing user data is never
+overwritten by this first-use step.
 
 ## Snapshot lifecycle
 

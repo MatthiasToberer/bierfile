@@ -529,6 +529,12 @@ mkdir -p "$AGENT_HOME/bin" "$AGENT_HOME/state" "$HOME/Library/LaunchAgents" "$(d
 touch "$PEER_SIGNERS" "$RELEASE_SIGNERS"
 chmod 700 "$AGENT_HOME" "$AGENT_HOME/bin" "$AGENT_HOME/state"
 chmod 600 "$PEER_SIGNERS" "$RELEASE_SIGNERS"
+if [ ! -r "$AGENT_HOME/identity" ] || [ ! -r "$AGENT_HOME/identity.pub" ]; then
+	rm -f "$AGENT_HOME/identity" "$AGENT_HOME/identity.pub"
+	ssh-keygen -q -t ed25519 -N '' -C "bier@$(hostname -s)" -f "$AGENT_HOME/identity"
+	ok "created a private peer identity for this Mac"
+fi
+chmod 600 "$AGENT_HOME/identity" "$AGENT_HOME/identity.pub"
 "$HERE/Sources/bier-agent/build.sh" "$AGENT_BIN.new" >/dev/null
 mv "$AGENT_BIN.new" "$AGENT_BIN"
 chmod 700 "$AGENT_BIN"
@@ -547,7 +553,7 @@ cat >"$AGENT_PLIST.new" <<EOF
     <string>--agent</string><string>$xml_host</string>
     <string>--allowed-signers</string><string>$xml_home/.config/bier/allowed_signers</string>
     <string>--peer-signers</string><string>$xml_home/.local/share/bier/agent/peer_signers</string>
-    <string>--peer-key</string><string>$xml_home/.ssh/id_ed25519.pub</string>
+	<string>--peer-key</string><string>$xml_home/.local/share/bier/agent/identity.pub</string>
 	<string>--peers-file</string><string>$xml_home/.config/bier/peers</string>
     <string>--data-dir</string><string>$xml_data</string>
     <string>--port</string><string>53991</string>
