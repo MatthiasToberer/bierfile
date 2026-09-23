@@ -13,6 +13,8 @@ trap cleanup EXIT
 
 agent="$work/bier-agent"
 "$here/build.sh" "$agent" >/dev/null
+swiftc -O -framework Foundation -o "$work/snapshot-test" "$here/DataSnapshot.swift" "$here/SnapshotTest.swift"
+"$work/snapshot-test"
 ssh-keygen -q -t ed25519 -N '' -f "$work/controller"
 printf 'controller-test %s\n' "$(cat "$work/controller.pub")" >"$work/allowed_signers"
 printf 'mini %s\n' "$(cat "$work/controller.pub")" >"$work/peer_signers"
