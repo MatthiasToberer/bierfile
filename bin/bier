@@ -974,6 +974,7 @@ write_agent_launch_agent() {
     <string>--agent</string><string>$agent</string>
     <string>--allowed-signers</string><string>$home/.local/share/bier/agent/allowed_signers</string>
     <string>--peer-signers</string><string>$home/.local/share/bier/agent/peer_signers</string>
+    <string>--data-dir</string><string>$home/.local/share/bier/data</string>
     <string>--port</string><string>53991</string>
     <string>--state-dir</string><string>$home/.local/share/bier/agent/state</string>
   </array>
