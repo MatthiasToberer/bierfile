@@ -16,5 +16,5 @@ trap 'rm -rf "$version_dir"' EXIT
 	cat "$here/DataManifest.swift" "$here/DataSnapshot.swift" "$here/BierAgent.swift"
 } >"$version_source"
 mkdir -p "$(dirname "$out")"
-swiftc -O -framework Foundation -framework Network -o "$out" "$version_source"
+swiftc -O -framework Foundation -framework Network -framework CryptoKit -o "$out" "$version_source"
 printf '%s\n' "built: $out"

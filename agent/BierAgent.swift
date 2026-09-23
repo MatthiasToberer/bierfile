@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import CryptoKit
 
 let maxRequestBytes = 64 * 1024
 let maxPeerRequestAge: TimeInterval = 5 * 60
@@ -77,7 +78,12 @@ func verifyRecipe(agent: String, signers: String, raw: Data, signature: Data) th
 	return recipe
 }
 
-func verifyPeer(method: String, path: String, peer: String, signers: String, time: String, nonce: String, signature: Data) throws {
+func peerPayload(method: String, path: String, peer: String, time: String, nonce: String, body: Data) -> Data {
+	let digest = SHA256.hash(data: body).map { String(format: "%02x", $0) }.joined()
+	return Data("\(method)\n\(path)\n\(peer)\n\(time)\n\(nonce)\n\(digest)\n".utf8)
+}
+
+func verifyPeer(method: String, path: String, peer: String, signers: String, time: String, nonce: String, body: Data, signature: Data) throws {
 	guard validHostName(peer), validPeerNonce(nonce) else {
 		throw NSError(domain: "BierAgent", code: 1, userInfo: [NSLocalizedDescriptionKey: "invalid peer request"])
 	}
@@ -85,7 +91,6 @@ func verifyPeer(method: String, path: String, peer: String, signers: String, tim
 	guard let requestTime = formatter.date(from: time), abs(requestTime.timeIntervalSinceNow) <= maxPeerRequestAge else {
 		throw NSError(domain: "BierAgent", code: 1, userInfo: [NSLocalizedDescriptionKey: "peer request has expired"])
 	}
-	let payload = "\(method)\n\(path)\n\(peer)\n\(time)\n\(nonce)\n"
 	let signatureURL = FileManager.default.temporaryDirectory.appendingPathComponent("bier-peer-signature-\(UUID().uuidString)")
 	try signature.write(to: signatureURL, options: .atomic)
 	try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: signatureURL.path)
@@ -99,7 +104,7 @@ func verifyPeer(method: String, path: String, peer: String, signers: String, tim
 	process.standardOutput = output
 	process.standardError = output
 	try process.run()
-	input.fileHandleForWriting.write(Data(payload.utf8))
+	input.fileHandleForWriting.write(peerPayload(method: method, path: path, peer: peer, time: time, nonce: nonce, body: body))
 	input.fileHandleForWriting.closeFile()
 	process.waitUntilExit()
 	guard process.terminationStatus == 0 else {
@@ -211,7 +216,7 @@ final class AgentServer {
 				return
 			}
 			do {
-				try verifyPeer(method: method, path: path, peer: peer, signers: peerSigners, time: time, nonce: nonce, signature: signature)
+				try verifyPeer(method: method, path: path, peer: peer, signers: peerSigners, time: time, nonce: nonce, body: body, signature: signature)
 				if try store.record("peer-\(peer)-\(nonce)") {
 					respond(connection, status: 409, body: "peer request was already processed")
 				} else {
@@ -229,7 +234,7 @@ final class AgentServer {
 				return
 			}
 			do {
-				try verifyPeer(method: method, path: path, peer: peer, signers: peerSigners, time: time, nonce: nonce, signature: signature)
+				try verifyPeer(method: method, path: path, peer: peer, signers: peerSigners, time: time, nonce: nonce, body: body, signature: signature)
 				if try store.record("peer-\(peer)-\(nonce)") { respond(connection, status: 409, body: "peer request was already processed"); return }
 				let encoder = JSONEncoder()
 				encoder.outputFormatting = .withoutEscapingSlashes

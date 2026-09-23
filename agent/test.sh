@@ -33,7 +33,8 @@ done
 curl -fsS --max-time 1 http://127.0.0.1:53992/v1/health | grep -q '"status":"ok"'
 peer_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 peer_nonce=agent-test-0123456789
-printf 'GET\n/v1/peer/hello\nmini\n%s\n%s\n' "$peer_time" "$peer_nonce" >"$work/peer-request"
+empty_hash=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+printf 'GET\n/v1/peer/hello\nmini\n%s\n%s\n%s\n' "$peer_time" "$peer_nonce" "$empty_hash" >"$work/peer-request"
 ssh-keygen -q -Y sign -f "$work/controller" -n bier-peer "$work/peer-request"
 peer_signature=$(base64 <"$work/peer-request.sig" | tr -d '\n')
 status=$(curl -sS --max-time 2 -o "$work/response" -w '%{http_code}' \
@@ -46,7 +47,7 @@ status=$(curl -sS --max-time 2 -o "$work/response" -w '%{http_code}' \
 	-H "X-Bier-Signature: $peer_signature" http://127.0.0.1:53992/v1/peer/hello)
 [ "$status" = 409 ]
 peer_nonce=agent-manifest-0123456789
-printf 'GET\n/v1/peer/manifest\nmini\n%s\n%s\n' "$peer_time" "$peer_nonce" >"$work/peer-request"
+printf 'GET\n/v1/peer/manifest\nmini\n%s\n%s\n%s\n' "$peer_time" "$peer_nonce" "$empty_hash" >"$work/peer-request"
 rm -f "$work/peer-request.sig"
 ssh-keygen -q -Y sign -f "$work/controller" -n bier-peer "$work/peer-request"
 peer_signature=$(base64 <"$work/peer-request.sig" | tr -d '\n')
