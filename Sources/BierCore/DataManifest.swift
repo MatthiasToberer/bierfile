@@ -1,22 +1,33 @@
 import Foundation
 import CryptoKit
 
-struct DataManifestEntry: Codable, Equatable {
-	let path: String
-	let bytes: UInt64
-	let sha256: String
+public struct DataManifestEntry: Codable, Equatable {
+	public let path: String
+	public let bytes: UInt64
+	public let sha256: String
+
+	public init(path: String, bytes: UInt64, sha256: String) {
+		self.path = path
+		self.bytes = bytes
+		self.sha256 = sha256
+	}
 }
 
-struct DataManifest: Codable {
-	let version: Int
-	let entries: [DataManifestEntry]
+public struct DataManifest: Codable {
+	public let version: Int
+	public let entries: [DataManifestEntry]
+
+	public init(version: Int, entries: [DataManifestEntry]) {
+		self.version = version
+		self.entries = entries
+	}
 }
 
-enum DataManifestError: Error {
+public enum DataManifestError: Error {
 	case unsafePath(String)
 }
 
-func fileSHA256(at url: URL) throws -> String {
+public func fileSHA256(at url: URL) throws -> String {
 	let handle = try FileHandle(forReadingFrom: url)
 	defer { try? handle.close() }
 	var hasher = SHA256()
@@ -26,7 +37,7 @@ func fileSHA256(at url: URL) throws -> String {
 	return hasher.finalize().map { String(format: "%02x", $0) }.joined()
 }
 
-func collectDataManifest(at root: URL) throws -> DataManifest {
+public func collectDataManifest(at root: URL) throws -> DataManifest {
 	let manager = FileManager.default
 	var entries: [DataManifestEntry] = []
 	func collect(_ url: URL, relative: String) throws {

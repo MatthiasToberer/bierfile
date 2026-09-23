@@ -2,6 +2,11 @@ import Foundation
 import Network
 import CryptoKit
 
+#if BIER_PACKAGE
+import BierCore
+let agentVersion = "dev"
+#endif
+
 let maxRequestBytes = 64 * 1024
 let maxPeerRequestAge: TimeInterval = 5 * 60
 

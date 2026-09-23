@@ -1,6 +1,6 @@
 import Foundation
 
-enum DataSnapshotError: Error {
+public enum DataSnapshotError: Error {
 	case invalidPath
 	case invalidManifest
 	case unknownSnapshot
@@ -10,14 +10,14 @@ enum DataSnapshotError: Error {
 	case incompleteSnapshot
 }
 
-let maxSnapshotChunkBytes = 32 * 1024
+public let maxSnapshotChunkBytes = 32 * 1024
 
-func validDataPath(_ path: String) -> Bool {
+public func validDataPath(_ path: String) -> Bool {
 	(path == ".gitattributes" || path.hasPrefix("Brewfiles/") || path.hasPrefix("Safe/")) &&
 		!path.contains("..") && !path.hasPrefix("/") && !path.hasSuffix("/")
 }
 
-func readDataChunk(at root: URL, path: String, offset: UInt64, length: Int) throws -> Data {
+public func readDataChunk(at root: URL, path: String, offset: UInt64, length: Int) throws -> Data {
 	guard validDataPath(path), length >= 0, length <= maxSnapshotChunkBytes else { throw DataSnapshotError.invalidPath }
 	var target = root
 	for component in path.split(separator: "/") {
@@ -38,19 +38,19 @@ private struct SnapshotSession {
 	var received: [String: UInt64]
 }
 
-final class DataSnapshotStore {
+public final class DataSnapshotStore {
 	private let live: URL
 	private let staging: URL
 	private let lock = NSLock()
 	private var sessions: [String: SnapshotSession] = [:]
 
-	init(live: URL) throws {
+	public init(live: URL) throws {
 		self.live = live
 		staging = live.deletingLastPathComponent().appendingPathComponent(".bier-staging")
 		try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
 	}
 
-	func begin(_ id: String, manifest: DataManifest) throws {
+	public func begin(_ id: String, manifest: DataManifest) throws {
 		lock.lock()
 		defer { lock.unlock() }
 		try validate(id)
@@ -71,7 +71,7 @@ final class DataSnapshotStore {
 		sessions[id] = SnapshotSession(entries: entries, received: [:])
 	}
 
-	func put(_ id: String, path: String, offset: UInt64, data: Data) throws {
+	public func put(_ id: String, path: String, offset: UInt64, data: Data) throws {
 		lock.lock()
 		defer { lock.unlock() }
 		try validate(id)
@@ -95,7 +95,7 @@ final class DataSnapshotStore {
 		sessions[id] = session
 	}
 
-	func commit(_ id: String) throws {
+	public func commit(_ id: String) throws {
 		lock.lock()
 		defer { lock.unlock() }
 		try validate(id)
