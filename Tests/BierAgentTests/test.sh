@@ -38,7 +38,7 @@ git -C "$work/data" commit -qm 'initial data'
 printf '%s\n' '{"version":1,"id":"probe-1","target":"mini","type":"agent.probe","expires_at":"2099-01-01T00:00:00Z","issuer":"controller-test","payload":{}}' >"$work/recipe.json"
 ssh-keygen -q -Y sign -f "$work/controller" -n bier-recipe "$work/recipe.json"
 
-"$agent" serve --agent mini --allowed-signers "$work/allowed_signers" --peer-signers "$work/peer_signers" --peer-key "$work/controller.pub" --data-dir "$work/data" --state-dir "$work/state" --port 53992 --bonjour false >"$work/agent.log" 2>&1 &
+"$agent" serve --agent mini --allowed-signers "$work/allowed_signers" --peer-signers "$work/peer_signers" --peer-key "$work/controller.pub" --peers-file "$work/peers" --data-dir "$work/data" --state-dir "$work/state" --port 53992 --bonjour false >"$work/agent.log" 2>&1 &
 pid=$!
 for attempt in 1 2 3 4 5; do
 	if curl -fsS --max-time 1 http://127.0.0.1:53992/v1/health 2>/dev/null | grep -q '"status":"ok"'; then break; fi
@@ -177,7 +177,7 @@ git -C "$work/source" commit -qm 'initial data'
 cp "$work/controller" "$work/home/.ssh/id_ed25519"
 cp "$work/controller.pub" "$work/home/.ssh/id_ed25519.pub"
 chmod 600 "$work/home/.ssh/id_ed25519"
-"$agent" serve --agent target --allowed-signers "$work/allowed_signers" --peer-signers "$work/peer_signers" --peer-key "$work/controller.pub" --data-dir "$work/target" --state-dir "$work/state-client" --port 53992 --bonjour false >"$work/agent-client.log" 2>&1 &
+"$agent" serve --agent target --allowed-signers "$work/allowed_signers" --peer-signers "$work/peer_signers" --peer-key "$work/controller.pub" --peers-file "$work/remote-peers" --data-dir "$work/target" --state-dir "$work/state-client" --port 53992 --bonjour false >"$work/agent-client.log" 2>&1 &
 pid=$!
 for attempt in 1 2 3 4 5; do
 	if curl -fsS --max-time 1 http://127.0.0.1:53992/v1/health 2>/dev/null | grep -q '"status":"ok"'; then break; fi
@@ -191,6 +191,7 @@ BIER_ROOT="$root" BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 B
 grep -q 'Paired mini with target on 127.0.0.1.' "$work/pair.log"
 grep -q 'Done. 127.0.0.1 now has the Bier data from mini.' "$work/pair.log"
 grep -q '^mini ssh-ed25519 ' "$work/peer_signers"
+grep -qx 'mini.local' "$work/remote-peers"
 grep -q '^target ssh-ed25519 ' "$work/home/.local/share/bier/agent/peer_signers"
 grep -qx '127.0.0.1' "$work/home/.config/bier/peers"
 test ! -e "$work/state-client/pairing-offer.json"

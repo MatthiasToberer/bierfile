@@ -12,19 +12,24 @@ struct PairingTest {
 		defer { try? manager.removeItem(at: root) }
 		try manager.createDirectory(at: root, withIntermediateDirectories: true)
 		let signers = root.appendingPathComponent("peer-signers")
+		let peers = root.appendingPathComponent("peers")
 		let localKeyURL = root.appendingPathComponent("local.pub")
 		try localKey.write(to: localKeyURL, atomically: true, encoding: .utf8)
 		let code = "0123456789abcdef0123456789abcdef"
 		let expiry = Int64(Date().timeIntervalSince1970) + 600
 		try Data("{\"version\":1,\"code\":\"\(code)\",\"expires\":\(expiry),\"attempts\":0}".utf8)
 			.write(to: root.appendingPathComponent("pairing-offer.json"), options: .atomic)
-		let store = PeerPairingStore(stateDirectory: root, signersURL: signers, localKeyURL: localKeyURL)
-		let request = PeerPairingRequest(peer: "controller", publicKey: remoteKey, proof: peerPairingProof(code: code, peer: "controller", publicKey: remoteKey))
+		let store = PeerPairingStore(stateDirectory: root, signersURL: signers, localKeyURL: localKeyURL, peersURL: peers)
+		let address = "controller.local"
+		let request = PeerPairingRequest(peer: "controller", address: address, publicKey: remoteKey,
+			proof: peerPairingProof(code: code, peer: "controller", address: address, publicKey: remoteKey))
 		let response = try store.accept(request, agent: "target")
-		guard response.status == "paired", response.agent == "target", response.publicKey == localKey else {
+		guard response.status == "paired", response.agent == "target", response.publicKey == localKey,
+			response.proof == peerPairingResponseProof(code: code, request: request, agent: "target", publicKey: localKey) else {
 			throw PeerPairingError.rejected
 		}
 		guard try String(contentsOf: signers, encoding: .utf8).hasPrefix("controller ssh-ed25519 "),
+			try String(contentsOf: peers, encoding: .utf8) == "controller.local\n",
 			!manager.fileExists(atPath: root.appendingPathComponent("pairing-offer.json").path) else {
 			throw PeerPairingError.rejected
 		}

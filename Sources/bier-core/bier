@@ -1258,6 +1258,7 @@ write_agent_launch_agent() {
     <string>--allowed-signers</string><string>$home/.local/share/bier/agent/allowed_signers</string>
     <string>--peer-signers</string><string>$home/.local/share/bier/agent/peer_signers</string>
     <string>--peer-key</string><string>$home/.ssh/id_ed25519.pub</string>
+	<string>--peers-file</string><string>$home/.config/bier/peers</string>
     <string>--data-dir</string><string>$data</string>
     <string>--port</string><string>53991</string>
     <string>--state-dir</string><string>$home/.local/share/bier/agent/state</string>

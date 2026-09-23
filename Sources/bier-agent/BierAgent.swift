@@ -182,7 +182,7 @@ final class AgentServer {
 	private let store: ReplayStore
 	private let listener: NWListener
 
-	init(agent: String, signers: String, peerSigners: String?, peerKey: String?, dataDirectory: URL?, stateDirectory: URL, port: UInt16, bonjour: Bool) throws {
+	init(agent: String, signers: String, peerSigners: String?, peerKey: String?, peersFile: String?, dataDirectory: URL?, stateDirectory: URL, port: UInt16, bonjour: Bool) throws {
 		guard validHostName(agent), FileManager.default.fileExists(atPath: signers),
 			let endpointPort = NWEndpoint.Port(rawValue: port) else {
 			throw NSError(domain: "BierAgent", code: 1, userInfo: [NSLocalizedDescriptionKey: "invalid server configuration"])
@@ -191,7 +191,8 @@ final class AgentServer {
 		self.signers = signers
 		self.peerSigners = peerSigners
 		if let peerSigners, let peerKey {
-			pairingStore = PeerPairingStore(stateDirectory: stateDirectory, signersURL: URL(fileURLWithPath: peerSigners), localKeyURL: URL(fileURLWithPath: peerKey))
+			pairingStore = PeerPairingStore(stateDirectory: stateDirectory, signersURL: URL(fileURLWithPath: peerSigners),
+				localKeyURL: URL(fileURLWithPath: peerKey), peersURL: peersFile.map(URL.init(fileURLWithPath:)))
 		} else {
 			pairingStore = nil
 		}
@@ -508,10 +509,11 @@ case "serve":
 	let bonjour = option(arguments, "--bonjour") != "false"
 	let peerSigners = option(arguments, "--peer-signers")
 	let peerKey = option(arguments, "--peer-key")
+	let peersFile = option(arguments, "--peers-file")
 	let dataDirectory = option(arguments, "--data-dir").map(URL.init(fileURLWithPath:))
 	let state = option(arguments, "--state-dir").map(URL.init(fileURLWithPath:))
 		?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Bier")
-	do { try AgentServer(agent: agent, signers: signers, peerSigners: peerSigners, peerKey: peerKey, dataDirectory: dataDirectory, stateDirectory: state, port: port, bonjour: bonjour).start() }
+	do { try AgentServer(agent: agent, signers: signers, peerSigners: peerSigners, peerKey: peerKey, peersFile: peersFile, dataDirectory: dataDirectory, stateDirectory: state, port: port, bonjour: bonjour).start() }
 	catch { agentError(error.localizedDescription) }
 default:
 	agentError("unknown command")

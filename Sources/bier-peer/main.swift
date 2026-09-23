@@ -132,7 +132,9 @@ private enum BierPeerCLI {
 		guard code.count == 32 else { throw CLIError.missingPairing }
 		let publicKey = try String(contentsOf: URL(fileURLWithPath: options.identity.path + ".pub"), encoding: .utf8)
 			.trimmingCharacters(in: .whitespacesAndNewlines)
-		let pairing = PeerPairingRequest(peer: options.localHost, publicKey: publicKey, proof: peerPairingProof(code: code, peer: options.localHost, publicKey: publicKey))
+		let address = options.localHost.contains(".") ? options.localHost : "\(options.localHost).local"
+		let pairing = PeerPairingRequest(peer: options.localHost, address: address, publicKey: publicKey,
+			proof: peerPairingProof(code: code, peer: options.localHost, address: address, publicKey: publicKey))
 		let encoder = JSONEncoder()
 		encoder.outputFormatting = .withoutEscapingSlashes
 		var request = URLRequest(url: try options.baseURL.appendingPathComponent("v1/pair"))
@@ -146,7 +148,9 @@ private enum BierPeerCLI {
 		let result = try JSONDecoder().decode(PeerPairingResponse.self, from: data)
 		guard result.status == "paired",
 			result.agent.range(of: "^[A-Za-z0-9][A-Za-z0-9._-]*$", options: .regularExpression) != nil,
-			result.publicKey.hasPrefix("ssh-ed25519 "), !result.publicKey.contains("\n") else { throw CLIError.invalidResponse }
+			result.publicKey.hasPrefix("ssh-ed25519 "), !result.publicKey.contains("\n"),
+			result.proof == peerPairingResponseProof(code: code, request: pairing, agent: result.agent, publicKey: result.publicKey)
+		else { throw CLIError.invalidResponse }
 		try remember(peer: result.agent, key: result.publicKey, in: signers)
 		print("Paired \(options.localHost) with \(result.agent) on \(options.displayHost).")
 	}
