@@ -6,6 +6,10 @@ public enum PeerClientError: Error {
 	case rejected(Int)
 }
 
+public protocol PeerTransport {
+	func send(method: String, path: String, body: Data) async throws -> Data
+}
+
 public struct PeerRequest: Equatable {
 	public let method: String
 	public let path: String
@@ -28,7 +32,7 @@ public struct PeerRequest: Equatable {
 	}
 }
 
-public struct PeerClient {
+public struct PeerClient: PeerTransport {
 	public let baseURL: URL
 	public let peerName: String
 	public let identity: URL

@@ -3,6 +3,13 @@ import Foundation
 import Testing
 @testable import BierCore
 
+private struct MockPeerTransport: PeerTransport {
+	let handler: (String, String, Data) throws -> Data
+
+	func send(method: String, path: String, body: Data) async throws -> Data {
+		try handler(method, path, body)
+	}
+}
 
 @Suite struct DataSnapshotTests {
 	private func manifest(_ files: [(String, Data)]) -> DataManifest {
@@ -62,5 +69,28 @@ import Testing
 			body: Data("{}".utf8)
 		)
 		#expect(String(data: request.canonicalData, encoding: .utf8) == "POST\n/v1/peer/snapshot/commit\nmini\n2026-09-23T12:00:00Z\n01234567-89ab-cdef-0123-456789abcdef\n44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\n")
+	}
+
+	@Test func snapshotClientFetchesAndVerifiesData() async throws {
+		let contents = Data("brew \"wget\"\n".utf8)
+		let manifest = DataManifest(version: 1, entries: [
+			DataManifestEntry(path: "Brewfiles/main", bytes: UInt64(contents.count), sha256: sha256Hex(contents))
+		])
+		let transport = MockPeerTransport { method, path, body in
+			if method == "GET", path == "/v1/peer/manifest" {
+				return try JSONEncoder().encode(manifest)
+			}
+			guard path == "/v1/peer/data/read",
+				let object = try JSONSerialization.jsonObject(with: body) as? [String: Any],
+				let offset = object["offset"] as? Int,
+				let length = object["length"] as? Int else {
+				throw PeerSnapshotClientError.invalidResponse
+			}
+			return contents.subdata(in: offset..<(offset + length))
+		}
+		let root = FileManager.default.temporaryDirectory.appendingPathComponent("bier-fetch-test-\(UUID().uuidString)")
+		defer { try? FileManager.default.removeItem(at: root) }
+		try await PeerSnapshotClient(transport: transport).fetch(to: root)
+		#expect(try Data(contentsOf: root.appendingPathComponent("Brewfiles/main")) == contents)
 	}
 }
