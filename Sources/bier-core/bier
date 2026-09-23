@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.33.0
+BIER_VERSION=0.33.1
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -1174,7 +1174,7 @@ need_agent_release_trust() {
 }
 
 write_agent_launch_agent() {
-	local path=$1 home=$2 agent=$3
+	local path=$1 home=$2 agent=$3 data=$4
 	cat >"$path" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -1186,7 +1186,7 @@ write_agent_launch_agent() {
     <string>--agent</string><string>$agent</string>
     <string>--allowed-signers</string><string>$home/.local/share/bier/agent/allowed_signers</string>
     <string>--peer-signers</string><string>$home/.local/share/bier/agent/peer_signers</string>
-    <string>--data-dir</string><string>$home/.local/share/bier/data</string>
+    <string>--data-dir</string><string>$data</string>
     <string>--port</string><string>53991</string>
     <string>--state-dir</string><string>$home/.local/share/bier/agent/state</string>
   </array>
@@ -1197,7 +1197,7 @@ EOF
 }
 
 cmd_peer_install() {
-	local peer=${1:-} tag home agent plist network_host peer_key=$HOME/.ssh/id_ed25519.pub
+	local peer=${1:-} tag home data agent plist network_host peer_key=$HOME/.ssh/id_ed25519.pub
 	[ $# -eq 1 ] && peer_name_ok "$peer" ||
 		die 'usage: bier peer install <host>'
 	[ -r "$peer_key" ] || die "SSH to $peer needs a public key on this Mac.
@@ -1214,11 +1214,19 @@ cmd_peer_install() {
 	home=$(printf '%s' "$home" | tr -d '\r\n')
 	printf '%s\n' "$home" | grep -Eq '^/[A-Za-z0-9._/-]+$' ||
 		die "the home directory reported by $peer is not safe to install into"
+	data=$(peer_ssh "$peer" 'config="$HOME/.config/bier/config" # bier-agent-data-directory
+data=$(sed -nE "s/^[[:space:]]*data[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$config" 2>/dev/null | tail -1)
+case "$data" in "~/"*) data="$HOME/${data#\~/}" ;; esac
+if [ -n "$data" ] && [ -d "$data/.git" ]; then printf "%s\n" "$data"; else printf "%s\n" "$HOME/.local/share/bier/data"; fi') ||
+		die "cannot determine the Bier data directory on $peer"
+	data=$(printf '%s' "$data" | tr -d '\r\n')
+	printf '%s\n' "$data" | grep -Eq '^/[A-Za-z0-9._/-]+$' ||
+		die "the Bier data directory reported by $peer is not safe to use"
 	agent=$(peer_ssh "$peer" hostname -s) || die "cannot determine the agent name of $peer"
 	agent=$(printf '%s' "$agent" | tr -d '\r\n')
 	peer_name_ok "$agent" || die "the agent name reported by $peer is not valid"
 	plist=$(tmpfile)
-	write_agent_launch_agent "$plist" "$home" "$agent"
+	write_agent_launch_agent "$plist" "$home" "$agent" "$data"
 
 	peer_ssh "$peer" 'mkdir -p "$HOME/.local/share/bier/agent/bin" "$HOME/Library/LaunchAgents"' ||
 		die "cannot prepare the Bier agent directory on $peer"

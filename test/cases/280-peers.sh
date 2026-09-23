@@ -102,8 +102,10 @@ assert_file_has "$WORK/ssh.args" 'StrictHostKeyChecking=ask'
 assert_file_has "$WORK/ssh.args" 'authorized_keys'
 unset BIER_TEST_SSH
 
+BIER_TEST_SSH_DATA=/Users/bier/configured-data
+export BIER_TEST_SSH_DATA
 assert_ok bier mini peer install studio.local
-assert_contains "$OUT" '3/4  Installing verified Bier agent v0.33.0'
+assert_contains "$OUT" '3/4  Installing verified Bier agent v0.33.1'
 assert_contains "$OUT" '4/4  Checking whether the agent is reachable'
 assert_contains "$OUT" 'Checking the Bier data store on studio.local'
 assert_contains "$OUT" 'studio.local now has the Bier data from mini.'
@@ -112,11 +114,14 @@ assert_file_has "$WORK/scp.args" 'allowed_signers.new'
 assert_file_has "$WORK/scp.args" 'com.bier.agent.plist.new'
 assert_file_has "$WORK/ssh.args" 'fetch --quiet --depth 1 origin'
 assert_file_has "$WORK/ssh.args" 'source.new/Sources/bier-agent/build.sh'
+assert_file_has "$WORK/ssh.args" 'bier-agent-data-directory'
+assert_file_has "$WORK/agent.plist" '<string>--data-dir</string><string>/Users/bier/configured-data</string>'
 assert_file_has "$WORK/ssh.args" 'peer_signers'
 assert_file_has "$WORK/curl.args" 'http://studio.local:53991/v1/health'
 assert_ok bier mini peer list
 assert_contains "$OUT" 'first.local'
 assert_contains "$OUT" 'studio.local'
+unset BIER_TEST_SSH_DATA
 unset BIER_RELEASE_TRUST_URL
 
 assert_ok bier mini peer hello studio.local

@@ -24,5 +24,6 @@ esac
 case "$*" in
 *'uname -m'*) printf '%s\n' "${BIER_TEST_SSH_ARCH:-arm64}" ;;
 *'printf "%s\n" "$HOME"'*) printf '%s\n' "${BIER_TEST_SSH_HOME:-/Users/bier}" ;;
+*'bier-agent-data-directory'*) printf '%s\n' "${BIER_TEST_SSH_DATA:-${BIER_TEST_SSH_HOME:-/Users/bier}/.local/share/bier/data}" ;;
 *'hostname -s'*) printf '%s\n' "${BIER_TEST_SSH_AGENT:-mini}" ;;
 esac

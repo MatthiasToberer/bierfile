@@ -5,3 +5,10 @@
 set -euo pipefail
 
 printf '%s\n' "$*" >>"${WORK:?WORK is not set}/scp.args"
+previous=
+for argument in "$@"; do
+	case $argument in
+	*:Library/LaunchAgents/com.bier.agent.plist.new) cp "$previous" "$WORK/agent.plist" ;;
+	esac
+	previous=$argument
+done
