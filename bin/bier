@@ -329,6 +329,24 @@ peer_scp() {
 	scp -q -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes "$@"
 }
 
+peer_http_request() {
+	local method=$1 path=$2 peer=$3 body=$4 response=$5
+	local key=$HOME/.ssh/id_ed25519 network_host request signature time nonce body_hash
+	[ -r "$key" ] || return 1
+	network_host=${peer##*@}
+	time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+	nonce=$(uuidgen | tr '[:upper:]' '[:lower:]')
+	body_hash=$(shasum -a 256 "$body" | awk '{print $1}') || return 1
+	request=$(tmpfile)
+	printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$method" "$path" "$HOST" "$time" "$nonce" "$body_hash" >"$request"
+	ssh-keygen -q -Y sign -f "$key" -n bier-peer "$request" || return 1
+	signature=$(base64 <"$request.sig" | tr -d '\n')
+	curl -fsS --max-time 20 -X "$method" -H 'Content-Type: application/json' \
+		-H "X-Bier-Peer: $HOST" -H "X-Bier-Time: $time" -H "X-Bier-Nonce: $nonce" \
+		-H "X-Bier-Signature: $signature" --data-binary @"$body" \
+		"http://$network_host:53991$path" >"$response"
+}
+
 peer_is_self() {
 	local host=${1%.} short
 	short=${host%%.*}
@@ -856,24 +874,17 @@ cmd_peer_check() {
 }
 
 cmd_peer_hello() {
-	local peer=${1:-} key=$HOME/.ssh/id_ed25519 network_host request signature time nonce response
+	local peer=${1:-} key=$HOME/.ssh/id_ed25519 body response output
 	[ $# -eq 1 ] && peer_name_ok "$peer" ||
 		die 'usage: bier peer hello <host>'
 	[ -r "$key" ] || die "no SSH identity at $key"
-	network_host=${peer##*@}
-	time=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-	nonce=$(uuidgen | tr '[:upper:]' '[:lower:]')
-	request=$(tmpfile)
-	printf 'GET\n/v1/peer/hello\n%s\n%s\n%s\n%s\n' "$HOST" "$time" "$nonce" e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 >"$request"
-	ssh-keygen -q -Y sign -f "$key" -n bier-peer "$request" ||
-		die "cannot sign the peer request with $key"
-	signature=$(base64 <"$request.sig" | tr -d '\n')
+	body=$(tmpfile)
+	response=$(tmpfile)
 	info "Checking authenticated Bier Agent access to $peer …"
-	response=$(curl -fsS --max-time 5 \
-		-H "X-Bier-Peer: $HOST" -H "X-Bier-Time: $time" -H "X-Bier-Nonce: $nonce" \
-		-H "X-Bier-Signature: $signature" "http://$network_host:53991/v1/peer/hello") ||
+	peer_http_request GET /v1/peer/hello "$peer" "$body" "$response" ||
 		die "the Bier Agent on $peer did not accept this Mac"
-	printf '%s' "$response" | grep -q '"status":"peer-ok"' ||
+	output=$(cat "$response")
+	printf '%s' "$output" | grep -q '"status":"peer-ok"' ||
 		die "the Bier Agent on $peer sent an invalid peer response"
 	info "Bier Agent on $peer accepted $HOST as a peer."
 }
