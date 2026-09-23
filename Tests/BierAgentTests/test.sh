@@ -20,6 +20,10 @@ swiftc -O -framework Foundation -framework CryptoKit -o "$work/snapshot-test" "$
 "$work/snapshot-test"
 swiftc -O -framework Foundation -framework CryptoKit -o "$work/git-repository-test" "$root/Sources/bier-core/swift/DataManifest.swift" "$root/Sources/bier-core/swift/DataSnapshot.swift" "$root/Sources/bier-core/swift/GitRepository.swift" "$root/Sources/bier-core/swift/GitBundleStore.swift" "$here/GitRepositoryTest.swift"
 "$work/git-repository-test"
+ssh-keygen -q -t ed25519 -N '' -f "$work/pair-local"
+ssh-keygen -q -t ed25519 -N '' -f "$work/pair-remote"
+swiftc -O -framework Foundation -framework CryptoKit -o "$work/pairing-test" "$root/Sources/bier-core/swift/PeerPairing.swift" "$here/PairingTest.swift"
+"$work/pairing-test" "$work/pair-local.pub" "$work/pair-remote.pub"
 ssh-keygen -q -t ed25519 -N '' -f "$work/controller"
 printf 'controller-test %s\n' "$(cat "$work/controller.pub")" >"$work/allowed_signers"
 printf 'mini %s\n' "$(cat "$work/controller.pub")" >"$work/peer_signers"
@@ -34,7 +38,7 @@ git -C "$work/data" commit -qm 'initial data'
 printf '%s\n' '{"version":1,"id":"probe-1","target":"mini","type":"agent.probe","expires_at":"2099-01-01T00:00:00Z","issuer":"controller-test","payload":{}}' >"$work/recipe.json"
 ssh-keygen -q -Y sign -f "$work/controller" -n bier-recipe "$work/recipe.json"
 
-"$agent" serve --agent mini --allowed-signers "$work/allowed_signers" --peer-signers "$work/peer_signers" --data-dir "$work/data" --state-dir "$work/state" --port 53992 --bonjour false >"$work/agent.log" 2>&1 &
+"$agent" serve --agent mini --allowed-signers "$work/allowed_signers" --peer-signers "$work/peer_signers" --peer-key "$work/controller.pub" --data-dir "$work/data" --state-dir "$work/state" --port 53992 --bonjour false >"$work/agent.log" 2>&1 &
 pid=$!
 for attempt in 1 2 3 4 5; do
 	if curl -fsS --max-time 1 http://127.0.0.1:53992/v1/health 2>/dev/null | grep -q '"status":"ok"'; then break; fi
@@ -173,12 +177,21 @@ git -C "$work/source" commit -qm 'initial data'
 cp "$work/controller" "$work/home/.ssh/id_ed25519"
 cp "$work/controller.pub" "$work/home/.ssh/id_ed25519.pub"
 chmod 600 "$work/home/.ssh/id_ed25519"
-"$agent" serve --agent target --allowed-signers "$work/allowed_signers" --peer-signers "$work/peer_signers" --data-dir "$work/target" --state-dir "$work/state-client" --port 53992 --bonjour false >"$work/agent-client.log" 2>&1 &
+"$agent" serve --agent target --allowed-signers "$work/allowed_signers" --peer-signers "$work/peer_signers" --peer-key "$work/controller.pub" --data-dir "$work/target" --state-dir "$work/state-client" --port 53992 --bonjour false >"$work/agent-client.log" 2>&1 &
 pid=$!
 for attempt in 1 2 3 4 5; do
 	if curl -fsS --max-time 1 http://127.0.0.1:53992/v1/health 2>/dev/null | grep -q '"status":"ok"'; then break; fi
 	sleep 1
 done
+pair_code=0123456789abcdef0123456789abcdef
+pair_expiry=$(date -v+10M +%s)
+printf '{"version":1,"code":"%s","expires":%s,"attempts":0}\n' "$pair_code" "$pair_expiry" >"$work/state-client/pairing-offer.json"
+printf '%s\n' "$pair_code" >"$work/pair-code"
+"$peer_cli" pair 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --code-file "$work/pair-code" --peer-signers "$work/local-peer-signers" --port 53992 >"$work/pair.log"
+grep -q 'Paired mini with target on 127.0.0.1.' "$work/pair.log"
+grep -q '^mini ssh-ed25519 ' "$work/peer_signers"
+grep -q '^target ssh-ed25519 ' "$work/local-peer-signers"
+test ! -e "$work/state-client/pairing-offer.json"
 "$peer_cli" hello 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --port 53992 >"$work/hello-swift.log"
 grep -q 'Bier Agent on 127.0.0.1 accepted mini as a peer.' "$work/hello-swift.log"
 "$peer_cli" seed 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --data "$work/source" --port 53992 >"$work/client.log"

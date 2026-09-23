@@ -146,6 +146,8 @@ RELEASE_TRUST_URL=${BIER_RELEASE_TRUST_URL:-https://bier.uber.space/bier/allowed
 PEERS_FILE=$(dirname "$CONFIG_FILE")/peers
 PEER_PORT=${BIER_PEER_PORT:-53991}
 PEER_CLIENT=${BIER_PEER_CLIENT:-$ROOT/Sources/bier-peer/build/bier-peer}
+PAIRING_OFFER=$HOME/.local/share/bier/agent/state/pairing-offer.json
+LOCAL_PEER_SIGNERS=$HOME/.local/share/bier/agent/peer_signers
 
 DATA=${BIER_DATA:-$(config_get data)}
 if [ -z "$DATA" ] && [ -d "$ROOT/Brewfiles" ]; then
@@ -922,6 +924,45 @@ cmd_peer_hello() {
 	info "Bier Agent on $peer accepted $HOST as a peer."
 }
 
+cmd_peer_offer() {
+	[ $# -eq 0 ] || die 'usage: bier peer offer'
+	[ -x "$HOME/.local/share/bier/agent/bin/bier-agent" ] || die "the local Bier agent is not installed; run install.sh"
+	[ -r "$HOME/.ssh/id_ed25519.pub" ] || die "no SSH public key at $HOME/.ssh/id_ed25519.pub"
+	local code expires tmp shown
+	code=$(uuidgen | tr -d '-' | tr '[:upper:]' '[:lower:]')
+	expires=$(date -v+10M +%s)
+	mkdir -p "$(dirname "$PAIRING_OFFER")"
+	tmp=$(mktemp "$(dirname "$PAIRING_OFFER")/pairing-offer.XXXXXX")
+	printf '{"version":1,"code":"%s","expires":%s,"attempts":0}\n' "$code" "$expires" >"$tmp"
+	chmod 600 "$tmp"
+	mv "$tmp" "$PAIRING_OFFER"
+	shown=$(printf '%s' "$code" | sed -E 's/(.{4})/\1-/g; s/-$//')
+	info "Pairing is open for 10 minutes."
+	info "On the other Mac run:  bier peer pair $(hostname -s).local"
+	info "One-time code: $shown"
+}
+
+cmd_peer_pair() {
+	local peer=${1:-} code code_file
+	[ $# -eq 1 ] && peer_name_ok "$peer" || die 'usage: bier peer pair <host>'
+	[ -x "$PEER_CLIENT" ] || die "the Swift peer client is not built; run install.sh"
+	[ -r "$HOME/.ssh/id_ed25519" ] && [ -r "$HOME/.ssh/id_ed25519.pub" ] || die "no SSH identity at $HOME/.ssh/id_ed25519"
+	code=${BIER_PAIR_CODE:-}
+	if [ -z "$code" ]; then
+		printf 'One-time code from %s: ' "$peer"
+		read -r code || code=
+	fi
+	[ -n "$code" ] || die "no pairing code entered"
+	code_file=$(tmpfile)
+	printf '%s\n' "$code" >"$code_file"
+	chmod 600 "$code_file"
+	info "Pairing with $peer …"
+	"$PEER_CLIENT" pair "$peer" --local "$HOST" --identity "$HOME/.ssh/id_ed25519" --code-file "$code_file" --peer-signers "$LOCAL_PEER_SIGNERS" --port "$PEER_PORT" ||
+		die "pairing with $peer failed"
+	peer_remember "$peer"
+	info "Peer added: $peer"
+}
+
 peer_snapshot_files() {
 	local output=$1 root=${2:-$DATA} top absolute relative
 	: >"$output"
@@ -1211,6 +1252,7 @@ write_agent_launch_agent() {
     <string>--agent</string><string>$agent</string>
     <string>--allowed-signers</string><string>$home/.local/share/bier/agent/allowed_signers</string>
     <string>--peer-signers</string><string>$home/.local/share/bier/agent/peer_signers</string>
+    <string>--peer-key</string><string>$home/.ssh/id_ed25519.pub</string>
     <string>--data-dir</string><string>$data</string>
     <string>--port</string><string>53991</string>
     <string>--state-dir</string><string>$home/.local/share/bier/agent/state</string>
@@ -1406,6 +1448,8 @@ bier peer — manage Macs Bier may contact
   bier peer list          show remembered Macs
   bier peer check <host>  check safe, non-interactive SSH access
   bier peer hello <host>  prove authenticated Bier Agent access
+  bier peer offer         show a one-time code for SSH-free pairing
+  bier peer pair <host>   pair with a Mac using its one-time code
   bier peer compare <host> compare verified data without changing it
   bier peer sync <host>   synchronise data and history with a peer
   bier peer seed <host>   copy data to a new, empty Bier peer
@@ -1430,6 +1474,8 @@ cmd_peer() {
 	remove | rm) cmd_peer_remove "$@" ;;
 check) cmd_peer_check "$@" ;;
 hello) cmd_peer_hello "$@" ;;
+offer) cmd_peer_offer "$@" ;;
+pair) cmd_peer_pair "$@" ;;
 compare) cmd_peer_compare "$@" ;;
 sync) cmd_peer_sync "$@" ;;
 seed) cmd_peer_seed "$@" ;;
@@ -1439,7 +1485,7 @@ upgrade | update) cmd_peer_upgrade "$@" ;;
 uninstall) cmd_peer_uninstall "$@" ;;
 discover) cmd_peer_discover "$@" ;;
 help | -h | --help) cmd_peer_help ;;
-*) die 'usage: bier peer <discover|add|list|check|hello|compare|sync|seed|trust|install|upgrade|uninstall|remove> [host]' ;;
+*) die 'usage: bier peer <discover|add|list|check|hello|offer|pair|compare|sync|seed|trust|install|upgrade|uninstall|remove> [host]' ;;
 	esac
 }
 
@@ -2969,6 +3015,8 @@ bier — keeps Brewfiles in sync across Macs
   bier peer remove <host> forget a remembered Mac
   bier peer check <host>  check safe, non-interactive SSH access
   bier peer hello <host>  prove authenticated Bier Agent access
+  bier peer offer         show a one-time code for SSH-free pairing
+  bier peer pair <host>   pair with a Mac using its one-time code
   bier peer compare <host> compare verified data without changing it
   bier peer sync <host>   synchronise data and history with a peer
   bier peer seed <host>   copy data to a new, empty Bier peer

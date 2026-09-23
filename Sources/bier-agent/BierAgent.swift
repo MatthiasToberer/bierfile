@@ -178,10 +178,11 @@ final class AgentServer {
 	private let dataDirectory: URL?
 	private let snapshotStore: DataSnapshotStore?
 	private let bundleStore: GitBundleStore?
+	private let pairingStore: PeerPairingStore?
 	private let store: ReplayStore
 	private let listener: NWListener
 
-	init(agent: String, signers: String, peerSigners: String?, dataDirectory: URL?, stateDirectory: URL, port: UInt16, bonjour: Bool) throws {
+	init(agent: String, signers: String, peerSigners: String?, peerKey: String?, dataDirectory: URL?, stateDirectory: URL, port: UInt16, bonjour: Bool) throws {
 		guard validHostName(agent), FileManager.default.fileExists(atPath: signers),
 			let endpointPort = NWEndpoint.Port(rawValue: port) else {
 			throw NSError(domain: "BierAgent", code: 1, userInfo: [NSLocalizedDescriptionKey: "invalid server configuration"])
@@ -189,6 +190,11 @@ final class AgentServer {
 		self.agent = agent
 		self.signers = signers
 		self.peerSigners = peerSigners
+		if let peerSigners, let peerKey {
+			pairingStore = PeerPairingStore(stateDirectory: stateDirectory, signersURL: URL(fileURLWithPath: peerSigners), localKeyURL: URL(fileURLWithPath: peerKey))
+		} else {
+			pairingStore = nil
+		}
 		self.dataDirectory = dataDirectory
 		if let dataDirectory {
 			snapshotStore = try DataSnapshotStore(live: dataDirectory)
@@ -253,6 +259,20 @@ final class AgentServer {
 	private func handle(_ connection: NWConnection, method: String, path: String, headers: [String: String], body: Data) {
 		if method == "GET" && path == "/v1/health" {
 			respond(connection, status: 200, body: "{\"status\":\"ok\",\"version\":\"\(agentVersion)\"}", contentType: "application/json")
+			return
+		}
+		if method == "POST" && path == "/v1/pair" {
+			guard let pairingStore, let request = try? JSONDecoder().decode(PeerPairingRequest.self, from: body) else {
+				respond(connection, status: 400, body: "invalid pairing request")
+				return
+			}
+			do {
+				let encoder = JSONEncoder()
+				encoder.outputFormatting = .withoutEscapingSlashes
+				respond(connection, status: 200, data: try encoder.encode(pairingStore.accept(request, agent: agent)), contentType: "application/json")
+			} catch {
+				respond(connection, status: 403, body: "pairing was rejected")
+			}
 			return
 		}
 		if method == "GET" && path == "/v1/peer/hello" {
@@ -487,10 +507,11 @@ case "serve":
 	let port = UInt16(option(arguments, "--port") ?? "53991") ?? 0
 	let bonjour = option(arguments, "--bonjour") != "false"
 	let peerSigners = option(arguments, "--peer-signers")
+	let peerKey = option(arguments, "--peer-key")
 	let dataDirectory = option(arguments, "--data-dir").map(URL.init(fileURLWithPath:))
 	let state = option(arguments, "--state-dir").map(URL.init(fileURLWithPath:))
 		?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Bier")
-	do { try AgentServer(agent: agent, signers: signers, peerSigners: peerSigners, dataDirectory: dataDirectory, stateDirectory: state, port: port, bonjour: bonjour).start() }
+	do { try AgentServer(agent: agent, signers: signers, peerSigners: peerSigners, peerKey: peerKey, dataDirectory: dataDirectory, stateDirectory: state, port: port, bonjour: bonjour).start() }
 	catch { agentError(error.localizedDescription) }
 default:
 	agentError("unknown command")

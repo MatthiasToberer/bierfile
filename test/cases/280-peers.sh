@@ -3,7 +3,7 @@
 
 assert_ok bier mini peer
 assert_contains "$OUT" 'bier peer — manage Macs Bier may contact'
-for subcommand in discover add list check hello compare sync seed trust install upgrade uninstall remove; do
+for subcommand in discover add list check hello offer pair compare sync seed trust install upgrade uninstall remove; do
 	assert_contains "$OUT" "bier peer $subcommand"
 done
 

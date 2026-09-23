@@ -14,7 +14,7 @@ version_source=$version_dir/main.swift
 trap 'rm -rf "$version_dir"' EXIT
 {
 	printf 'let agentVersion = "%s"\n' "$version"
-	cat "$root/Sources/bier-core/swift/DataManifest.swift" "$root/Sources/bier-core/swift/DataSnapshot.swift" "$root/Sources/bier-core/swift/GitRepository.swift" "$root/Sources/bier-core/swift/GitBundleStore.swift" "$here/BierAgent.swift"
+	cat "$root/Sources/bier-core/swift/DataManifest.swift" "$root/Sources/bier-core/swift/DataSnapshot.swift" "$root/Sources/bier-core/swift/GitRepository.swift" "$root/Sources/bier-core/swift/GitBundleStore.swift" "$root/Sources/bier-core/swift/PeerPairing.swift" "$here/BierAgent.swift"
 } >"$version_source"
 mkdir -p "$(dirname "$out")"
 swiftc -O -framework Foundation -framework Network -framework CryptoKit -o "$out" "$version_source"

@@ -565,6 +565,7 @@ cat >"$AGENT_PLIST.new" <<EOF
     <string>--agent</string><string>$xml_host</string>
     <string>--allowed-signers</string><string>$xml_home/.config/bier/allowed_signers</string>
     <string>--peer-signers</string><string>$xml_home/.local/share/bier/agent/peer_signers</string>
+    <string>--peer-key</string><string>$xml_home/.ssh/id_ed25519.pub</string>
     <string>--data-dir</string><string>$xml_data</string>
     <string>--port</string><string>53991</string>
     <string>--state-dir</string><string>$xml_home/.local/share/bier/agent/state</string>
