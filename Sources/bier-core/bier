@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.33.1
+BIER_VERSION=0.34.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -68,6 +68,24 @@ config_get() {
 	sed -nE "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$CONFIG_FILE" |
 		sed -E 's/[[:space:]]+$//; s/^"(.*)"$/\1/' |
 		tail -1
+}
+
+config_set_value() {
+	local key=$1 value=$2 tmp
+	mkdir -p "$(dirname "$CONFIG_FILE")"
+	[ -f "$CONFIG_FILE" ] || write_config
+	tmp=$(mktemp "$(dirname "$CONFIG_FILE")/config.XXXXXX")
+	awk -v key="$key" -v value="$value" '
+		BEGIN { written = 0 }
+		$0 ~ "^[[:space:]]*" key "[[:space:]]*=" {
+			if (!written) print key " = " value
+			written = 1
+			next
+		}
+		{ print }
+		END { if (!written) print key " = " value }
+	' "$CONFIG_FILE" >"$tmp"
+	mv "$tmp" "$CONFIG_FILE"
 }
 
 write_config() {
@@ -139,6 +157,13 @@ esac
 
 HOST=${BIER_HOST:-$(config_get host)}
 HOST=${HOST:-$(hostname -s)}
+
+INVENTORY_MODE=${BIER_INVENTORY:-$(config_get inventory)}
+INVENTORY_MODE=${INVENTORY_MODE:-automatic}
+case $INVENTORY_MODE in
+automatic | manual) ;;
+*) die "inventory must be 'automatic' or 'manual' in $CONFIG_FILE" ;;
+esac
 
 BREW_DIR=$DATA/Brewfiles
 
@@ -2752,7 +2777,11 @@ cmd_push() {
 # legacy private-server path until they add their first peer.
 cmd_sync() {
 	need_repo
-	cmd_dump
+	if [ "$INVENTORY_MODE" = automatic ]; then
+		cmd_dump
+	else
+		info "Inventory is manual; keeping the Brewfiles as written."
+	fi
 	vault_seal
 	if [ -x "$PEER_CLIENT" ] && [ -n "$(peer_list)" ]; then
 		sync_peers "${1:-$HOST: inventory updated}"
@@ -2884,6 +2913,14 @@ cmd_version() {
 # Shows which values are actually in effect, config and environment
 # combined.
 cmd_config() {
+	if [ $# -gt 0 ]; then
+		[ $# -eq 2 ] && [ "$1" = inventory ] || die "usage: bier config [inventory <automatic|manual>]"
+		case $2 in automatic | manual) ;; *) die "inventory must be 'automatic' or 'manual'" ;; esac
+		config_set_value inventory "$2"
+		INVENTORY_MODE=$2
+		info "inventory = $2"
+		return 0
+	fi
 	info "File:   $CONFIG_FILE"
 	info "root  = $ROOT   (the program)"
 	if [ -n "$DATA" ]; then
@@ -2892,6 +2929,7 @@ cmd_config() {
 		info "data  = not set up yet — $ROOT/install.sh"
 	fi
 	info "host  = $HOST"
+	info "inventory = $INVENTORY_MODE"
 	info ""
 	if [ -z "$DATA" ]; then
 		info "Without a data repository bier can neither record nor sync anything."
@@ -2940,6 +2978,8 @@ bier — keeps Brewfiles in sync across Macs
   bier peer upgrade <host> replace an agent with the latest signed release
   bier peer uninstall <host> stop and remove a Bier agent via SSH
   bier config             show which settings are in effect
+  bier config inventory manual|automatic
+                          choose whether sync records all installed apps
   bier state [--fetch]    machine-readable state (for the menu bar app)
   bier version            version, commit and the paths in effect
   bier help               this overview
@@ -2953,11 +2993,12 @@ Macs and therefore do not belong in the public program repository.
 install.sh sets up both.
 
 The config lives in ~/.config/bier/config and is created on first run.
-It knows "root", "data" and "host" (the device name).
+It knows "root", "data", "host" (the device name) and whether inventory
+collection is "automatic" or "manual".
 
 Environment: BIER_CONFIG (a different config file), BIER_ROOT, BIER_DATA,
-BIER_VAULT
-and BIER_HOST (override the matching config values for one invocation).
+BIER_VAULT, BIER_HOST and BIER_INVENTORY (override the matching config values
+for one invocation).
 EOF
 }
 
@@ -2992,7 +3033,7 @@ sync) cmd_sync "$@" ;;
 upgrade) cmd_upgrade "$@" ;;
 update) cmd_update ;;
 state) cmd_state "$@" ;;
-config) cmd_config ;;
+config) cmd_config "$@" ;;
 trust) cmd_trust "$@" ;;
 peer) cmd_peer "$@" ;;
 vault) cmd_vault "$@" ;;

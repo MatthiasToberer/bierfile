@@ -127,6 +127,12 @@ bier upgrade           # put a newer bier in place
 
 Most of the time you only need the first one.
 
+If you want to curate the shared inventory yourself instead of recording
+every installed application, use `bier config inventory manual`. In that
+mode `bier sync` leaves the Brewfiles exactly as written and only exchanges
+them and the encrypted vault. `bier dump` remains available when explicitly
+requested. Switch back with `bier config inventory automatic`.
+
 ## Files, not only packages
 
 Packages are half of what makes a Mac yours. The other half is the
@@ -167,6 +173,7 @@ carries an unencrypted note explaining how to get the files back with
 | --- | --- |
 | `bier dump [--adopt]` | record what this Mac has on top of `main` |
 | `bier sync [message]` | `dump`, commit, exchange directly with peers — the everyday command |
+| `bier config inventory manual` | synchronize only explicitly curated Brewfiles |
 | `bier upgrade [--force]` | install a newer release of `bier` itself |
 | `bier status` | check the system against the lists |
 | `bier list` | overview of all devices |

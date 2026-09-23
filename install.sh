@@ -8,6 +8,7 @@
 #   ~/bierfile/install.sh
 #
 #   ./install.sh --data git@your-server:bierfile.git   without asking
+#   ./install.sh --manual-inventory  keep Brewfiles explicitly curated
 #   ./install.sh --dry-run     says what it would do, changes nothing
 #   ./install.sh --uninstall   takes bier off this Mac
 #
@@ -35,6 +36,7 @@ UNINSTALL=no
 DRY=no
 DATA_ARG=""
 NO_INVENTORY=no
+MANUAL_INVENTORY=no
 prev=""
 for arg in "$@"; do
 	case $prev in
@@ -46,6 +48,7 @@ for arg in "$@"; do
 	--dry-run | -n) DRY=yes ;;
 	--data=*) DATA_ARG=${arg#--data=} ;;
 	--no-inventory) NO_INVENTORY=yes ;;
+	--manual-inventory) MANUAL_INVENTORY=yes ;;
 	esac
 	prev=$arg
 done
@@ -286,7 +289,13 @@ if [ "$DRY" = yes ]; then
 	else
 		ok "app        build $v and install it"
 	fi
-	ok "inventory  bier dump, then ask whether to push"
+	inventory=$(sed -nE 's/^[[:space:]]*inventory[[:space:]]*=[[:space:]]*(.*)$/\1/p' "$CONFIG" 2>/dev/null | tail -1)
+	[ "$MANUAL_INVENTORY" = no ] || inventory=manual
+	if [ "$inventory" = manual ]; then
+		ok "inventory  manual — keep Brewfiles exactly as written"
+	else
+		ok "inventory  automatic — record this Mac with bier dump"
+	fi
 	cat <<EOF
 
    Nothing has been changed. Leave out --dry-run to do it.
@@ -379,6 +388,7 @@ config_set() {
 say "Configuration"
 config_set root "$HERE"
 config_set host "$(hostname -s)"
+[ "$MANUAL_INVENTORY" = no ] || config_set inventory manual
 ok "$CONFIG points at $HERE"
 
 # --- Your own repository for the Brewfiles -----------------------------
@@ -554,12 +564,16 @@ if [ "$NO_INVENTORY" = yes ]; then
 	ok "unchanged — bier upgrade updates only the program"
 else
 	say "Recording this Mac's inventory"
-	"$HERE/Sources/bier-core/bier" dump
-
-	if ask "commit and push to the git server?"; then
-		"$HERE/Sources/bier-core/bier" sync "$(hostname -s): inventory recorded"
+	if [ "$(config_get inventory)" = manual ]; then
+		ok "manual — Brewfiles were left exactly as written"
 	else
-		ok "not pushed — later with 'bier sync'"
+		"$HERE/Sources/bier-core/bier" dump
+
+		if ask "commit and synchronise now?"; then
+			"$HERE/Sources/bier-core/bier" sync "$(hostname -s): inventory recorded"
+		else
+			ok "not synchronised — later with 'bier sync'"
+		fi
 	fi
 fi
 

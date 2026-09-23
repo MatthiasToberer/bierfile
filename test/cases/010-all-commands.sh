@@ -24,6 +24,18 @@ for c in help status state list diff config dump push sync; do
 	assert_ok bier mini "$c"
 done
 
+assert_ok bier mini config inventory manual
+assert_contains "$OUT" 'inventory = manual'
+before=$(cat "$(bf mini mini)")
+system mini <<'EOF'
+brew "wget"
+brew "firefox"
+EOF
+assert_ok bier mini sync
+assert_contains "$OUT" 'Inventory is manual; keeping the Brewfiles as written.'
+assert_eq "$before" "$(cat "$(bf mini mini)")" "manual sync must not record the full Homebrew inventory"
+assert_ok bier mini config inventory automatic
+
 # And with a completely empty main, the original crash.
 : >"$(bf mini main)"
 assert_ok bier mini dump

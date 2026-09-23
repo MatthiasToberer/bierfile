@@ -105,7 +105,7 @@ unset BIER_TEST_SSH
 BIER_TEST_SSH_DATA=/Users/bier/configured-data
 export BIER_TEST_SSH_DATA
 assert_ok bier mini peer install studio.local
-assert_contains "$OUT" '3/4  Installing verified Bier agent v0.33.1'
+assert_contains "$OUT" '3/4  Installing verified Bier agent v0.34.0'
 assert_contains "$OUT" '4/4  Checking whether the agent is reachable'
 assert_contains "$OUT" 'Checking the Bier data store on studio.local'
 assert_contains "$OUT" 'studio.local now has the Bier data from mini.'
