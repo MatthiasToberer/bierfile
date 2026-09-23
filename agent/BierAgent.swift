@@ -24,6 +24,10 @@ struct ProbeEnvelope: Decodable {
 	let signature: String
 }
 
+struct SnapshotBeginRequest: Decodable {
+	let id: String
+}
+
 func validHostName(_ value: String) -> Bool {
 	value.range(of: "^[A-Za-z0-9][A-Za-z0-9._-]*$", options: .regularExpression) != nil
 }
@@ -138,6 +142,7 @@ final class AgentServer {
 	private let signers: String
 	private let peerSigners: String?
 	private let dataDirectory: URL?
+	private let snapshotStore: DataSnapshotStore?
 	private let store: ReplayStore
 	private let listener: NWListener
 
@@ -150,6 +155,11 @@ final class AgentServer {
 		self.signers = signers
 		self.peerSigners = peerSigners
 		self.dataDirectory = dataDirectory
+		if let dataDirectory {
+			snapshotStore = try DataSnapshotStore(live: dataDirectory)
+		} else {
+			snapshotStore = nil
+		}
 		store = try ReplayStore(directory: stateDirectory)
 		listener = try NWListener(using: .tcp, on: endpointPort)
 		if bonjour {
@@ -241,6 +251,23 @@ final class AgentServer {
 				let body = try String(data: encoder.encode(collectDataManifest(at: dataDirectory)), encoding: .utf8) ?? "{}"
 				respond(connection, status: 200, body: body, contentType: "application/json")
 			} catch { respond(connection, status: 403, body: "peer request was rejected") }
+			return
+		}
+		if method == "POST" && path == "/v1/peer/snapshot/begin" {
+			guard let peerSigners, let snapshotStore, let peer = headers["x-bier-peer"], let time = headers["x-bier-time"],
+				let nonce = headers["x-bier-nonce"], let encoded = headers["x-bier-signature"], let signature = Data(base64Encoded: encoded),
+				let request = try? JSONDecoder().decode(SnapshotBeginRequest.self, from: body) else {
+				respond(connection, status: 400, body: "invalid snapshot request")
+				return
+			}
+			do {
+				try verifyPeer(method: method, path: path, peer: peer, signers: peerSigners, time: time, nonce: nonce, body: body, signature: signature)
+				if try store.record("peer-\(peer)-\(nonce)") { respond(connection, status: 409, body: "peer request was already processed"); return }
+				try snapshotStore.begin(request.id)
+				respond(connection, status: 200, body: "{\"status\":\"snapshot-ready\"}", contentType: "application/json")
+			} catch {
+				respond(connection, status: 403, body: "snapshot request was rejected")
+			}
 			return
 		}
 		guard method == "POST", path == "/v1/probe",

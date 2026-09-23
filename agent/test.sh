@@ -57,6 +57,20 @@ status=$(curl -sS --max-time 2 -o "$work/response" -w '%{http_code}' \
 [ "$status" = 200 ]
 grep -q 'Brewfiles/main' "$work/response" || { cat "$work/response" >&2; exit 1; }
 grep -q 'Safe/test.gpg' "$work/response" || { cat "$work/response" >&2; exit 1; }
+peer_nonce=agent-snapshot-begin-0123456789
+snapshot_id=snapshot-begin-0123456789
+printf '{"id":"%s"}' "$snapshot_id" >"$work/snapshot-begin.json"
+snapshot_hash=$(shasum -a 256 "$work/snapshot-begin.json" | awk '{print $1}')
+printf 'POST\n/v1/peer/snapshot/begin\nmini\n%s\n%s\n%s\n' "$peer_time" "$peer_nonce" "$snapshot_hash" >"$work/peer-request"
+rm -f "$work/peer-request.sig"
+ssh-keygen -q -Y sign -f "$work/controller" -n bier-peer "$work/peer-request"
+peer_signature=$(base64 <"$work/peer-request.sig" | tr -d '\n')
+status=$(curl -sS --max-time 2 -o "$work/response" -w '%{http_code}' \
+	-H 'Content-Type: application/json' -H "X-Bier-Peer: mini" -H "X-Bier-Time: $peer_time" -H "X-Bier-Nonce: $peer_nonce" \
+	-H "X-Bier-Signature: $peer_signature" --data-binary @"$work/snapshot-begin.json" http://127.0.0.1:53992/v1/peer/snapshot/begin)
+[ "$status" = 200 ]
+grep -q '"status":"snapshot-ready"' "$work/response"
+test -d "$work/.bier-staging/$snapshot_id"
 recipe=$(base64 <"$work/recipe.json" | tr -d '\n')
 signature=$(base64 <"$work/recipe.json.sig" | tr -d '\n')
 body=$(printf '{"recipe":"%s","signature":"%s"}' "$recipe" "$signature")
