@@ -10,6 +10,11 @@ everything is explained step by step in
 Tools (`xcode-select --install`). Details:
 [Installation](../start/installation.md).
 
+**Macs not always on the same network?** Set up
+[Tailscale](https://tailscale.com) on every Mac first and pair with
+Tailscale names — see
+[Syncing beyond the local network](../security/pairing.md#syncing-beyond-the-local-network-tailscale).
+
 ## The first Mac
 
 The one whose software should serve as the template:

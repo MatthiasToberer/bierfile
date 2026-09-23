@@ -53,7 +53,8 @@ network between two Macs this means:
 - someone who can intercept and alter traffic between two paired Macs
   could feed altered list content into a sync.
 
-Use bier on networks you trust, or through a VPN you control.
+Use bier on networks you trust, or through an encrypted network of your
+own such as [Tailscale](pairing.md#syncing-beyond-the-local-network-tailscale).
 
 ## A paired Mac is trusted
 

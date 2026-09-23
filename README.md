@@ -38,7 +38,9 @@ menu bar: **full** — all in order, **empty** — something to do here.
 ## Quick start
 
 Requires macOS, [Homebrew](https://brew.sh) and the Command Line Tools
-(`xcode-select --install`).
+(`xcode-select --install`). Macs sync over the local network; to sync
+them anywhere, set up [Tailscale](https://tailscale.com) on each Mac
+first — [how](docs/security/pairing.md#syncing-beyond-the-local-network-tailscale).
 
 ```sh
 # on the first Mac

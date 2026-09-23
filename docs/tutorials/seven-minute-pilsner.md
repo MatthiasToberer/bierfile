@@ -68,6 +68,12 @@ git config --global user.name "Your Name"
 git config --global user.email "you@example.com"
 ```
 
+**Optional: Tailscale.** Paired Macs sync over the local network. If
+yours should also sync when they are apart — a laptop on the road —
+install [Tailscale](https://tailscale.com) on every Mac **now**, before
+bier, and pair with Tailscale names later. How:
+[Syncing beyond the local network](../security/pairing.md#syncing-beyond-the-local-network-tailscale).
+
 **Nothing else.** No SSH login on the other Mac, no data server, no
 account anywhere. The installer creates a private peer identity for each
 Mac and a local repository for your lists. The lists reveal which

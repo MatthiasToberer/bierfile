@@ -63,9 +63,38 @@ The full list, including remote installation over SSH:
 ## Network
 
 The agent listens on **TCP port 53991** and announces itself via Bonjour
-as `_bier-agent._tcp`. Paired Macs find each other by their `.local`
-names, so they need to be on the same network — or on a network that
-resolves those names, such as a VPN you set up yourself.
+as `_bier-agent._tcp`. By default paired Macs find each other by their
+`.local` names, which only works while both are on the same local
+network.
+
+## Syncing beyond the local network: Tailscale
+
+If your Macs are not always on the same network — a laptop on the road,
+a desktop at home — put them on a [Tailscale](https://tailscale.com)
+network **before you install bier**. Tailscale connects your devices
+directly and privately wherever they are, and it encrypts the traffic
+between them, which also covers bier's unencrypted peer connection (see
+the [threat model](threat-model.md#transport)).
+
+1. Install Tailscale on every Mac, sign in with the same account and
+   turn on MagicDNS, so each Mac is reachable by its name.
+2. Pair using the Tailscale name instead of the `.local` name. On the
+   first Mac:
+
+   ```sh
+   bier peer pair macbook
+   ```
+
+3. The joining Mac remembers the first one by its `.local` name, which
+   Tailscale does not resolve. On the joining Mac, replace it:
+
+   ```sh
+   bier peer add mini
+   bier peer remove mini.local
+   ```
+
+`bier peer list` should then show only Tailscale names on both Macs, and
+`bier sync` works on any network.
 
 What the agent does and does not accept:
 [Threat model](threat-model.md).
