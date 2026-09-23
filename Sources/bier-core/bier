@@ -175,7 +175,7 @@ BREW_DIR=$DATA/Brewfiles
 # a different directory is a fact. Only the encrypted copies travel.
 VAULT=${BIER_VAULT:-$(config_get vault)}
 VAULT=${VAULT:-$HOME/.bierfilevault}
-VAULT_STATE=${XDG_STATE_HOME:-$HOME/.local/state}/bier
+STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/bier
 case $VAULT in
 "~/"*) VAULT=$HOME/${VAULT#\~/} ;;
 esac
@@ -1032,6 +1032,7 @@ cmd_peer_pair() {
 		info "Synchronising Bier data with $peer …"
 		"$PEER_CLIENT" sync "$peer" --local "$HOST" --identity "$PEER_IDENTITY" --data "$DATA" --port "$PEER_PORT" ||
 			die "paired successfully, but could not synchronise with $peer; try again with: bier peer sync $peer"
+		peer_sent_set "$peer"
 	fi
 }
 
@@ -1183,6 +1184,23 @@ cmd_peer_sync() {
 	info "Synchronising Bier data with $peer …"
 	"$PEER_CLIENT" sync "$peer" --local "$HOST" --identity "$PEER_IDENTITY" --data "$DATA" --port "$PEER_PORT" ||
 		die "could not synchronise Bier data with $peer"
+	peer_sent_set "$peer"
+}
+
+# Which commit each peer had after the last sync with it, so that status
+# can say what has not reached it yet without asking over the network.
+peer_sent_set() {
+	local list=$STATE_DIR/peers-sent next
+	mkdir -p "$STATE_DIR"
+	next=$(mktemp "$STATE_DIR/peers-sent.XXXXXX")
+	[ ! -f "$list" ] || awk -F '\t' -v peer="$1" '$1 != peer' "$list" >"$next"
+	printf '%s\t%s\n' "$1" "$(git -C "$DATA" rev-parse HEAD)" >>"$next"
+	mv "$next" "$list"
+}
+
+peer_sent_get() {
+	[ -f "$STATE_DIR/peers-sent" ] || return 0
+	awk -F '\t' -v peer="$1" '$1 == peer { head = $2 } END { if (head != "") print head }' "$STATE_DIR/peers-sent"
 }
 
 peer_seed() {
@@ -1998,6 +2016,80 @@ cmd_list() {
 	printf '%s' "$text"
 }
 
+# What the next "bier sync" would carry, as tab-separated lines. Only
+# what this Mac knows: nothing is asked over the network.
+#
+#   SEND        <peer> <n|never>  own commits that peer has not had yet
+#   UNCOMMITTED <path>            a Brewfile changed and not committed
+#   VAULT_OUT   <file>            changed here, goes out with the sync
+#   VAULT_IN    <file>            a peer delivered it, the sync opens it
+#   VAULT_BOTH  <file>            changed here and in the safe
+#   VAULT_LEFT  <path>            a .from-safe copy from a conflict
+sync_report() {
+	local peer sent n
+	if [ -x "$PEER_CLIENT" ]; then
+		for peer in $(peer_list); do
+			sent=$(peer_sent_get "$peer")
+			if [ -z "$sent" ]; then
+				printf 'SEND\t%s\tnever\n' "$peer"
+				continue
+			fi
+			# Commits that arrived from other Macs are theirs to hand on;
+			# counting them would name every peer behind after each
+			# delivery. bier's own commit messages start with the host.
+			n=$(git -C "$DATA" log --format=%s "$sent..HEAD" 2>/dev/null | grep -c "^$HOST:" || true)
+			[ "${n:-0}" = 0 ] || printf 'SEND\t%s\t%s\n' "$peer" "$n"
+		done
+	fi
+	git -C "$DATA" status --porcelain --untracked-files=all -- Brewfiles 2>/dev/null |
+		sed -E 's/^.{3}/UNCOMMITTED'$'\t''/'
+	vault_report
+}
+
+vault_report() {
+	local rel f enc cur base out in label target copy
+	{
+		[ ! -d "$VAULT" ] || find "$VAULT" -type f -print 2>/dev/null | sed "s#^$VAULT/##"
+		[ ! -d "$SAFE_DIR" ] || find "$SAFE_DIR" -name '*.gpg' -type f -print 2>/dev/null |
+			sed -e "s#^$SAFE_DIR/##" -e 's#\.gpg$##'
+	} | sort -u | while IFS= read -r rel; do
+		[ -n "$rel" ] && [ "$rel" != README.txt ] || continue
+		vault_wanted "$rel" || continue
+		f=$VAULT/$rel
+		enc=$SAFE_DIR/$rel.gpg
+		out=no
+		in=no
+		if [ -f "$f" ]; then
+			cur=$(vault_hash "$f")
+			base=$(vault_base_get "$rel")
+			if [ ! -f "$enc" ] || { [ -n "$base" ] && [ "$cur" != "$base" ]; }; then
+				out=yes
+			fi
+		fi
+		if [ -f "$enc" ]; then
+			if [ ! -f "$f" ]; then
+				in=yes
+			else
+				base=$(vault_base_get_safe "$rel")
+				[ -z "$base" ] || [ "$(shasum -a 256 "$enc" | cut -d' ' -f1)" = "$base" ] || in=yes
+			fi
+		fi
+		if vault_is_meta "$rel"; then label=$rel; else label=$(vault_target "$rel"); fi
+		if [ "$out" = yes ] && [ "$in" = yes ]; then
+			printf 'VAULT_BOTH\t%s\n' "$label"
+		elif [ "$out" = yes ]; then
+			printf 'VAULT_OUT\t%s\n' "$label"
+		elif [ "$in" = yes ]; then
+			printf 'VAULT_IN\t%s\n' "$label"
+		fi
+		vault_is_meta "$rel" && continue
+		target=$(vault_target "$rel")
+		for copy in "$target.from-safe" "$target.from-safe."*; do
+			[ ! -e "$copy" ] || printf 'VAULT_LEFT\t%s\n' "$copy"
+		done
+	done
+}
+
 cmd_status() {
 	need_brew
 	need_repo
@@ -2010,6 +2102,21 @@ cmd_status() {
 		printf '%s\n' "$trouble" | sed -n 's/^GONE\t/  ! link is missing: /p'
 		printf '%s\n' "$trouble" | sed -n 's/^LOOSE\t/  ! no longer a link: /p'
 		info "    bier vault --restore puts the links back."
+		info ""
+	fi
+
+	local pending
+	pending=$(sync_report)
+	if [ -n "$pending" ]; then
+		info "Sync (bier sync):"
+		printf '%s\n' "$pending" | awk -F '\t' '
+			$1 == "SEND" && $3 == "never" { printf "  -> to %-14s never synced\n", $2; next }
+			$1 == "SEND"        { printf "  -> to %-14s %s commit(s) from here not sent yet\n", $2, $3; next }
+			$1 == "UNCOMMITTED" { printf "  ^  Brewfiles        %s changed, not committed\n", $2; next }
+			$1 == "VAULT_OUT"   { printf "  ^  vault            %s changed here\n", $2; next }
+			$1 == "VAULT_IN"    { printf "  v  vault            %s newer in the safe\n", $2; next }
+			$1 == "VAULT_BOTH"  { printf "  !  vault            %s changed here and in the safe\n", $2; next }
+			$1 == "VAULT_LEFT"  { printf "  !  vault            %s left from a conflict: merge it, then delete it\n", $2; next }'
 		info ""
 	fi
 
@@ -2044,7 +2151,11 @@ cmd_status() {
 		info "$HOST: Brewfile matches the system."
 	else
 		if [ -n "$fresh" ]; then
-			info "Installed on $HOST but not recorded (bier dump):"
+			if [ "$INVENTORY_MODE" = automatic ]; then
+				info "Installed on $HOST but not recorded (bier sync):"
+			else
+				info "Installed on $HOST, not in your Brewfiles (bier sync --record):"
+			fi
 			printf '%s\n' "$fresh" | sed 's/^/  + /'
 		fi
 		if [ -n "$stale" ]; then
@@ -2737,7 +2848,7 @@ vault_seal() {
 			safe=$(vault_hash "$old")
 			rm -f "$old"
 			if [ "$cur" = "$safe" ]; then
-				vault_base_set "$rel" "$cur"
+				vault_base_set "$rel" "$cur" "$enc"
 				continue
 			fi
 			# Only a change made here is sealed. A paired Mac can put a
@@ -2750,7 +2861,7 @@ vault_seal() {
 		fi
 		mkdir -p "$(dirname "$enc")"
 		vault_encrypt "$f" "$pass" "$enc"
-		vault_base_set "$rel" "$cur"
+		vault_base_set "$rel" "$cur" "$enc"
 	done
 }
 
@@ -2847,34 +2958,44 @@ vault_take() {
 		fi
 	fi
 	rm -f "$plain"
-	vault_base_set "$rel" "$safe"
+	vault_base_set "$rel" "$safe" "$SAFE_DIR/$rel.gpg"
 }
 
 # What this Mac and the safe last agreed on, per vault file, lives in
-# $VAULT_STATE. A salted hash rather than the plain one: a short secret
+# $STATE_DIR. A salted hash rather than the plain one: a short secret
 # in a file would otherwise be easy to guess back from it. Neither the
 # salt nor the list travels.
 vault_hash() {
-	local salt=$VAULT_STATE/vault-salt
+	local salt=$STATE_DIR/vault-salt
 	if [ ! -s "$salt" ]; then
-		mkdir -p "$VAULT_STATE"
-		chmod 700 "$VAULT_STATE"
+		mkdir -p "$STATE_DIR"
+		chmod 700 "$STATE_DIR"
 		(umask 077 && head -c 32 /dev/urandom | xxd -p | tr -d '\n' >"$salt")
 	fi
 	{ cat "$salt"; cat "$1"; } | shasum -a 256 | cut -d' ' -f1
 }
 
 vault_base_get() {
-	[ -f "$VAULT_STATE/vault-base" ] || return 0
-	awk -F '\t' -v rel="$1" '$2 == rel { hash = $1 } END { if (hash != "") print hash }' "$VAULT_STATE/vault-base"
+	[ -f "$STATE_DIR/vault-base" ] || return 0
+	awk -F '\t' -v rel="$1" '$2 == rel { hash = $1 } END { if (hash != "") print hash }' "$STATE_DIR/vault-base"
 }
 
+# The encrypted file as it was at that moment. A different one in the
+# safe means a peer delivered something that the next sync opens --
+# which can be told without the passphrase.
+vault_base_get_safe() {
+	[ -f "$STATE_DIR/vault-base" ] || return 0
+	awk -F '\t' -v rel="$1" '$2 == rel { hash = $3 } END { if (hash != "") print hash }' "$STATE_DIR/vault-base"
+}
+
+# vault_base_set <rel> <plain hash> [<encrypted file>]
 vault_base_set() {
-	local list=$VAULT_STATE/vault-base next
-	mkdir -p "$VAULT_STATE"
-	next=$(mktemp "$VAULT_STATE/vault-base.XXXXXX")
+	local list=$STATE_DIR/vault-base next enc=""
+	[ -z "${3:-}" ] || [ ! -f "$3" ] || enc=$(shasum -a 256 "$3" | cut -d' ' -f1)
+	mkdir -p "$STATE_DIR"
+	next=$(mktemp "$STATE_DIR/vault-base.XXXXXX")
 	[ ! -f "$list" ] || awk -F '\t' -v rel="$1" '$2 != rel' "$list" >"$next"
-	printf '%s\t%s\n' "$2" "$1" >>"$next"
+	printf '%s\t%s\t%s\n' "$2" "$1" "$enc" >>"$next"
 	mv "$next" "$list"
 }
 
@@ -3010,8 +3131,13 @@ vault_reseal() {
 			die "the remembered passphrase does not open $(basename "$f") -- nothing changed"
 		vault_encrypt "$plain" "$new" "$staging/$(basename "$f")"
 	done
+	local rel plain_hash
 	for f in "$staging"/*.gpg; do
 		mv "$f" "$SAFE_DIR/$(basename "$f")"
+		# Same content under a new key: not news for status.
+		rel=$(basename "$f" .gpg)
+		plain_hash=$(vault_base_get "$rel")
+		[ -z "$plain_hash" ] || vault_base_set "$rel" "$plain_hash" "$SAFE_DIR/$rel.gpg"
 	done
 	rmdir "$staging" 2>/dev/null || true
 }
@@ -3276,6 +3402,7 @@ cmd_update() {
 #   DROPPED brew "nmap"    taken out of main, kept by another Mac, still here
 #   GONE   brew "wget"     recorded but not installed here
 #   GIT    <ahead> <behind> <dirty>
+#   SEND, UNCOMMITTED, VAULT_*    what the next sync carries, see sync_report
 #
 # What other devices have more or less of is deliberately absent: it says
 # nothing about whether there is anything to do on *this* Mac, and in the
@@ -3327,8 +3454,10 @@ cmd_state() {
 	# In manual mode what is installed and not listed is a choice, not
 	# something left to do. It is still reported, just no longer as drift:
 	# the glass could never have filled, since sync records nothing then.
-	local undone=$add
+	local undone=$add pending
 	[ "$INVENTORY_MODE" = automatic ] || undone=$stale$dropped
+	pending=$(sync_report)
+	undone=$undone$pending
 	if [ -z "$undone" ] && [ -z "$gone" ] &&
 		[ "$ahead" = "0" ] && [ "$behind" = "0" ] && [ "$dirty" = "0" ]; then
 		printf 'STATE\tok\n'
@@ -3352,6 +3481,7 @@ cmd_state() {
 	if [ -n "$dropped" ]; then printf '%s\n' "$dropped" | sed 's/^/DROPPED'$'\t''/'; fi
 	if [ -n "$gone" ]; then printf '%s\n' "$gone" | sed 's/^/GONE'$'\t''/'; fi
 	printf 'GIT\t%s\t%s\t%s\n' "$ahead" "$behind" "$dirty"
+	[ -z "$pending" ] || printf '%s\n' "$pending"
 	[ -z "$offline" ] || printf 'OFFLINE\t%s\n' "${offline# }"
 }
 

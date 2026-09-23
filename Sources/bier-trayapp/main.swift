@@ -23,6 +23,9 @@ struct BierState {
 	var fresh: [String] = [] // installed here, not recorded yet
 	var stale: [String] = [] // removed elsewhere, still installed here
 	var dropped: [String] = [] // taken out of main, another Mac keeps it
+	var pending: [String] = [] // what the next sync carries, ready to show
+	var vaultIn: [String] = [] // delivered by a peer, not opened here yet
+	var vaultBoth: [String] = [] // changed here and in the safe
 	var gone: [String] = [] // recorded, but not installed here
 	var version = "" // the script's version, for the out-of-date hint
 	var release = "" // a newer release on the code server, empty if none
@@ -35,7 +38,7 @@ struct BierState {
 	var error: String?
 
 	var hasAnything: Bool {
-		!fresh.isEmpty || !stale.isEmpty || !dropped.isEmpty || !gone.isEmpty
+		!fresh.isEmpty || !stale.isEmpty || !dropped.isEmpty || !gone.isEmpty || !pending.isEmpty
 			|| ahead > 0 || behind > 0 || dirty
 	}
 }
@@ -153,6 +156,25 @@ enum Bier {
 			case "NEW": if f.count > 1 { s.fresh.append(f[1]) }
 			case "STALE": if f.count > 1 { s.stale.append(f[1]) }
 			case "DROPPED": if f.count > 1 { s.dropped.append(f[1]) }
+			case "SEND":
+				if f.count > 2 {
+					s.pending.append(f[2] == "never"
+						? "\(f[1]): never synced"
+						: "\(f[1]): \(f[2]) commit(s) not sent yet")
+				}
+			case "UNCOMMITTED": if f.count > 1 { s.pending.append("\(f[1]) changed") }
+			case "VAULT_OUT": if f.count > 1 { s.pending.append("\(f[1]) changed here") }
+			case "VAULT_IN":
+				if f.count > 1 {
+					s.vaultIn.append(f[1])
+					s.pending.append("\(f[1]) newer in the safe")
+				}
+			case "VAULT_BOTH":
+				if f.count > 1 {
+					s.vaultBoth.append(f[1])
+					s.pending.append("\(f[1]) changed here and in the safe")
+				}
+			case "VAULT_LEFT": if f.count > 1 { s.pending.append("\(f[1]) left from a conflict") }
 			case "GONE": if f.count > 1 { s.gone.append(f[1]) }
 			case "GIT":
 				if f.count > 3 {
@@ -244,8 +266,20 @@ class Controller: NSObject, NSMenuDelegate {
 					: "There are differences")
 				self.endBusy()
 				self.build(self.statusItem.menu!)
+				self.openDeliveredVault(s)
 			}
 		}
+	}
+
+	/// What a peer delivered to the safe, with nothing changed here, is
+	/// put in place without asking: there is nothing to decide. Tried
+	/// once per delivery, so a locked keychain does not turn into a loop.
+	private var openedFor: [String] = []
+
+	private func openDeliveredVault(_ s: BierState) {
+		guard !s.vaultIn.isEmpty, s.vaultBoth.isEmpty, s.vaultIn != openedFor else { return }
+		openedFor = s.vaultIn
+		runQuietly(["vault", "open"], "Opening the vault")
 	}
 
 	// MARK: Foam while something is running
@@ -416,6 +450,20 @@ class Controller: NSObject, NSMenuDelegate {
 				listing(state.gone, into: menu)
 				menu.addItem(action("Install missing … (in Terminal)",
 				                    #selector(doInstall)))
+				menu.addItem(.separator())
+			}
+
+			// What the next sync carries: Brewfiles and vault alike.
+			if !state.pending.isEmpty {
+				menu.addItem(header("Waiting for a sync"))
+				for line in state.pending.prefix(8) {
+					menu.addItem(detail(line.replacingOccurrences(of: NSHomeDirectory(), with: "~")))
+				}
+				if state.pending.count > 8 {
+					menu.addItem(detail("and \(state.pending.count - 8) more"))
+				}
+				menu.addItem(action("Pour a round: record and push",
+				                    #selector(doSync)))
 				menu.addItem(.separator())
 			}
 

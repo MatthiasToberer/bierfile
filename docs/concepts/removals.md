@@ -25,7 +25,7 @@ flowchart LR
   next `bier sync` records it.
 
 ```
-Installed on mini but not recorded (bier dump):
+Installed on mini but not recorded (bier sync):
   + brew "htop"
 Removed on another device, still here (bier prune):
   ~ brew "ghidra"

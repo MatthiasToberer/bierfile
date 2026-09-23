@@ -25,6 +25,11 @@ A click lists what differs, grouped by what it costs:
 | removed elsewhere, still here | **Remove … (in Terminal)** — runs `bier prune` |
 | no longer in main, still here | **Remove … (in Terminal)** — runs `bier prune`; **Keep on this Mac … (in Terminal)** — runs `bier take` |
 | recorded but not installed | **Install missing … (in Terminal)** — runs `bier install` |
+| waiting for a sync | **Pour a round: record and push** — lists what `bier sync` would carry: commits a peer has not had, vault files changed here or delivered by a peer |
+
+A vault file a peer delivered, with nothing changed here, is put in
+place by BierMenu on its own at the next check. Changed on both sides,
+it waits for you.
 
 Recording is quick and safe, so it happens in the background. Removing
 and installing take time, may ask for your password and can fail — they
