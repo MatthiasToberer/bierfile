@@ -2,8 +2,9 @@
 
 # Two Macs: installing something new
 
-The everyday case. Two Macs, `mini` and `macbook`, already set up and
-paired. You install a tool on one and decide it belongs on both.
+The everyday case in automatic mode, the default. Two Macs, `mini` and
+`macbook`, already set up and paired. You install a tool on one and
+decide it belongs on both.
 
 ## On mini
 

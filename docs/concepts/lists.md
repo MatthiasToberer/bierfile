@@ -11,9 +11,31 @@ Brewfiles/<host>     what this one Mac has on top
 ```
 
 Both are valid Brewfiles and can be handed straight to
-`brew bundle install --file`. You create `main` once, from the inventory
-of your template Mac, with [`bier main`](../reference/commands/main.md).
-After that, every Mac writes only its own list of extras.
+`brew bundle install --file`. **`main` is the main inventory** — the
+software every Mac is supposed to have. You create it once, from the
+inventory of your template Mac, with
+[`bier main`](../reference/commands/main.md).
+
+## Automatic and manual
+
+How the lists are kept up to date depends on the inventory mode.
+
+**Automatic — the default, and the recommended way.** You install
+software as usual; `bier sync` records it. What a Mac has beyond `main`
+goes into that Mac's own list, so nothing you try out on one Mac is
+forced onto the others. When something belongs everywhere, you move it
+into `main` with [`bier take`](../using/take.md). `main` changes only
+when you decide so.
+
+**Manual — for curating by hand.** `bier sync` records nothing. `main`
+and the device lists contain exactly what you write into them, and
+`bier install` brings that onto each Mac. Useful for a
+[trial run](../start/trial-run.md) or if you want every entry to be a
+deliberate choice.
+
+Switch with `bier config inventory automatic|manual` — see
+[Configuration](../reference/configuration.md#inventory-mode). The rest
+of this documentation assumes automatic mode.
 
 ## The rule
 

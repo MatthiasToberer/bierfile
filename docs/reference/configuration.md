@@ -25,10 +25,15 @@ inventory = automatic                # or manual
 
 ### Inventory mode
 
-- **automatic** — `bier sync` records everything installed that is not on
-  a list yet.
-- **manual** — the Brewfiles stay exactly as you write them. Useful for a
+- **automatic** (default, recommended) — `bier sync` records everything
+  installed that is not in `main` yet into this Mac's own list. `main`
+  stays the main inventory and changes only through `bier main` and
+  `bier take`.
+- **manual** — `bier sync` records nothing; `main` and the device lists
+  stay exactly as you write them. Useful for a
   [trial run](../start/trial-run.md) or for curating by hand.
+
+See [Automatic and manual](../concepts/lists.md#automatic-and-manual).
 
 Switch with `bier config inventory manual|automatic`, or install with
 `install.sh --manual-inventory`.

@@ -112,8 +112,13 @@ bier main
 ```
 
 This declares this Mac's inventory the shared baseline. Every program
-installed here ends up in `Brewfiles/main`, and from now on that applies
-to **all** of your Macs. Have a look:
+installed here ends up in `Brewfiles/main` — the main inventory, which
+from now on applies to **all** of your Macs.
+
+bier runs in **automatic** mode unless you chose otherwise: from here
+on, everything you install is recorded by `bier sync`, and anything
+beyond `main` goes into this Mac's own list until you decide it belongs
+everywhere ([step 4](#step-4-when-the-macs-should-differ)). Have a look:
 
 ```sh
 bier list

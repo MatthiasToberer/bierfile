@@ -52,7 +52,7 @@ Running `install.sh` again is harmless: it replaces what is there.
 | Option | Effect |
 | --- | --- |
 | `--data <folder>` | keep the lists somewhere other than `~/bierdata` |
-| `--manual-inventory` | record only what you write into the Brewfiles yourself — see [Trial run](trial-run.md) |
+| `--manual-inventory` | manual mode: record only what you write into the Brewfiles yourself. The default is automatic — see [Automatic and manual](../concepts/lists.md#automatic-and-manual) |
 | `--dry-run` | say what would happen, change nothing |
 | `--uninstall` | take bier off this Mac |
 | `--yes` | answer every question with yes (used by `bier upgrade`) |

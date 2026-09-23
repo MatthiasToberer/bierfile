@@ -3,8 +3,9 @@
 # Trial run
 
 Before bier gets your whole inventory, try it with one harmless package
-and one harmless file. Manual inventory mode keeps the Brewfiles exactly
-as you write them — nothing is recorded behind your back.
+and one harmless file. For the trial you install in **manual** mode, which
+keeps the Brewfiles exactly as you write them. Normal use is automatic
+mode — the last step switches to it.
 
 ## On both Macs
 
