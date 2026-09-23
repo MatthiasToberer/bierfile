@@ -127,6 +127,7 @@ RELEASE_TRUST_URL=${BIER_RELEASE_TRUST_URL:-https://bier.uber.space/bier/allowed
 # machines may be contacted is not an inventory change to be synchronised.
 PEERS_FILE=$(dirname "$CONFIG_FILE")/peers
 PEER_PORT=${BIER_PEER_PORT:-53991}
+PEER_CLIENT=${BIER_PEER_CLIENT:-$ROOT/cli/build/bier-peer}
 
 DATA=${BIER_DATA:-$(config_get data)}
 if [ -z "$DATA" ] && [ -d "$ROOT/Brewfiles" ]; then
@@ -879,6 +880,12 @@ cmd_peer_hello() {
 	[ $# -eq 1 ] && peer_name_ok "$peer" ||
 		die 'usage: bier peer hello <host>'
 	[ -r "$key" ] || die "no SSH identity at $key"
+	if [ -x "$PEER_CLIENT" ]; then
+		info "Checking authenticated Bier Agent access to $peer …"
+		"$PEER_CLIENT" hello "$peer" --local "$HOST" --identity "$key" --port "$PEER_PORT" ||
+			die "the Bier Agent on $peer did not accept this Mac"
+		return 0
+	fi
 	body=$(tmpfile)
 	response=$(tmpfile)
 	info "Checking authenticated Bier Agent access to $peer …"
@@ -999,6 +1006,12 @@ cmd_peer_compare() {
 	local peer=${1:-} remote local_files remote_files paths path differences=0
 	[ $# -eq 1 ] && peer_name_ok "$peer" || die 'usage: bier peer compare <host>'
 	need_repo
+	if [ -x "$PEER_CLIENT" ]; then
+		info "Reading and verifying Bier data from $peer …"
+		"$PEER_CLIENT" compare "$peer" --local "$HOST" --identity "$HOME/.ssh/id_ed25519" --data "$DATA" --port "$PEER_PORT" ||
+			die "could not compare Bier data with $peer"
+		return 0
+	fi
 	remote=$BIER_TMP/peer-data
 	info "Reading and verifying Bier data from $peer …"
 	peer_fetch_snapshot "$peer" "$remote" || die "could not read a verified Bier data snapshot from $peer"
@@ -1024,7 +1037,14 @@ cmd_peer_compare() {
 }
 
 peer_seed() {
-	local peer=$1 mode=$2 body response remote snapshot files begin
+	local peer=$1 mode=$2 command=seed body response remote snapshot files begin
+	[ "$mode" != if-empty ] || command=seed-if-empty
+	if [ -x "$PEER_CLIENT" ]; then
+		info "Checking and sending Bier data to $peer …"
+		"$PEER_CLIENT" "$command" "$peer" --local "$HOST" --identity "$HOME/.ssh/id_ed25519" --data "$DATA" --port "$PEER_PORT" ||
+			die "the Bier data snapshot was not accepted by $peer"
+		return 0
+	fi
 	body=$(tmpfile)
 	response=$(tmpfile)
 	info "1/3  Checking the Bier data store on $peer …"

@@ -11,7 +11,7 @@ private enum CLIError: LocalizedError {
 	var errorDescription: String? {
 		switch self {
 		case .usage:
-			return "usage: bier-peer <hello|seed|compare> <host> --local <name> --identity <path> [--data <path>] [--port <port>]"
+			return "usage: bier-peer <hello|seed|seed-if-empty|compare> <host> --local <name> --identity <path> [--data <path>] [--port <port>]"
 		case .invalidHost:
 			return "the peer host or port is invalid"
 		case .missingData:
@@ -86,9 +86,14 @@ private enum BierPeerCLI {
 			let response = try JSONDecoder().decode(HelloResponse.self, from: try await transport.send(method: "GET", path: "/v1/peer/hello", body: Data()))
 			guard response.status == "peer-ok" else { throw CLIError.invalidResponse }
 			print("Bier Agent on \(options.displayHost) accepted \(options.localHost) as a peer.")
-		case "seed":
+		case "seed", "seed-if-empty":
 			guard let data = options.data else { throw CLIError.missingData }
-			try await snapshots.seedIfEmpty(from: data)
+			do {
+				try await snapshots.seedIfEmpty(from: data)
+			} catch PeerSnapshotClientError.peerNotEmpty where options.command == "seed-if-empty" {
+				print("Existing peer data was kept unchanged.")
+				return
+			}
 			print("Done. \(options.displayHost) now has the Bier data from \(options.localHost).")
 		case "compare":
 			guard let data = options.data else { throw CLIError.missingData }

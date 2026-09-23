@@ -148,9 +148,14 @@ grep -q 'Bier Agent on 127.0.0.1 accepted mini as a peer.' "$work/hello-swift.lo
 "$peer_cli" seed 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --data "$work/source" --port 53992 >"$work/client.log"
 grep -q 'Done. 127.0.0.1 now has the Bier data from mini.' "$work/client.log"
 test "$(cat "$work/target/Brewfiles/main")" = 'brew "jq"'
+printf 'brew "tree"\n' >"$work/source/Brewfiles/main"
+"$peer_cli" seed-if-empty 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --data "$work/source" --port 53992 >"$work/client-existing.log"
+grep -q 'Existing peer data was kept unchanged.' "$work/client-existing.log"
+test "$(cat "$work/target/Brewfiles/main")" = 'brew "jq"'
+printf 'brew "jq"\n' >"$work/source/Brewfiles/main"
 "$peer_cli" compare 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --data "$work/source" --port 53992 >"$work/compare-swift.log"
 grep -q 'Bier data is identical on mini and 127.0.0.1.' "$work/compare-swift.log"
-BIER_ROOT="$here/.." BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 HOME="$work/home" \
+BIER_ROOT="$here/.." BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 BIER_PEER_CLIENT="$peer_cli" HOME="$work/home" \
 	"$here/../bin/bier" peer compare 127.0.0.1 >"$work/compare.log"
 grep -q 'Bier data is identical on mini and 127.0.0.1.' "$work/compare.log"
 printf '%s\n' 'Swift Bier agent tests passed.'

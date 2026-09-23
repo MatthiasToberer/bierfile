@@ -295,6 +295,12 @@ EOF
 	exit 0
 fi
 
+# --- native peer client -----------------------------------------------
+
+say "Building the Swift peer client"
+"$HERE/cli/build.sh" >/dev/null
+ok "built"
+
 # --- bier onto the PATH ------------------------------------------------
 
 say "Making bier available"
