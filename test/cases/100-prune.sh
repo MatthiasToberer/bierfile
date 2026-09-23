@@ -24,7 +24,7 @@ EOF
 answer y
 bier mini prune
 out=$OUT
-assert_contains "$out" "Removed elsewhere, still installed here"
+assert_contains "$out" "Removed elsewhere or taken out of main, still installed here"
 
 assert_file_lacks "$WORK/sys-mini" "sikarugir" "the cask has to be gone"
 assert_file_lacks "$WORK/sys-mini" "sikarugir-app/sikarugir" "the tap has to be gone too"

@@ -7,7 +7,8 @@ bier state [--fetch]
 ```
 
 Machine-readable state for BierMenu: tab-separated lines such as
-`STATE ok|drift`, `NEW`, `STALE`, `GONE`, `VERSION`, and — with
+`STATE ok|drift`, `INVENTORY automatic|manual`, `NEW`, `STALE`,
+`DROPPED`, `GONE`, `VERSION`, and — with
 `--fetch`, which also looks for new releases — `NEWCODE <version>` or
 `OFFLINE`.
 

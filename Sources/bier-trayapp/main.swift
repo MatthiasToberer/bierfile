@@ -22,6 +22,7 @@ struct BierState {
 	var manual = false // inventory = manual: unrecorded software is a choice
 	var fresh: [String] = [] // installed here, not recorded yet
 	var stale: [String] = [] // removed elsewhere, still installed here
+	var dropped: [String] = [] // taken out of main, another Mac keeps it
 	var gone: [String] = [] // recorded, but not installed here
 	var version = "" // the script's version, for the out-of-date hint
 	var release = "" // a newer release on the code server, empty if none
@@ -34,7 +35,7 @@ struct BierState {
 	var error: String?
 
 	var hasAnything: Bool {
-		!fresh.isEmpty || !stale.isEmpty || !gone.isEmpty
+		!fresh.isEmpty || !stale.isEmpty || !dropped.isEmpty || !gone.isEmpty
 			|| ahead > 0 || behind > 0 || dirty
 	}
 }
@@ -151,6 +152,7 @@ enum Bier {
 				if f.count > 2 { s.commit = "\(f[1]) of \(f[2])" }
 			case "NEW": if f.count > 1 { s.fresh.append(f[1]) }
 			case "STALE": if f.count > 1 { s.stale.append(f[1]) }
+			case "DROPPED": if f.count > 1 { s.dropped.append(f[1]) }
 			case "GONE": if f.count > 1 { s.gone.append(f[1]) }
 			case "GIT":
 				if f.count > 3 {
@@ -395,6 +397,19 @@ class Controller: NSObject, NSMenuDelegate {
 				menu.addItem(.separator())
 			}
 
+			// Taken out of main while another Mac keeps it. Whether it
+			// stays here is a question only the person at this Mac can
+			// answer, so both ways are offered.
+			if !state.dropped.isEmpty {
+				menu.addItem(header("\(state.dropped.count) no longer in main, still here"))
+				listing(state.dropped, into: menu)
+				menu.addItem(action("Remove … (in Terminal)",
+				                    #selector(doPrune)))
+				menu.addItem(action("Keep on this Mac … (in Terminal)",
+				                    #selector(doTake)))
+				menu.addItem(.separator())
+			}
+
 			// Recorded but not installed.
 			if !state.gone.isEmpty {
 				menu.addItem(header("\(state.gone.count) recorded but not installed"))
@@ -523,6 +538,8 @@ class Controller: NSObject, NSMenuDelegate {
 	@objc private func doInstall() { Bier.runInTerminal(["install"]) }
 
 	@objc private func doPrune() { Bier.runInTerminal(["prune"]) }
+
+	@objc private func doTake() { Bier.runInTerminal(["take"]) }
 
 	@objc private func doUpgrade() { Bier.runInTerminal(["upgrade"]) }
 

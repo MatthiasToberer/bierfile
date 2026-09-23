@@ -207,6 +207,7 @@ need_brew() {
 # person who cloned the program has no write access here anyway.
 need_repo() {
 	if [ -n "$DATA" ] && [ -d "$DATA/.git" ]; then
+		repair_repo
 		return 0
 	fi
 	if [ -z "$DATA" ] || [ "$DATA" = "$ROOT" ]; then
@@ -221,6 +222,27 @@ need_repo() {
 
      Does \"data\" in $CONFIG_FILE point at the right path?
      Set it up again:  $ROOT/install.sh"
+}
+
+# A data repository adopted from a paired Mac by an older bier was
+# cloned from a temporary bundle: no branch, and that bundle, long
+# deleted, as its origin. Commits then died with "no current branch",
+# and the menu bar called the inventory server unreachable.
+repair_repo() {
+	local origin
+	if ! git -C "$DATA" symbolic-ref -q HEAD >/dev/null 2>&1 &&
+		[ ! -d "$DATA/.git/rebase-merge" ] && [ ! -d "$DATA/.git/rebase-apply" ]; then
+		git -C "$DATA" checkout --quiet -B main &&
+			info "The data repository was on no branch; it is on main again." >&2
+	fi
+	origin=$(git -C "$DATA" remote get-url origin 2>/dev/null || true)
+	case $origin in
+	*.bundle)
+		git -C "$DATA" remote remove origin &&
+			info "Removed a leftover origin ($origin) from the data repository." >&2
+		;;
+	esac
+	return 0
 }
 
 # For commands that work on the code rather than on the data.
@@ -461,13 +483,23 @@ was_tracked() {
 	git -C "$DATA" log --format=%h -1 -S"$1" -- Brewfiles/ 2>/dev/null | grep -q .
 }
 
-# Splits "installed but not recorded" into NEW and STALE.
+# Was it in main once, and is not any more? Taken out of main while
+# another Mac keeps it on its own list: a Mac that had it only through
+# main has to decide whether it stays, rather than be told to record it.
+was_in_main() {
+	! entries "$MAIN_FILE" | grep -qxF "$1" &&
+		git -C "$DATA" log --format=%h -1 -S"$1" -- Brewfiles/main 2>/dev/null | grep -q .
+}
+
+# Splits "installed but not recorded" into NEW, STALE and DROPPED.
 classify_add() {
 	local entry
 	printf '%s\n' "$1" | while IFS= read -r entry; do
 		[ -n "$entry" ] || continue
 		if was_tracked "$entry"; then
 			printf 'STALE\t%s\n' "$entry"
+		elif was_in_main "$entry"; then
+			printf 'DROPPED\t%s\n' "$entry"
 		else
 			printf 'NEW\t%s\n' "$entry"
 		fi
@@ -477,19 +509,25 @@ classify_add() {
 # Removes an entry from every Brewfile — including the comment line that
 # "brew bundle dump" writes above it.
 strip_entry() {
-	local kind=$1 name=$2 rx f tmp
-	rx="^[[:space:]]*$(rx_quote "$kind")[[:space:]]+\"([^\"]*/)?$(rx_quote "$name")\""
+	local f
 	for f in "$BREW_DIR"/*; do
 		[ -f "$f" ] || continue
-		tmp=$(tmpfile)
-		awk -v re="$rx" '
-			/^[[:space:]]*#/ { pending = pending $0 "\n"; next }
-			$0 ~ re          { pending = ""; next }
-			                 { printf "%s", pending; pending = ""; print }
-			END              { printf "%s", pending }
-		' "$f" >"$tmp"
-		mv "$tmp" "$f"
+		strip_entry_in "$f" "$1" "$2"
 	done
+}
+
+strip_entry_in() {
+	local f=$1 kind=$2 name=$3 rx tmp
+	[ -f "$f" ] || return 0
+	rx="^[[:space:]]*$(rx_quote "$kind")[[:space:]]+\"([^\"]*/)?$(rx_quote "$name")\""
+	tmp=$(tmpfile)
+	awk -v re="$rx" '
+		/^[[:space:]]*#/ { pending = pending $0 "\n"; next }
+		$0 ~ re          { pending = ""; next }
+		                 { printf "%s", pending; pending = ""; print }
+		END              { printf "%s", pending }
+	' "$f" >"$tmp"
+	mv "$tmp" "$f"
 }
 
 # Works out how a package was installed. The order is the crux: a short
@@ -1545,7 +1583,7 @@ cmd_dump() {
 	# entries stay out and thus remain visible as "removed elsewhere".
 	local stale_now base
 	stale_now=$(classify_add "$(comm -23 <(entries "$tmp") <(own_entries) || true)" |
-		sed -n 's/^STALE'$'\t''//p')
+		sed -nE 's/^(STALE|DROPPED)'$'\t''//p')
 
 	base=$(tmpfile)
 	cat "$MAIN_FILE" >"$base" 2>/dev/null || true
@@ -1583,7 +1621,7 @@ cmd_dump() {
 	if [ -n "$stale_now" ]; then
 		if [ "$adopt" = no ]; then
 			info ""
-			info "Not adopted, because removed elsewhere (bier prune):"
+			info "Not adopted, because removed elsewhere or taken out of main (bier prune):"
 			printf '%s\n' "$stale_now" | sed 's/^/  ~ /'
 			info "To keep it here: bier dump --adopt"
 		else
@@ -1663,32 +1701,203 @@ cmd_main() {
 	fi
 }
 
-# Uninstalls packages, takes them out of every Brewfile and pushes that.
+# Uninstalls packages here and decides, per package, which lists lose it.
 # Removal becomes an action instead of something guessed from a dump.
+#
+#   --everywhere          out of main and every Mac's list
+#   --from-main [--keep a,b]
+#                         out of main; only the Macs named keep it, on
+#                         their own lists
+#   --here                out of this Mac's list only (not if in main)
+#
+# Without one of them it asks. Nobody at the keyboard to ask means it
+# stops before changing anything: taking something off every Mac is not
+# a default to fall back on.
 cmd_uninstall() {
 	need_brew
 	need_repo
-	[ $# -ge 1 ] || die "usage: bier uninstall <package> [...]"
+	local mode="" keep="" keep_given=no
+	while [ $# -gt 0 ]; do
+		case $1 in
+		--everywhere) mode=everywhere ;;
+		--from-main) mode=main ;;
+		--here) mode=here ;;
+		--keep)
+			[ $# -ge 2 ] || die "--keep needs the Macs that keep it: --keep mini,macbook"
+			keep=$(printf '%s' "$2" | tr ',' ' ')
+			keep_given=yes
+			shift
+			;;
+		--) shift; break ;;
+		-*) die "unknown option: $1" ;;
+		*) break ;;
+		esac
+		shift
+	done
+	[ $# -ge 1 ] || die "usage: bier uninstall [--everywhere | --from-main [--keep <mac>,…] | --here] <package>…"
+	[ "$keep_given" = no ] || [ "$mode" = main ] || die "--keep only goes with --from-main"
 
-	local name kind done_any=no
+	local name kind key line how hosts h keepers done_any=no removed=""
+	# With the answer given up front, every package is checked before the
+	# first one is touched.
+	if [ -n "$mode" ]; then
+		for name in "$@"; do
+			kind=$(kind_of "$name")
+			[ -n "$kind" ] || die "$name is neither installed here nor in the Brewfiles"
+			case $mode in
+			here) ! in_main "$kind" "$name" ||
+				die "$name is in main, so every Mac is meant to have it -- take it out of main instead:
+     bier uninstall --from-main [--keep <mac>,…] $name" ;;
+			main) in_main "$kind" "$name" || die "$name is not in main" ;;
+			esac
+		done
+	fi
 	for name in "$@"; do
 		kind=$(kind_of "$name")
 		[ -n "$kind" ] || die "$name is neither installed here nor in the Brewfiles"
-		info "$name ($kind)"
-		if uninstall_one "$kind" "$name"; then
-			strip_entry "$kind" "$name"
-			done_any=yes
-		else
-			info "  stays in the Brewfiles as long as it is installed"
+		key=$(printf '%s "%s"' "$kind" "$name")
+		line=$(find_line "$key" || true)
+		[ -n "$line" ] || line=$key
+		hosts=$(listed_in "$kind" "$name")
+
+		how=$mode
+		keepers=$keep
+		if [ -z "$how" ]; then
+			uninstall_ask "$key" "$hosts"
+			how=$UNINSTALL_HOW
+			keepers=$UNINSTALL_KEEP
 		fi
+		for h in $keepers; do
+			case $h in
+			main | "" | [!A-Za-z0-9]* | *[!A-Za-z0-9._-]*) die "not a Mac name: $h" ;;
+			esac
+		done
+		case $how in
+		cancel)
+			info "$name: nothing changed"
+			continue
+			;;
+		here)
+			in_main "$kind" "$name" &&
+				die "$name is in main, so every Mac is meant to have it -- take it out of main instead:
+     bier uninstall --from-main [--keep <mac>,…] $name"
+			;;
+		main)
+			in_main "$kind" "$name" || die "$name is not in main"
+			;;
+		esac
+
+		info "$name ($kind)"
+		# A Mac that keeps it keeps it installed, this one included.
+		if [ "$how" = main ] && printf '%s\n' $keepers | grep -qxF "$HOST"; then
+			info "  stays installed here"
+		elif ! uninstall_one "$kind" "$name"; then
+			info "  stays in the Brewfiles as long as it is installed"
+			continue
+		fi
+
+		case $how in
+		everywhere) strip_entry "$kind" "$name" ;;
+		here) strip_entry_in "$BREW_DIR/$HOST" "$kind" "$name" ;;
+		main)
+			strip_entry "$kind" "$name"
+			for h in $keepers; do
+				printf '%s\n' "$line" >>"$BREW_DIR/$h"
+			done
+			;;
+		esac
+		done_any=yes
+		removed="$removed $name"
 	done
 
 	if [ "$done_any" = no ]; then
 		info "Nothing removed."
 		return 0
 	fi
-	cmd_dump
-	publish "$HOST: removed $*"
+	record_after_removal
+	publish "$HOST: removed${removed}"
+}
+
+# The lists that name the entry, main first.
+listed_in() {
+	local kind=$1 name=$2 rx f
+	rx="^[[:space:]]*$(rx_quote "$kind")[[:space:]]+\"([^\"]*/)?$(rx_quote "$name")\""
+	[ ! -f "$MAIN_FILE" ] || ! grep -qE "$rx" "$MAIN_FILE" || echo main
+	for f in "$BREW_DIR"/*; do
+		[ -f "$f" ] && [ "$f" != "$MAIN_FILE" ] || continue
+		! grep -qE "$rx" "$f" || basename "$f"
+	done
+}
+
+in_main() {
+	listed_in "$1" "$2" | grep -qx main
+}
+
+# Asks what an uninstall should take off. Sets UNINSTALL_HOW (everywhere,
+# main, here or cancel) and UNINSTALL_KEEP.
+uninstall_ask() {
+	local key=$1 hosts=$2 answer others h picks i
+	UNINSTALL_HOW=cancel
+	UNINSTALL_KEEP=""
+	info ""
+	if [ -n "$hosts" ]; then
+		info "$key is listed in: $(printf '%s ' $hosts | sed 's/ $//' | sed 's/ /, /g')"
+	else
+		info "$key is on no list."
+	fi
+	info "What should happen?"
+	info "  [a] everywhere     uninstall here, take it off every list;"
+	info "                     the other Macs offer bier prune"
+	if printf '%s\n' $hosts | grep -qx main; then
+		info "  [m] out of main    uninstall here, take it out of main;"
+		info "                     you pick the Macs that keep it"
+	else
+		info "  [h] only here      uninstall here, take it off this Mac's list;"
+		info "                     the other lists stay"
+	fi
+	info "  [c] cancel"
+	printf 'Choice: '
+	read -r answer ||
+		die "nobody to ask. Say what to do:
+     bier uninstall --everywhere | --from-main [--keep <mac>,…] | --here <package>"
+	case $answer in
+	a | A) UNINSTALL_HOW=everywhere ;;
+	m | M)
+		printf '%s\n' $hosts | grep -qx main || return 0
+		UNINSTALL_HOW=main
+		others=$( { host_list; printf '%s\n' $hosts; } | grep -vx main | awk '!seen[$0]++')
+		info "Which Macs keep it? Numbers or names, separated by spaces; empty for none."
+		i=0
+		for h in $others; do
+			i=$((i + 1))
+			printf '  %2s  %s\n' "$i" "$h"
+		done
+		printf 'Keep on: '
+		read -r picks || picks=""
+		for h in $picks; do
+			case $h in
+			*[!0-9]*) UNINSTALL_KEEP="$UNINSTALL_KEEP $h" ;;
+			*)
+				h=$(printf '%s\n' $others | sed -n "${h}p")
+				[ -n "$h" ] || die "no Mac with that number"
+				UNINSTALL_KEEP="$UNINSTALL_KEEP $h"
+				;;
+			esac
+		done
+		;;
+	h | H)
+		printf '%s\n' $hosts | grep -qx main && return 0
+		UNINSTALL_HOW=here
+		;;
+	esac
+	return 0
+}
+
+# After a removal the device list here has to match what is installed.
+# In manual mode the lists are written by hand, and a dump would pour
+# the whole inventory into them.
+record_after_removal() {
+	[ "$INVENTORY_MODE" != automatic ] || cmd_dump
 }
 
 # Removes what is still installed here but was deleted on another device.
@@ -1702,13 +1911,13 @@ cmd_prune() {
 	brew bundle dump --force --file "$tmp" >/dev/null
 
 	stale=$(classify_add "$(comm -23 <(entries "$tmp") <(own_entries) || true)" |
-		sed -n 's/^STALE'$'\t''//p')
+		sed -nE 's/^(STALE|DROPPED)'$'\t''//p')
 	if [ -z "$stale" ]; then
 		info "Nothing stale: nothing is installed here that was removed elsewhere."
 		return 0
 	fi
 
-	info "Removed elsewhere, still installed here:"
+	info "Removed elsewhere or taken out of main, still installed here:"
 	printf '%s\n' "$stale" | sed 's/^/  /'
 	printf 'Uninstall? [y/N] '
 	read -r answer || answer=""
@@ -1735,12 +1944,12 @@ cmd_prune() {
 		uninstall_one "$kind" "$name" || info "  failed, stays for now"
 	done
 
-	cmd_dump
+	record_after_removal
 	publish "$HOST: removed packages deleted elsewhere"
 
 	# Whatever survived the uninstall has to stay visible.
 	local rest
-	rest=$(cmd_state | sed -n 's/^STALE'$'\t''//p' || true)
+	rest=$(cmd_state | sed -nE 's/^(STALE|DROPPED)'$'\t''//p' || true)
 	if [ -n "$rest" ]; then
 		info ""
 		info "Not removed and still reported:"
@@ -1825,9 +2034,11 @@ cmd_status() {
 	drift_add=$(comm -23 <(entries "$tmp") <(own_entries) || true)
 	drift_gone=$(comm -13 <(entries "$tmp") <(own_entries) || true)
 
-	local fresh stale
-	fresh=$(classify_add "$drift_add" | sed -n 's/^NEW'$'\t''//p')
-	stale=$(classify_add "$drift_add" | sed -n 's/^STALE'$'\t''//p')
+	local fresh stale dropped classes
+	classes=$(classify_add "$drift_add")
+	fresh=$(printf '%s\n' "$classes" | sed -n 's/^NEW'$'\t''//p')
+	stale=$(printf '%s\n' "$classes" | sed -n 's/^STALE'$'\t''//p')
+	dropped=$(printf '%s\n' "$classes" | sed -n 's/^DROPPED'$'\t''//p')
 
 	if [ -z "$drift_add" ] && [ -z "$drift_gone" ]; then
 		info "$HOST: Brewfile matches the system."
@@ -1839,6 +2050,10 @@ cmd_status() {
 		if [ -n "$stale" ]; then
 			info "Removed on another device, still here (bier prune):"
 			printf '%s\n' "$stale" | sed 's/^/  ~ /'
+		fi
+		if [ -n "$dropped" ]; then
+			info "No longer in main, still here (bier prune, or bier take to keep it):"
+			printf '%s\n' "$dropped" | sed 's/^/  ~ /'
 		fi
 		if [ -n "$drift_gone" ]; then
 			info "Recorded but not installed on $HOST (bier install):"
@@ -3058,6 +3273,7 @@ cmd_update() {
 #   COMMIT <short> <date> for the info menu
 #   NEW    brew "htop"     installed here, not recorded yet
 #   STALE  brew "ghidra"   removed elsewhere, still installed here
+#   DROPPED brew "nmap"    taken out of main, kept by another Mac, still here
 #   GONE   brew "wget"     recorded but not installed here
 #   GIT    <ahead> <behind> <dirty>
 #
@@ -3088,11 +3304,13 @@ cmd_state() {
 	tmp=$(tmpfile)
 	brew bundle dump --force --file "$tmp" >/dev/null 2>&1
 
-	local add fresh stale gone
+	local add fresh stale dropped gone classes
 	add=$(comm -23 <(entries "$tmp") <(own_entries) || true)
 	gone=$(comm -13 <(entries "$tmp") <(own_entries) || true)
-	fresh=$(classify_add "$add" | sed -n 's/^NEW'$'\t''//p')
-	stale=$(classify_add "$add" | sed -n 's/^STALE'$'\t''//p')
+	classes=$(classify_add "$add")
+	fresh=$(printf '%s\n' "$classes" | sed -n 's/^NEW'$'\t''//p')
+	stale=$(printf '%s\n' "$classes" | sed -n 's/^STALE'$'\t''//p')
+	dropped=$(printf '%s\n' "$classes" | sed -n 's/^DROPPED'$'\t''//p')
 
 	local counts ahead behind dirty
 	counts=$(git -C "$DATA" rev-list --left-right --count HEAD...@{u} 2>/dev/null || echo "0	0")
@@ -3110,7 +3328,7 @@ cmd_state() {
 	# something left to do. It is still reported, just no longer as drift:
 	# the glass could never have filled, since sync records nothing then.
 	local undone=$add
-	[ "$INVENTORY_MODE" = automatic ] || undone=$stale
+	[ "$INVENTORY_MODE" = automatic ] || undone=$stale$dropped
 	if [ -z "$undone" ] && [ -z "$gone" ] &&
 		[ "$ahead" = "0" ] && [ "$behind" = "0" ] && [ "$dirty" = "0" ]; then
 		printf 'STATE\tok\n'
@@ -3131,6 +3349,7 @@ cmd_state() {
 		"$(git -C "$ROOT" log -1 --format=%cs 2>/dev/null || echo '?')"
 	if [ -n "$fresh" ]; then printf '%s\n' "$fresh" | sed 's/^/NEW'$'\t''/'; fi
 	if [ -n "$stale" ]; then printf '%s\n' "$stale" | sed 's/^/STALE'$'\t''/'; fi
+	if [ -n "$dropped" ]; then printf '%s\n' "$dropped" | sed 's/^/DROPPED'$'\t''/'; fi
 	if [ -n "$gone" ]; then printf '%s\n' "$gone" | sed 's/^/GONE'$'\t''/'; fi
 	printf 'GIT\t%s\t%s\t%s\n' "$ahead" "$behind" "$dirty"
 	[ -z "$offline" ] || printf 'OFFLINE\t%s\n' "${offline# }"
@@ -3204,8 +3423,9 @@ bier — keeps Brewfiles in sync across Macs
   bier status             check the system against the Brewfiles
   bier diff [host...]     compare the inventory with other devices
   bier install            install main + this device's own Brewfile
-  bier uninstall <pkg>    uninstall, drop from every Brewfile, push
-  bier prune              remove what was deleted on another device
+  bier uninstall <pkg>    uninstall here; asks: off every list, only out of
+                          main (some Macs keep it), or only off this Mac's
+  bier prune              remove what was deleted elsewhere or left main
   bier list               overview of all devices
   bier take               pull entries from other devices into main or here
   bier take --from-main   hand an entry from main to a single device

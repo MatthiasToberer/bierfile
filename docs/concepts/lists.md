@@ -66,8 +66,9 @@ what Homebrew reports as installed. Three kinds of difference come out:
 
 | Kind | Meaning | Fixed by |
 | --- | --- | --- |
-| installed but not recorded | new here | `bier sync` |
+| installed but not recorded | new here | `bier sync` (manual mode: `bier sync --record`) |
 | removed elsewhere, still here | another Mac removed it | `bier prune` |
+| no longer in main, still here | taken out of main, another Mac keeps it | `bier prune`, or `bier take` to keep it |
 | recorded but not installed | on this Mac's lists, missing here | `bier install` |
 
 What *other* Macs have on top is deliberately not a difference: it says

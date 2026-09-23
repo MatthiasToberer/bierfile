@@ -6,8 +6,9 @@
 bier prune
 ```
 
-Uninstalls what is still installed here but was removed on another Mac.
-Lists those entries first and asks.
+Uninstalls what is still installed here but was removed on another Mac,
+or taken out of `main` while another Mac keeps it. Lists those entries
+first and asks.
 
 Taps are removed last, because Homebrew refuses to untap while something
 from the tap is still installed. Whatever could not be removed is listed

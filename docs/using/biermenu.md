@@ -23,6 +23,7 @@ A click lists what differs, grouped by what it costs:
 | installed but not recorded | **Pour a round: record and push** — runs `bier sync` in the background |
 | installed, not in your Brewfiles (manual inventory) | **Record them and sync** — runs `bier sync --record`; until then the glass stays full |
 | removed elsewhere, still here | **Remove … (in Terminal)** — runs `bier prune` |
+| no longer in main, still here | **Remove … (in Terminal)** — runs `bier prune`; **Keep on this Mac … (in Terminal)** — runs `bier take` |
 | recorded but not installed | **Install missing … (in Terminal)** — runs `bier install` |
 
 Recording is quick and safe, so it happens in the background. Removing

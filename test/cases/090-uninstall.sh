@@ -16,7 +16,7 @@ tap "sikarugir-app/sikarugir"
 cask "sikarugir-app/sikarugir/sikarugir"
 EOF
 
-bier mini uninstall sikarugir sikarugir-app/sikarugir
+bier mini uninstall --everywhere sikarugir sikarugir-app/sikarugir
 out=$OUT
 assert_contains "$out" "sikarugir (cask)" "the short name has to hit the cask, not the tap"
 assert_contains "$out" "sikarugir-app/sikarugir (tap)"

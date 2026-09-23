@@ -82,6 +82,16 @@ struct GitRepositoryTest {
 		try importer.commitImport(descriptor.id)
 		guard GitRepository(root: transferTarget).exists else { throw GitRepositoryError.notRepository }
 
+		// An adopted repository is on a branch and has no leftover origin.
+		try expect(try output(["symbolic-ref", "HEAD"], at: transferTarget) == "refs/heads/main", "an adopted repository must be on main")
+		try expect(try output(["remote"], at: transferTarget).isEmpty, "the temporary bundle must not stay behind as origin")
+		// And one adopted by an older version is put right on the next exchange.
+		try git(["checkout", "--quiet", "--detach"], at: transferTarget)
+		try git(["remote", "add", "origin", "/private/tmp/gone/import.bundle"], at: transferTarget)
+		try GitRepository(root: transferTarget).importBundle(from: bundle)
+		try expect(try output(["symbolic-ref", "HEAD"], at: transferTarget) == "refs/heads/main", "a detached repository must be put back on main")
+		try expect(try output(["remote"], at: transferTarget).isEmpty, "a leftover bundle origin must go")
+
 		try installedMacs(in: work)
 		print("Swift Bier Git repository tests passed.")
 	}

@@ -66,6 +66,7 @@ public struct GitRepository {
 			try adopt(bundle: bundle)
 			return
 		}
+		try repair()
 		try fetch(bundle)
 		defer { _ = try? run(["update-ref", "-d", "refs/remotes/bier/incoming"], in: root) }
 		// A repository that holds nothing but the installer's scaffolding
@@ -86,6 +87,7 @@ public struct GitRepository {
 	public func reconcileBundle(from bundle: URL) throws {
 		guard exists else { throw GitRepositoryError.notRepository }
 		try requireClean()
+		try repair()
 		try fetch(bundle)
 		defer { _ = try? run(["update-ref", "-d", "refs/remotes/bier/incoming"], in: root) }
 		if isAncestor("HEAD", of: "refs/remotes/bier/incoming") {
@@ -160,7 +162,27 @@ public struct GitRepository {
 		let current = try collectDataManifest(at: root)
 		guard incoming.entries == current.entries else { throw GitRepositoryError.dataMismatch }
 		try manager.moveItem(at: checkout.appendingPathComponent(".git"), to: root.appendingPathComponent(".git"))
+		try repair()
 	}
+
+	// A clone of a bundle holding only HEAD ends up without a branch, and
+	// with the bundle, deleted a moment later, as its origin. bier then
+	// found "no current branch", and the menu bar reported the inventory
+	// server as unreachable. Repositories adopted that way are put right
+	// the next time history is exchanged.
+	private func repair() throws {
+		if (try? run(["symbolic-ref", "-q", "HEAD"], in: root)) == nil,
+			!manager.fileExists(atPath: root.appendingPathComponent(".git/rebase-merge").path),
+			!manager.fileExists(atPath: root.appendingPathComponent(".git/rebase-apply").path) {
+			try run(["checkout", "--quiet", "-B", "main"], in: root)
+		}
+		if let origin = try? run(["remote", "get-url", "origin"], in: root),
+			origin.hasSuffix(".bundle") {
+			try run(["remote", "remove", "origin"], in: root)
+		}
+	}
+
+	private var manager: FileManager { .default }
 
 	private func requireClean() throws {
 		let status = try run(["status", "--porcelain", "--untracked-files=all"], in: root)

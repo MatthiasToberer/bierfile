@@ -8,7 +8,7 @@ A program has to go from every Mac. Three Macs — `mini`, `macbook`,
 ## On any Mac
 
 ```sh
-bier uninstall handbrake
+bier uninstall --everywhere handbrake
 ```
 
 ```
@@ -43,7 +43,7 @@ bier prune
 ```
 
 ```
-Removed elsewhere, still installed here:
+Removed elsewhere or taken out of main, still installed here:
   cask "handbrake"
 Uninstall? [y/N] y
 ```
