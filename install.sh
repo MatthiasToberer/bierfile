@@ -1,13 +1,13 @@
 #!/bin/sh
 #
 # Sets up bier and BierMenu on this Mac. The program repository has to be
-# cloned already; this script takes care of the repository for the
-# Brewfiles — it asks for the address and clones it:
+# cloned already; this script creates the local repository for the Brewfiles:
 #
 #   git clone git@github.com:MatthiasToberer/bierfile.git ~/bierfile
 #   ~/bierfile/install.sh
 #
-#   ./install.sh --data git@your-server:bierfile.git   without asking
+#   ./install.sh --data ~/my-bierdata  use another local folder
+#   ./install.sh --data git@your-server:bierfile.git   optional legacy remote
 #   ./install.sh --manual-inventory  keep Brewfiles explicitly curated
 #   ./install.sh --dry-run     says what it would do, changes nothing
 #   ./install.sh --uninstall   takes bier off this Mac
@@ -290,7 +290,7 @@ if [ "$DRY" = yes ]; then
 	if [ -n "$d" ] && [ -d "$d/.git" ]; then
 		ok "data       $d — a git repository, kept"
 	else
-		ok "data       would ask where your Brewfiles live"
+		ok "data       would create the local repository $HOME/bierdata"
 	fi
 	if "$HERE/Sources/bier-core/bier" vault 2>/dev/null | grep -q 'remembered on this Mac'; then
 		ok "vault      create the folder; the passphrase is already known"
@@ -406,13 +406,13 @@ config_set host "$(hostname -s)"
 [ "$MANUAL_INVENTORY" = no ] || config_set inventory manual
 ok "$CONFIG points at $HERE"
 
-# --- Your own repository for the Brewfiles -----------------------------
+# --- Your local repository for the Brewfiles ---------------------------
 #
 # The inventory reveals which software is on the Macs. It therefore does
-# not belong in the public program repository but in one of your own, a
-# private one — which you also have write access to.
+# not belong in the public program repository. Each Mac keeps a local Git
+# repository and exchanges its history directly with paired peers.
 
-say "Repository for your Brewfiles"
+say "Local repository for your Brewfiles"
 
 DATA=$(config_get data)
 
@@ -442,32 +442,14 @@ if [ -n "$DATA_ARG" ]; then
 	esac
 fi
 
-if [ -z "$DATA" ] || [ ! -d "$DATA/.git" ]; then
-	if [ "$YES" = yes ] || [ ! -t 0 ]; then
-		die "The repository for your Brewfiles is missing.
-     Create an empty, private git repository and run:
-       $0 --data git@your-server:bierfile.git"
-	fi
-	printf '
-   Your Brewfiles need a private repository of their own — they reveal
-   which software is on your Macs, and you cannot write to the program
-   repository anyway.
-
-   If you do not have one yet, create it: an empty repository on GitHub
-   (set it to private), on a server, or on a NAS.
-
-   Address (e.g. git@github.com:yourname/bierfile.git), empty = cancel
-   > '
-	read -r answer || answer=""
-	[ -n "$answer" ] || die "without a data repository bier can do nothing"
+if [ -z "$DATA" ]; then
 	DATA=$HOME/bierdata
-	if [ -d "$DATA/.git" ]; then
-		ok "$DATA is already there"
-	else
-		git clone -q "$answer" "$DATA" ||
-			die "cloning $answer failed"
-		ok "cloned to $DATA"
-	fi
+	git init -q --initial-branch=main "$DATA" || die "could not create $DATA"
+	ok "created $DATA"
+elif [ ! -d "$DATA/.git" ]; then
+	mkdir -p "$DATA"
+	git init -q --initial-branch=main "$DATA" || die "could not initialise $DATA"
+	ok "initialised $DATA"
 fi
 
 config_set data "$DATA"
