@@ -30,7 +30,8 @@ bier peer pair macbook.local
 Both Macs now know each other's public key and address. If the joining
 Mac's data repository is still untouched, the other Mac copies its lists,
 vault and complete history over. Existing data is never overwritten by
-this step.
+this step. Pairing then syncs once, so a Mac that already recorded its
+own inventory keeps it and shares one history with the other afterwards.
 
 From then on, `bier sync` exchanges with every paired Mac.
 

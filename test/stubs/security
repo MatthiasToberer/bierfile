@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Keychain stand-in, so no test reads or writes the real login keychain.
+#
+#   BIER_TEST_KEYCHAIN=locked   the item exists, but the secret is locked away
+#   otherwise                   the keychain holds whatever this stub stored
+
+set -euo pipefail
+
+store=${WORK:?WORK is not set}/keychain
+case ${1:-} in
+find-generic-password)
+	if [ "${BIER_TEST_KEYCHAIN:-}" = locked ]; then
+		case " $* " in
+		*" -w "*)
+			echo 'security: SecKeychainSearchCopyNext: User interaction is not allowed.' >&2
+			exit 36
+			;;
+		esac
+		exit 0
+	fi
+	if [ ! -f "$store" ]; then
+		echo 'security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.' >&2
+		exit 44
+	fi
+	case " $* " in
+	*" -w "*) cat "$store"; echo ;;
+	esac
+	;;
+add-generic-password)
+	while [ $# -gt 0 ]; do
+		[ "$1" != -w ] || { printf '%s' "$2" >"$store"; break; }
+		shift
+	done
+	;;
+delete-generic-password)
+	[ -f "$store" ] || exit 44
+	rm -f "$store"
+	;;
+*) exit 1 ;;
+esac

@@ -13,7 +13,7 @@ Manages the Macs this one exchanges data with.
 | Command | Effect |
 | --- | --- |
 | `offer [--address <own-host>]` | open pairing for ten minutes and show a one-time code |
-| `pair <host> [--address <own-host>]` | pair with a Mac that shows a code; copies data to it if it is untouched |
+| `pair <host> [--address <own-host>]` | pair with a Mac that shows a code, then sync; copies data to it if it is untouched |
 | `list` | Macs this one exchanges with |
 | `remove <host>` | forget a Mac |
 | `hello <host>` | check that the other agent accepts this Mac |

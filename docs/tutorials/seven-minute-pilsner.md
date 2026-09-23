@@ -169,8 +169,9 @@ bier peer pair macbook.local
 ```
 
 Both Macs store each other's public key and address, and the code is
-spent. Because the second installation is still untouched, bier also
-copies the first Mac's lists and their complete history. (How that is
+spent. bier then synchronises the two: an untouched second installation
+receives the first Mac's lists and their complete history, and one that
+already recorded its own inventory keeps it and gets the rest. (How that is
 protected: [Pairing](../security/pairing.md).)
 
 > [!CAUTION]

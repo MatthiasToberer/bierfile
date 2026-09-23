@@ -230,4 +230,49 @@ test "$(git -C "$work/source" rev-parse HEAD)" = "$(git -C "$work/target" rev-pa
 BIER_ROOT="$root" BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 BIER_PEER_CLIENT="$peer_cli" BIER_PEER_IDENTITY="$work/home/.ssh/id_ed25519" HOME="$work/home" \
 	"$root/Sources/bier-core/bier" peer compare 127.0.0.1 >"$work/compare.log"
 grep -q 'Bier data is identical on mini and 127.0.0.1.' "$work/compare.log"
+
+# Two Macs installed apart: each has its own scaffolding commit and its
+# own recorded inventory. Pairing alone has to leave them in sync.
+kill "$pid"
+wait "$pid" 2>/dev/null || true
+pid=
+install_data() {
+	mkdir -p "$1/Brewfiles"
+	cp "$root/.gitattributes" "$1/.gitattributes"
+	: >"$1/Brewfiles/main"
+	git init -q --initial-branch=main "$1"
+	git -C "$1" config user.email test@example.com
+	git -C "$1" config user.name Test
+	git -C "$1" add -A
+	git -C "$1" commit -q --date "$2" -m 'bier: scaffolding'
+	printf '%s\n' "$4" >"$1/Brewfiles/$3"
+	git -C "$1" add -A
+	git -C "$1" commit -qm "$3: inventory recorded"
+}
+install_data "$work/installed-mini" 2026-01-01T00:00:00Z mini 'brew "jq"'
+install_data "$work/installed-target" 2026-02-01T00:00:00Z target 'brew "tree"'
+"$agent" serve --agent target --allowed-signers "$work/allowed_signers" --peer-signers "$work/peer_signers" --peer-key "$work/controller.pub" --peers-file "$work/remote-peers" --data-dir "$work/installed-target" --state-dir "$work/state-installed" --port 53992 --bonjour false >"$work/agent-installed.log" 2>&1 &
+pid=$!
+for attempt in 1 2 3 4 5; do
+	if curl -fsS --max-time 1 http://127.0.0.1:53992/v1/health 2>/dev/null | grep -q '"status":"ok"'; then break; fi
+	sleep 1
+done
+printf '{"version":1,"code":"%s","expires":%s,"attempts":0}\n' "$pair_code" "$pair_expiry" >"$work/state-installed/pairing-offer.json"
+BIER_ROOT="$root" BIER_DATA="$work/installed-mini" BIER_HOST=mini BIER_PEER_PORT=53992 BIER_PEER_CLIENT="$peer_cli" BIER_PEER_IDENTITY="$work/home/.ssh/id_ed25519" BIER_PAIR_CODE="$pair_code" HOME="$work/home" \
+	"$root/Sources/bier-core/bier" peer pair 127.0.0.1 >"$work/pair-installed.log" 2>&1 || { cat "$work/pair-installed.log" >&2; exit 1; }
+grep -q 'Existing peer data was kept unchanged.' "$work/pair-installed.log"
+grep -q 'Bier data is in sync on mini and 127.0.0.1.' "$work/pair-installed.log"
+test "$(git -C "$work/installed-mini" rev-parse HEAD)" = "$(git -C "$work/installed-target" rev-parse HEAD)"
+test "$(cat "$work/installed-target/Brewfiles/mini")" = 'brew "jq"'
+test "$(cat "$work/installed-mini/Brewfiles/target")" = 'brew "tree"'
+
+# A refusal says why instead of "PeerClientError error 0".
+printf 'brew "local"\n' >"$work/installed-target/Brewfiles/target"
+printf 'brew "wget"\n' >>"$work/installed-mini/Brewfiles/mini"
+git -C "$work/installed-mini" commit -qam 'mini changed'
+if "$peer_cli" sync 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --data "$work/installed-mini" --port 53992 >"$work/refused.log" 2>&1; then
+	echo 'a peer with uncommitted changes accepted history' >&2
+	exit 1
+fi
+grep -q 'HTTP 403: repository import was rejected: the Bier data repository has uncommitted changes' "$work/refused.log" || { cat "$work/refused.log" >&2; exit 1; }
 printf '%s\n' 'Swift Bier agent tests passed.'

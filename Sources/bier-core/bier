@@ -988,6 +988,11 @@ cmd_peer_pair() {
 		info "Checking whether the new peer needs this Mac's Bier data …"
 		"$PEER_CLIENT" seed-if-pristine "$peer" --local "$HOST" --identity "$PEER_IDENTITY" --data "$DATA" --port "$PEER_PORT" ||
 			die "paired successfully, but could not initialise the peer data"
+		# A peer that already recorded its own inventory keeps it, and
+		# only a sync makes the two histories one.
+		info "Synchronising Bier data with $peer …"
+		"$PEER_CLIENT" sync "$peer" --local "$HOST" --identity "$PEER_IDENTITY" --data "$DATA" --port "$PEER_PORT" ||
+			die "paired successfully, but could not synchronise with $peer; try again with: bier peer sync $peer"
 	fi
 }
 
@@ -2043,7 +2048,41 @@ vault_pass() {
 		printf '%s' "$BIER_VAULT_PASS"
 		return 0
 	fi
-	security find-generic-password -s bier-vault -a vault -w 2>/dev/null || true
+	local pass status why
+	why=$(tmpfile)
+	if pass=$(security find-generic-password -s bier-vault -a vault -w 2>"$why"); then
+		printf '%s' "$pass"
+		return 0
+	else
+		status=$?
+	fi
+	# 44 is "no such item". Anything else means the passphrase is there
+	# but locked away -- over SSH, typically. Reporting that as "no
+	# passphrase yet" sent people to set a new one.
+	[ "$status" = 44 ] && return 0
+	die "the keychain holds the vault passphrase but would not hand it out:
+     $(cat "$why")
+
+     Unlock the login keychain and try again:
+       security unlock-keychain ~/Library/Keychains/login.keychain-db"
+}
+
+# Whether this Mac remembers a passphrase, without stopping when the
+# keychain is locked: "known", "missing" or "locked".
+vault_pass_state() {
+	if [ -n "${BIER_VAULT_PASS:-}" ]; then
+		echo known
+		return 0
+	fi
+	local status=0
+	security find-generic-password -s bier-vault -a vault >/dev/null 2>&1 || status=$?
+	if [ "$status" != 0 ]; then
+		echo missing
+	elif (vault_pass >/dev/null 2>&1); then
+		echo known
+	else
+		echo locked
+	fi
 }
 
 vault_pass_store() {
@@ -2469,12 +2508,19 @@ vault_open() {
 	local pass f rel out target
 	[ -d "$SAFE_DIR" ] || return 0
 	[ -n "$(find "$SAFE_DIR" -name '*.gpg' -type f -print -quit 2>/dev/null)" ] || return 0
-	pass=$(vault_pass)
-	if [ -z "$pass" ]; then
+	case $(vault_pass_state) in
+	missing)
 		info "The safe holds files, but this Mac has no passphrase yet."
 		info "  bier vault --init"
 		return 0
-	fi
+		;;
+	locked)
+		info "The safe holds files, but the keychain is locked; they stay closed."
+		info "  security unlock-keychain ~/Library/Keychains/login.keychain-db"
+		return 0
+		;;
+	esac
+	pass=$(vault_pass)
 	need_gpg
 
 	# The groups first, and on their own: everything after this asks
@@ -2516,6 +2562,9 @@ cmd_vault() {
 	case ${1:-} in
 	--init)
 		need_gpg
+		# A locked keychain is not a missing passphrase: storing a new
+		# one here would be answered with the same lock anyway.
+		[ "$(vault_pass_state)" != locked ] || vault_pass >/dev/null
 		if [ -n "$(vault_pass)" ]; then
 			info "This Mac already knows a passphrase."
 			info "To change it everywhere:  bier vault --passphrase"
@@ -2616,11 +2665,11 @@ EOF
 	info "Vault:  $VAULT"
 	info "Safe:   $SAFE_DIR"
 	info "  $(count_word "$n") in it"
-	if [ -n "$(vault_pass)" ]; then
-		info "  the passphrase is remembered on this Mac"
-	else
-		info "  no passphrase yet -- bier vault --init"
-	fi
+	case $(vault_pass_state) in
+	known) info "  the passphrase is remembered on this Mac" ;;
+	locked) info "  the passphrase is in the keychain, but the keychain is locked" ;;
+	*) info "  no passphrase yet -- bier vault --init" ;;
+	esac
 }
 
 # Re-encrypts everything from one passphrase to another. Writes to a

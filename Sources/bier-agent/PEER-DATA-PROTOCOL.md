@@ -49,7 +49,8 @@ On success both Ed25519 public keys and both `.local` addresses are remembered.
 The offer is deleted immediately. If the receiving data repository is still
 empty or contains only the installer scaffolding, the initiating Mac then
 copies its snapshot and complete Git history. Existing user data is never
-overwritten by this first-use step.
+overwritten by this first-use step. Pairing ends with a sync, so a peer that
+already had data of its own shares one history with this Mac afterwards.
 
 ## Snapshot lifecycle
 
@@ -72,9 +73,18 @@ Repository bundles use separate `export`, `export/read`, `import/begin`,
 `import/put` and `import/commit` operations. Bundle bytes have a declared size
 and SHA-256 digest and are transferred in bounded chunks. A fresh peer adopts
 history only when the checked-out bundle data exactly matches its snapshot.
-An existing peer accepts only history containing its current commit.
+A peer whose history is only the installer scaffolding (`.gitattributes` and
+an empty `Brewfiles/main`) takes the incoming history whole, provided its
+files are unchanged or exactly match that history. Any other peer accepts
+only history containing its current commit and refuses while it has
+uncommitted changes. Exporting history does not require a clean working tree.
 
 The initiating Mac fetches the peer history, rebases its local commits and
-then sends the resulting common history back. A conflict aborts and restores
-the previous working state. The peer transport never accepts arbitrary Git or
+then sends the resulting common history back. When the two histories share
+no commit and this Mac's root commit is only scaffolding, that commit is
+dropped and the rest is replayed onto the peer history; a peer holding only
+scaffolding is left to take this Mac's history. Other unrelated histories
+are refused. A conflict aborts and restores the previous working state.
+Refusals name their reason (for example uncommitted changes); Git's own
+output stays on the refusing Mac. The peer transport never accepts arbitrary Git or
 shell commands and never contacts a central Git server.

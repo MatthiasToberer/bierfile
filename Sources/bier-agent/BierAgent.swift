@@ -390,7 +390,7 @@ final class AgentServer {
 				let encoder = JSONEncoder()
 				encoder.outputFormatting = .withoutEscapingSlashes
 				respond(connection, status: 200, data: try encoder.encode(bundleStore.beginExport()), contentType: "application/json")
-			} catch { respond(connection, status: 403, body: "repository export was rejected") }
+			} catch { respond(connection, status: 403, body: rejection("repository export was rejected", error)) }
 			return
 		}
 		if method == "POST" && path == "/v1/peer/repository/export/read" {
@@ -449,7 +449,7 @@ final class AgentServer {
 				if try store.record("peer-\(peer)-\(nonce)") { respond(connection, status: 409, body: "peer request was already processed"); return }
 				try bundleStore.commitImport(request.id)
 				respond(connection, status: 200, body: "{\"status\":\"repository-committed\"}", contentType: "application/json")
-			} catch { respond(connection, status: 403, body: "repository import was rejected") }
+			} catch { respond(connection, status: 403, body: rejection("repository import was rejected", error)) }
 			return
 		}
 		guard method == "POST", path == "/v1/probe",
@@ -469,6 +469,13 @@ final class AgentServer {
 		} catch {
 			respond(connection, status: 403, body: "recipe rejected")
 		}
+	}
+
+	// The peer has proven who it is by now, and "rejected" alone left
+	// it guessing. Only the repository's own reasons go out.
+	private func rejection(_ message: String, _ error: Error) -> String {
+		guard let error = error as? GitRepositoryError else { return message }
+		return "\(message): \(error.peerDescription)"
 	}
 
 	private func respond(_ connection: NWConnection, status: Int, body: String, contentType: String = "text/plain") {

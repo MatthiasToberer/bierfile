@@ -1,9 +1,22 @@
 import Foundation
 
-public enum PeerClientError: Error {
+public enum PeerClientError: LocalizedError {
 	case invalidConfiguration
 	case signingFailed
-	case rejected(Int)
+	case rejected(Int, String)
+
+	public var errorDescription: String? {
+		switch self {
+		case .invalidConfiguration:
+			return "the peer address or the local Bier peer identity is not usable"
+		case .signingFailed:
+			return "could not sign the request with the local Bier peer identity"
+		case let .rejected(status, reason) where reason.isEmpty:
+			return "the Bier Agent answered HTTP \(status)"
+		case let .rejected(status, reason):
+			return "the Bier Agent answered HTTP \(status): \(reason)"
+		}
+	}
 }
 
 public protocol PeerTransport {
@@ -64,7 +77,11 @@ public struct PeerClient: PeerTransport {
 		request.setValue(signature.base64EncodedString(), forHTTPHeaderField: "X-Bier-Signature")
 		let (data, response) = try await URLSession.shared.data(for: request)
 		guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-			throw PeerClientError.rejected((response as? HTTPURLResponse)?.statusCode ?? 0)
+			// The other Mac's words end up in this terminal: printable ASCII only.
+			let reason = String(String(decoding: data.prefix(512), as: UTF8.self)
+				.unicodeScalars.filter { $0.value >= 0x20 && $0.value < 0x7f }.map(Character.init))
+				.trimmingCharacters(in: .whitespaces)
+			throw PeerClientError.rejected((response as? HTTPURLResponse)?.statusCode ?? 0, reason)
 		}
 		return data
 	}

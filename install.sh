@@ -404,6 +404,17 @@ config_get() {
 		tail -1 | sed -E 's/[[:space:]]+\$//'
 }
 
+# Commits what bier keeps in the data repository, and nothing else.
+# Returns 1 when there was nothing to commit.
+commit_data() {
+	local path
+	for path in .gitattributes Brewfiles Safe; do
+		[ ! -e "$DATA/$path" ] || git -C "$DATA" add -A -- "$path"
+	done
+	git -C "$DATA" diff --cached --quiet && return 1
+	git -C "$DATA" commit -qm "$1"
+}
+
 config_set() {
 	mkdir -p "$(dirname "$CONFIG")"
 	[ -f "$CONFIG" ] || printf '# Configuration for bier.\n' >"$CONFIG"
@@ -632,11 +643,40 @@ else
 	else
 		"$HERE/Sources/bier-core/bier" dump
 
-		if ask "commit and synchronise now?"; then
-			"$HERE/Sources/bier-core/bier" sync "$(hostname -s): inventory recorded"
+		# Committed in any case. Left lying around, the new list made the
+		# data repository "dirty", and paired Macs could not sync with
+		# this one until somebody committed by hand. Nothing leaves this
+		# Mac by committing; that is what the question below is about.
+		commit_data "$(hostname -s): inventory recorded" &&
+			ok "saved in the local Bier history"
+		if ask "synchronise with your other Macs now?"; then
+			"$HERE/Sources/bier-core/bier" sync
 		else
 			ok "not synchronised — later with 'bier sync'"
 		fi
+	fi
+fi
+
+# --- Check the data repository -----------------------------------------
+#
+# Paired Macs exchange committed history only, and a Mac with
+# uncommitted changes refuses to take theirs. Whatever the answers above
+# were, the installation must not end in that state.
+
+say "Checking the data repository"
+if [ -z "$(git -C "$DATA" status --porcelain --untracked-files=all)" ]; then
+	ok "clean — paired Macs can sync with this one"
+else
+	warn "$DATA has uncommitted changes:"
+	git -C "$DATA" status --short --untracked-files=all | sed 's/^/       /'
+	if ask "commit them now?"; then
+		commit_data "$(hostname -s): changes recorded during installation" || true
+	fi
+	if [ -z "$(git -C "$DATA" status --porcelain --untracked-files=all)" ]; then
+		ok "clean — paired Macs can sync with this one"
+	else
+		printf '\n%sPAIRED MACS CANNOT SYNC WITH THIS ONE YET%s\n' "$RED" "$RESET"
+		warn "commit the changes above first:  bier sync"
 	fi
 fi
 
