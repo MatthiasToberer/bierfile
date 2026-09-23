@@ -891,23 +891,23 @@ cmd_peer_hello() {
 }
 
 peer_snapshot_files() {
-	local output=$1 top absolute relative
+	local output=$1 root=${2:-$DATA} top absolute relative
 	: >"$output"
-	if [ -L "$DATA/.gitattributes" ]; then
+	if [ -L "$root/.gitattributes" ]; then
 		die 'the Bier data snapshot contains a symbolic link: .gitattributes'
 	fi
-	[ ! -f "$DATA/.gitattributes" ] || printf '%s\n' .gitattributes >>"$output"
+	[ ! -f "$root/.gitattributes" ] || printf '%s\n' .gitattributes >>"$output"
 	for top in Brewfiles Safe; do
-		[ -e "$DATA/$top" ] || continue
-		if find "$DATA/$top" -type l -print -quit | grep -q .; then
+		[ -e "$root/$top" ] || continue
+		if find "$root/$top" -type l -print -quit | grep -q .; then
 			die "the Bier data snapshot contains a symbolic link under $top"
 		fi
 		while IFS= read -r absolute; do
-			relative=${absolute#"$DATA/"}
+			relative=${absolute#"$root/"}
 			printf '%s\n' "$relative" | grep -Eq '^(Brewfiles|Safe)/[A-Za-z0-9._@/+:-]+$' ||
 				die "unsupported path in the Bier data snapshot: $relative"
 			printf '%s\n' "$relative" >>"$output"
-		done < <(find "$DATA/$top" -type f -print | LC_ALL=C sort)
+		done < <(find "$root/$top" -type f -print | LC_ALL=C sort)
 	done
 }
 
@@ -955,6 +955,72 @@ peer_send_snapshot() {
 	printf '{"id":"%s"}' "$snapshot" >"$commit"
 	peer_http_request POST /v1/peer/snapshot/commit "$peer" "$commit" "$response" || return 1
 	grep -q '"status":"snapshot-committed"' "$response"
+}
+
+peer_fetch_snapshot() {
+	local peer=$1 destination=$2 body response count index path bytes hash target offset length chunk_bytes actual
+	body=$(tmpfile)
+	response=$(tmpfile)
+	peer_http_request GET /v1/peer/manifest "$peer" "$body" "$response" || return 1
+	[ "$(/usr/bin/plutil -extract version raw -o - "$response" 2>/dev/null)" = 1 ] || return 1
+	count=$(/usr/bin/plutil -extract entries raw -expect array -o - "$response" 2>/dev/null) || return 1
+	mkdir -p "$destination"
+	index=0
+	while [ "$index" -lt "$count" ]; do
+		path=$(/usr/bin/plutil -extract "entries.$index.path" raw -expect string -o - "$response" 2>/dev/null) || return 1
+		bytes=$(/usr/bin/plutil -extract "entries.$index.bytes" raw -expect integer -o - "$response" 2>/dev/null) || return 1
+		hash=$(/usr/bin/plutil -extract "entries.$index.sha256" raw -expect string -o - "$response" 2>/dev/null) || return 1
+		printf '%s\n' "$path" | grep -Eq '^(\.gitattributes|(Brewfiles|Safe)/[A-Za-z0-9._@/+:-]+)$' || return 1
+		printf '%s\n' "$bytes" | grep -Eq '^[0-9]+$' || return 1
+		[ "$bytes" -le 1073741824 ] || return 1
+		printf '%s\n' "$hash" | grep -Eq '^[0-9a-f]{64}$' || return 1
+		target=$destination/$path
+		[ ! -e "$target" ] || return 1
+		mkdir -p "$(dirname "$target")"
+		: >"$target"
+		offset=0
+		while [ "$offset" -lt "$bytes" ]; do
+			length=$((bytes - offset))
+			[ "$length" -le 32768 ] || length=32768
+			printf '{"path":"%s","offset":%s,"length":%s}' "$path" "$offset" "$length" >"$body"
+			peer_http_request POST /v1/peer/data/read "$peer" "$body" "$response" || return 1
+			chunk_bytes=$(wc -c <"$response" | tr -d ' ')
+			[ "$chunk_bytes" = "$length" ] || return 1
+			cat "$response" >>"$target"
+			offset=$((offset + chunk_bytes))
+		done
+		actual=$(shasum -a 256 "$target" | awk '{print $1}')
+		[ "$actual" = "$hash" ] || return 1
+		index=$((index + 1))
+	done
+}
+
+cmd_peer_compare() {
+	local peer=${1:-} remote local_files remote_files paths path differences=0
+	[ $# -eq 1 ] && peer_name_ok "$peer" || die 'usage: bier peer compare <host>'
+	need_repo
+	remote=$BIER_TMP/peer-data
+	info "Reading and verifying Bier data from $peer …"
+	peer_fetch_snapshot "$peer" "$remote" || die "could not read a verified Bier data snapshot from $peer"
+	local_files=$(tmpfile)
+	remote_files=$(tmpfile)
+	peer_snapshot_files "$local_files" "$DATA"
+	peer_snapshot_files "$remote_files" "$remote"
+	paths=$(tmpfile)
+	{ cat "$local_files"; cat "$remote_files"; } | LC_ALL=C sort -u >"$paths"
+	while IFS= read -r path; do
+		[ -n "$path" ] || continue
+		if [ ! -f "$DATA/$path" ] || [ ! -f "$remote/$path" ] || ! cmp -s "$DATA/$path" "$remote/$path"; then
+			if [ "$differences" = 0 ]; then info 'Data differs:'; fi
+			printf '  %s\n' "$path"
+			differences=$((differences + 1))
+		fi
+	done <"$paths"
+	if [ "$differences" = 0 ]; then
+		info "Bier data is identical on $HOST and $peer."
+	else
+		info "$differences data file(s) differ. Nothing was changed."
+	fi
 }
 
 cmd_peer_seed() {
@@ -1263,6 +1329,7 @@ bier peer — manage Macs Bier may contact
   bier peer list          show remembered Macs
   bier peer check <host>  check safe, non-interactive SSH access
   bier peer hello <host>  prove authenticated Bier Agent access
+  bier peer compare <host> compare verified data without changing it
   bier peer seed <host>   copy data to a new, empty Bier peer
   bier peer trust [url]   alias for bier trust
   bier peer install <host> install a signed Bier agent via SSH
@@ -1285,6 +1352,7 @@ cmd_peer() {
 	remove | rm) cmd_peer_remove "$@" ;;
 check) cmd_peer_check "$@" ;;
 hello) cmd_peer_hello "$@" ;;
+compare) cmd_peer_compare "$@" ;;
 seed) cmd_peer_seed "$@" ;;
 trust) cmd_peer_trust "$@" ;;
 install) cmd_peer_install "$@" ;;
@@ -1292,7 +1360,7 @@ upgrade | update) cmd_peer_upgrade "$@" ;;
 uninstall) cmd_peer_uninstall "$@" ;;
 discover) cmd_peer_discover "$@" ;;
 help | -h | --help) cmd_peer_help ;;
-*) die 'usage: bier peer <discover|add|list|check|hello|seed|trust|install|upgrade|uninstall|remove> [host]' ;;
+*) die 'usage: bier peer <discover|add|list|check|hello|compare|seed|trust|install|upgrade|uninstall|remove> [host]' ;;
 	esac
 }
 
@@ -2785,6 +2853,7 @@ bier — keeps Brewfiles in sync across Macs
   bier peer remove <host> forget a remembered Mac
   bier peer check <host>  check safe, non-interactive SSH access
   bier peer hello <host>  prove authenticated Bier Agent access
+  bier peer compare <host> compare verified data without changing it
   bier peer seed <host>   copy data to a new, empty Bier peer
   bier peer trust [url]   alias for bier trust
   bier peer discover      show Bier agents announced via Bonjour

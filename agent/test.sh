@@ -145,4 +145,7 @@ BIER_ROOT="$here/.." BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=5399
 	"$here/../bin/bier" peer seed 127.0.0.1 >"$work/client.log"
 grep -q 'Done. 127.0.0.1 now has the Bier data from mini.' "$work/client.log"
 test "$(cat "$work/target/Brewfiles/main")" = 'brew "jq"'
+BIER_ROOT="$here/.." BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 HOME="$work/home" \
+	"$here/../bin/bier" peer compare 127.0.0.1 >"$work/compare.log"
+grep -q 'Bier data is identical on mini and 127.0.0.1.' "$work/compare.log"
 printf '%s\n' 'Swift Bier agent tests passed.'

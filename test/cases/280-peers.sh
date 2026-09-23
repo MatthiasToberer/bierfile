@@ -3,7 +3,7 @@
 
 assert_ok bier mini peer
 assert_contains "$OUT" 'bier peer — manage Macs Bier may contact'
-for subcommand in discover add list check hello seed trust install upgrade uninstall remove; do
+for subcommand in discover add list check hello compare seed trust install upgrade uninstall remove; do
 	assert_contains "$OUT" "bier peer $subcommand"
 done
 
@@ -111,6 +111,15 @@ assert_file_has "$WORK/curl.args" '/v1/peer/manifest'
 assert_file_has "$WORK/curl.args" '/v1/peer/snapshot/begin'
 assert_file_has "$WORK/curl.args" '/v1/peer/snapshot/put'
 assert_file_has "$WORK/curl.args" '/v1/peer/snapshot/commit'
+
+BIER_TEST_PEER_HASH=$(shasum -a 256 "$(bf mini main)" | awk '{print $1}')
+export BIER_TEST_PEER_HASH
+assert_ok bier mini peer compare studio.local
+assert_contains "$OUT" 'Data differs:'
+assert_contains "$OUT" '.gitattributes'
+assert_contains "$OUT" '1 data file(s) differ. Nothing was changed.'
+assert_file_has "$WORK/curl.args" '/v1/peer/data/read'
+unset BIER_TEST_PEER_HASH
 
 assert_ok bier mini peer upgrade studio.local
 assert_contains "$OUT" 'Updating the Bier agent on studio.local'
