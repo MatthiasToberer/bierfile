@@ -126,6 +126,7 @@ RELEASE_TRUST_URL=${BIER_RELEASE_TRUST_URL:-https://bier.uber.space/bier/allowed
 # local configuration rather than in the Brewfile repository: knowing which
 # machines may be contacted is not an inventory change to be synchronised.
 PEERS_FILE=$(dirname "$CONFIG_FILE")/peers
+PEER_PORT=${BIER_PEER_PORT:-53991}
 
 DATA=${BIER_DATA:-$(config_get data)}
 if [ -z "$DATA" ] && [ -d "$ROOT/Brewfiles" ]; then
@@ -344,7 +345,7 @@ peer_http_request() {
 	curl -fsS --max-time 20 -X "$method" -H 'Content-Type: application/json' \
 		-H "X-Bier-Peer: $HOST" -H "X-Bier-Time: $time" -H "X-Bier-Nonce: $nonce" \
 		-H "X-Bier-Signature: $signature" --data-binary @"$body" \
-		"http://$network_host:53991$path" >"$response"
+		"http://$network_host:$PEER_PORT$path" >"$response"
 }
 
 peer_is_self() {
@@ -889,6 +890,99 @@ cmd_peer_hello() {
 	info "Bier Agent on $peer accepted $HOST as a peer."
 }
 
+peer_snapshot_files() {
+	local output=$1 top absolute relative
+	: >"$output"
+	if [ -L "$DATA/.gitattributes" ]; then
+		die 'the Bier data snapshot contains a symbolic link: .gitattributes'
+	fi
+	[ ! -f "$DATA/.gitattributes" ] || printf '%s\n' .gitattributes >>"$output"
+	for top in Brewfiles Safe; do
+		[ -e "$DATA/$top" ] || continue
+		if find "$DATA/$top" -type l -print -quit | grep -q .; then
+			die "the Bier data snapshot contains a symbolic link under $top"
+		fi
+		while IFS= read -r absolute; do
+			relative=${absolute#"$DATA/"}
+			printf '%s\n' "$relative" | grep -Eq '^(Brewfiles|Safe)/[A-Za-z0-9._@/+:-]+$' ||
+				die "unsupported path in the Bier data snapshot: $relative"
+			printf '%s\n' "$relative" >>"$output"
+		done < <(find "$DATA/$top" -type f -print | LC_ALL=C sort)
+	done
+}
+
+peer_snapshot_manifest() {
+	local snapshot=$1 files=$2 body=$3 path file bytes hash comma=
+	printf '{"id":"%s","manifest":{"version":1,"entries":[' "$snapshot" >"$body"
+	while IFS= read -r path; do
+		[ -n "$path" ] || continue
+		file=$DATA/$path
+		bytes=$(wc -c <"$file" | tr -d ' ')
+		[ "$bytes" -le 1073741824 ] || die "Bier data file is larger than 1 GiB: $path"
+		hash=$(shasum -a 256 "$file" | awk '{print $1}')
+		printf '%s{"path":"%s","bytes":%s,"sha256":"%s"}' "$comma" "$path" "$bytes" "$hash" >>"$body"
+		comma=,
+	done <"$files"
+	printf ']}}' >>"$body"
+}
+
+peer_send_snapshot() {
+	local peer=$1 snapshot=$2 files=$3 begin=$4 response=$5
+	local path file bytes offset first raw chunk_bytes encoded put commit
+	peer_http_request POST /v1/peer/snapshot/begin "$peer" "$begin" "$response" || return 1
+	grep -q '"status":"snapshot-ready"' "$response" || return 1
+	raw=$(tmpfile)
+	put=$(tmpfile)
+	while IFS= read -r path; do
+		[ -n "$path" ] || continue
+		file=$DATA/$path
+		bytes=$(wc -c <"$file" | tr -d ' ')
+		offset=0
+		first=yes
+		while [ "$offset" -lt "$bytes" ] || [ "$first" = yes ]; do
+			dd if="$file" of="$raw" bs=32768 count=1 skip=$((offset / 32768)) 2>/dev/null
+			chunk_bytes=$(wc -c <"$raw" | tr -d ' ')
+			[ "$bytes" = 0 ] || [ "$chunk_bytes" -gt 0 ] || return 1
+			encoded=$(base64 <"$raw" | tr -d '\n')
+			printf '{"id":"%s","path":"%s","offset":%s,"data":"%s"}' "$snapshot" "$path" "$offset" "$encoded" >"$put"
+			peer_http_request POST /v1/peer/snapshot/put "$peer" "$put" "$response" || return 1
+			grep -q '"status":"snapshot-staged"' "$response" || return 1
+			offset=$((offset + chunk_bytes))
+			first=no
+		done
+	done <"$files"
+	commit=$(tmpfile)
+	printf '{"id":"%s"}' "$snapshot" >"$commit"
+	peer_http_request POST /v1/peer/snapshot/commit "$peer" "$commit" "$response" || return 1
+	grep -q '"status":"snapshot-committed"' "$response"
+}
+
+cmd_peer_seed() {
+	local peer=${1:-} body response remote snapshot files begin
+	[ $# -eq 1 ] && peer_name_ok "$peer" || die 'usage: bier peer seed <host>'
+	need_repo
+	[ -r "$HOME/.ssh/id_ed25519" ] || die "no SSH identity at $HOME/.ssh/id_ed25519"
+	body=$(tmpfile)
+	response=$(tmpfile)
+	info "1/3  Checking the Bier data store on $peer …"
+	peer_http_request GET /v1/peer/manifest "$peer" "$body" "$response" ||
+		die "cannot read the Bier data store on $peer"
+	remote=$(cat "$response")
+	printf '%s' "$remote" | grep -Eq '"entries"[[:space:]]*:[[:space:]]*\[[[:space:]]*\]' ||
+		die "the Bier data store on $peer is not empty; refusing to replace it"
+	info '     The peer is empty.'
+	info '2/3  Preparing the local Bier data snapshot …'
+	snapshot=$(uuidgen | tr -d '-' | tr '[:upper:]' '[:lower:]')
+	files=$(tmpfile)
+	begin=$(tmpfile)
+	peer_snapshot_files "$files"
+	peer_snapshot_manifest "$snapshot" "$files" "$begin"
+	info "3/3  Sending the verified snapshot to $peer …"
+	peer_send_snapshot "$peer" "$snapshot" "$files" "$begin" "$response" ||
+		die "the Bier data snapshot was not accepted by $peer"
+	info "Done. $peer now has the Bier data from $HOST."
+}
+
 # A remote installation adds a LaunchAgent, an agent directory, a remembered
 # peer and an SSH connection.  Uninstall reverses each of those changes.  It
 # removes only the matching public key, never the remote user's SSH setup.
@@ -1169,6 +1263,7 @@ bier peer — manage Macs Bier may contact
   bier peer list          show remembered Macs
   bier peer check <host>  check safe, non-interactive SSH access
   bier peer hello <host>  prove authenticated Bier Agent access
+  bier peer seed <host>   copy data to a new, empty Bier peer
   bier peer trust [url]   alias for bier trust
   bier peer install <host> install a signed Bier agent via SSH
   bier peer upgrade <host> replace an agent with the latest signed release
@@ -1190,13 +1285,14 @@ cmd_peer() {
 	remove | rm) cmd_peer_remove "$@" ;;
 check) cmd_peer_check "$@" ;;
 hello) cmd_peer_hello "$@" ;;
+seed) cmd_peer_seed "$@" ;;
 trust) cmd_peer_trust "$@" ;;
 install) cmd_peer_install "$@" ;;
 upgrade | update) cmd_peer_upgrade "$@" ;;
 uninstall) cmd_peer_uninstall "$@" ;;
 discover) cmd_peer_discover "$@" ;;
 help | -h | --help) cmd_peer_help ;;
-*) die 'usage: bier peer <discover|add|list|check|hello|trust|install|upgrade|uninstall|remove> [host]' ;;
+*) die 'usage: bier peer <discover|add|list|check|hello|seed|trust|install|upgrade|uninstall|remove> [host]' ;;
 	esac
 }
 
@@ -2689,6 +2785,7 @@ bier — keeps Brewfiles in sync across Macs
   bier peer remove <host> forget a remembered Mac
   bier peer check <host>  check safe, non-interactive SSH access
   bier peer hello <host>  prove authenticated Bier Agent access
+  bier peer seed <host>   copy data to a new, empty Bier peer
   bier peer trust [url]   alias for bier trust
   bier peer discover      show Bier agents announced via Bonjour
   bier peer install <host> install a signed Bier agent via SSH

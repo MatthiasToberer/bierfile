@@ -113,4 +113,24 @@ status=$(curl -sS --max-time 2 -o "$work/response" -w '%{http_code}' -H 'Content
 grep -q '"status":"accepted"' "$work/response"
 status=$(curl -sS --max-time 2 -o "$work/response" -w '%{http_code}' -H 'Content-Type: application/json' --data "$body" http://127.0.0.1:53992/v1/probe)
 [ "$status" = 409 ]
+
+kill "$pid"
+wait "$pid" 2>/dev/null || true
+pid=
+mkdir -p "$work/source/Brewfiles" "$work/home/.ssh"
+printf 'brew "jq"\n' >"$work/source/Brewfiles/main"
+git init -q "$work/source"
+cp "$work/controller" "$work/home/.ssh/id_ed25519"
+cp "$work/controller.pub" "$work/home/.ssh/id_ed25519.pub"
+chmod 600 "$work/home/.ssh/id_ed25519"
+"$agent" serve --agent target --allowed-signers "$work/allowed_signers" --peer-signers "$work/peer_signers" --data-dir "$work/target" --state-dir "$work/state-client" --port 53992 --bonjour false >"$work/agent-client.log" 2>&1 &
+pid=$!
+for attempt in 1 2 3 4 5; do
+	if curl -fsS --max-time 1 http://127.0.0.1:53992/v1/health 2>/dev/null | grep -q '"status":"ok"'; then break; fi
+	sleep 1
+done
+BIER_ROOT="$here/.." BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 HOME="$work/home" \
+	"$here/../bin/bier" peer seed 127.0.0.1 >"$work/client.log"
+grep -q 'Done. 127.0.0.1 now has the Bier data from mini.' "$work/client.log"
+test "$(cat "$work/target/Brewfiles/main")" = 'brew "jq"'
 printf '%s\n' 'Swift Bier agent tests passed.'

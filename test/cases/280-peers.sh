@@ -3,7 +3,7 @@
 
 assert_ok bier mini peer
 assert_contains "$OUT" 'bier peer — manage Macs Bier may contact'
-for subcommand in discover add list check hello trust install upgrade uninstall remove; do
+for subcommand in discover add list check hello seed trust install upgrade uninstall remove; do
 	assert_contains "$OUT" "bier peer $subcommand"
 done
 
@@ -100,6 +100,17 @@ assert_ok bier mini peer hello studio.local
 assert_contains "$OUT" 'Bier Agent on studio.local accepted mini as a peer.'
 assert_file_has "$WORK/curl.args" 'http://studio.local:53991/v1/peer/hello'
 assert_file_has "$WORK/curl.args" 'X-Bier-Peer: mini'
+
+printf 'brew "wget"\n' >"$(bf mini main)"
+assert_ok bier mini peer seed studio.local
+assert_contains "$OUT" '1/3  Checking the Bier data store on studio.local'
+assert_contains "$OUT" '2/3  Preparing the local Bier data snapshot'
+assert_contains "$OUT" '3/3  Sending the verified snapshot to studio.local'
+assert_contains "$OUT" 'Done. studio.local now has the Bier data from mini.'
+assert_file_has "$WORK/curl.args" '/v1/peer/manifest'
+assert_file_has "$WORK/curl.args" '/v1/peer/snapshot/begin'
+assert_file_has "$WORK/curl.args" '/v1/peer/snapshot/put'
+assert_file_has "$WORK/curl.args" '/v1/peer/snapshot/commit'
 
 assert_ok bier mini peer upgrade studio.local
 assert_contains "$OUT" 'Updating the Bier agent on studio.local'
