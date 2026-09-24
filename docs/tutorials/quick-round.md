@@ -55,7 +55,7 @@ bier sync                   # record here, exchange with peers — after every i
 bier status                 # what differs here?
 bier list                   # what do the others have on top?
 bier take                   # adopt some of it
-bier uninstall htop         # get rid of it everywhere
+bier uninstall htop         # asks: everywhere, only out of main, or only here
 bier prune                  # remove here what was deleted elsewhere
 bier vault add ~/.zshrc     # a file, not only packages
 ```

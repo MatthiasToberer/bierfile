@@ -54,20 +54,23 @@ it as *recorded but not installed* until they have it.
 ## The other direction
 
 Something in `main` should only be on one Mac — say a large toolchain
-that only `studio` needs:
+that only `studio` needs. On a Mac that should lose it:
 
 ```sh
-bier take --from-main
+bier uninstall --from-main --keep studio toolchain
 ```
 
-Pick the entry, then the Mac to hand it to. It leaves `main` and moves
-to that Mac's list.
+or plain `bier uninstall toolchain`, answer `m` and pick `studio`. It is
+uninstalled here, leaves `main` and moves to `studio`'s list; `studio`
+keeps it installed.
 
-The other Macs still have it installed, and their next `bier sync` would
-record it again as something *they* have on top. If they should lose it,
-remove it there with plain `brew uninstall` before syncing — not with
-`bier uninstall`, which would take it off every list, `studio`'s
-included.
+Every other Mac that has it installed reports it after the next
+`bier sync` as *no longer in main, still here*. There you decide:
+`bier prune` removes it, `bier take` keeps it on that Mac's own list.
+BierMenu offers both.
+
+To only move the entry without uninstalling anything, there is
+`bier take --from-main`: pick the entry, then the Mac to hand it to.
 
 ---
 

@@ -12,7 +12,8 @@ bier vault add ~/.zshrc
 The file moves into `~/.bierfilevault` and a symlink stays behind, so it
 goes on living where the program that reads it expects it. `bier sync`
 encrypts it and shares it; the next `bier sync` on another Mac decrypts
-it and puts the link there. Editing it on either Mac edits the same file.
+it and puts the link there — or BierMenu does, on its own. Change it on
+either Mac and sync, and the others get the change.
 
 A walk-through with two Macs:
 [Your dotfiles on a new Mac](../tutorials/dotfiles-on-a-new-mac.md).
@@ -68,8 +69,25 @@ On the receiving Mac, four cases:
 | a plain file | keeps it as `<name>.backup`, then links — no backup if the two are identical |
 | someone else's link | leaves it alone and says so |
 
-## Why a link and not a copy
+## When it changes
 
-A copy would need rules for which side wins when both change. With one
-file the question never arises. Editors and tools write through the link
-and keep it — checked with vim, `>>`, `sed -i`, Python and `cp`.
+Each Mac keeps its own plain copy in `~/.bierfilevault` and remembers
+what it and the safe last agreed on. A sync then knows which side
+changed:
+
+| Changed | bier sync does |
+| --- | --- |
+| only here | encrypts it and hands it to the other Macs |
+| only elsewhere | puts the new version in place here |
+| on both sides | keeps yours and puts the other next to it as `<name>.from-safe` |
+
+After a conflict, merge what you need, delete the `.from-safe` copy and
+sync again; your version then goes everywhere. `bier status` lists what
+is waiting, see [Everyday use](../using/everyday.md#what-differs-here).
+
+## Why a link
+
+The program reading the file finds it where it always did, and every
+edit lands in the vault without an extra step. Editors and tools write
+through the link and keep it — checked with vim, `>>`, `sed -i`, Python
+and `cp`.

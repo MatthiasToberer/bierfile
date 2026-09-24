@@ -26,14 +26,18 @@ A release is a tag, and the tag is what `bier upgrade` follows:
 ```sh
 git tag -a v0.13.0 -m "what changed"
 git push origin v0.13.0
-gh release create v0.13.0 --notes "what changed"    # optional
+gh release create v0.13.0 --verify-tag --latest --notes "what changed"
 ```
 
 The tag has to match `BIER_VERSION`, because that is the number the
 installed copy compares itself against. GitHub builds the download for
 every tag on its own — `archive/refs/tags/v0.13.0.tar.gz` exists without
-anyone uploading anything. `gh release create` only adds the release page
-with the notes on it.
+anyone uploading anything.
+
+The release page is **not** optional: `bier upgrade` follows the tags,
+but `bier peer install` and `peer upgrade` ask GitHub for
+`releases/latest`, which only knows tags with a release page. A tag
+without one leaves remote agents on the previous release.
 
 `check_code` fetches the tags, takes the highest one (`--sort=-v:refname`)
 and holds it against `BIER_VERSION`. The comparison runs through

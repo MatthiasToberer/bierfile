@@ -62,8 +62,43 @@ macbook had a `.zshrc` of its own. It is not thrown away but kept as
 save and no backup is made. A `.zshrc` that was already a link to
 somewhere else is left alone, and bier says so.
 
-From now on it is one file on two Macs: change it on either, `bier sync`,
-and the other has the change.
+## Changing it later
+
+Edit `~/.zshrc` on mini. Before anything travels, `bier status` says so:
+
+```
+Sync (bier sync):
+  ^  vault            /Users/you/.zshrc changed here
+```
+
+`bier sync` on mini encrypts the change and hands it to macbook. It
+arrives there encrypted: macbook's `~/.zshrc` changes only when macbook
+opens the safe, because only macbook's keychain holds the passphrase.
+Until then its `bier status` shows
+
+```
+Sync (bier sync):
+  v  vault            /Users/you/.zshrc newer in the safe
+```
+
+and BierMenu on macbook puts it in place on its own at the next check.
+In a terminal, `bier sync` on macbook does the same.
+
+## Changed on both Macs
+
+If both Macs edit the file before either syncs, bier overwrites
+neither. The Mac that syncs second keeps its own version and gets the
+other one next to it:
+
+```
+changed here and on another Mac: /Users/you/.zshrc
+  the other version is in /Users/you/.zshrc.from-safe
+  merge what you need into /Users/you/.zshrc; the next sync keeps it as it is then
+```
+
+Take what you need from `~/.zshrc.from-safe`, delete it, and
+`bier sync`: your merged file goes to every Mac. `bier status` reminds
+you of a copy left lying around.
 
 ## Only for some Macs
 
