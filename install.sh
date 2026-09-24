@@ -12,7 +12,7 @@
 #   ./install.sh --data git@your-server:bierfile.git   optional legacy remote
 #   ./install.sh --manual-inventory  keep Brewfiles explicitly curated
 #   ./install.sh --dry-run     says what it would do, changes nothing
-#   ./install.sh --uninstall   takes bier off this Mac
+#   ./install.sh --uninstall   takes bier off this Mac (bier knockout)
 #
 # Running it more than once is harmless: it replaces what is there.
 
@@ -119,84 +119,13 @@ fi
 
 # --- Prerequisites -----------------------------------------------------
 
-if [ "$UNINSTALL" = yes ] && [ "$DRY" = yes ]; then
-	say "What --uninstall would do"
-	n=0
-	if [ -x "$HERE/Sources/bier-core/bier" ]; then
-		n=$("$HERE/Sources/bier-core/bier" vault 2>/dev/null |
-			sed -n 's/^ *\([0-9]*\) entries in it/\1/p')
-	fi
-	ok "turn ${n:-0} vault files back into plain files"
-	ok "take $(hostname -s) out of Brewfiles/ and out of every group, and push"
-	[ ! -d "$(app_target)" ] || ok "remove $(app_target)"
-	[ ! -e "$HOME/.local/share/bier/agent" ] || ok "remove the local Bier agent"
-	[ ! -L "$LINK" ] || ok "remove $LINK"
-	ok "remove the vault passphrase from the keychain"
-	cat <<EOF
-
-   It would ask whether to delete $CONFIG.
-
-   It would NOT touch the data repository or the vault files themselves.
-
-   Nothing has been changed.
-
-EOF
-	exit 0
-fi
-
+# Taking bier off is "bier knockout": it signs off at the other Macs
+# first, which a script working only on this Mac could not.
 if [ "$UNINSTALL" = yes ]; then
-	say "Taking bier off this Mac"
-
-	# The files first. Every link points into the vault, and removing
-	# bier without this would leave a home full of dead links and no
-	# .zshrc at all.
-	if [ -x "$HERE/Sources/bier-core/bier" ]; then
-		"$HERE/Sources/bier-core/bier" vault --unlink 2>/dev/null ||
-			warn "could not put the vault files back — check by hand"
-		if [ -t 0 ]; then
-			"$HERE/Sources/bier-core/bier" retire --self ||
-				warn "this Mac is still listed; take it out elsewhere with 'bier retire'"
-		else
-			warn "not on a terminal — take this Mac out elsewhere with 'bier retire'"
-		fi
+	if [ "$DRY" = yes ]; then
+		exec "$HERE/Sources/bier-core/bier" knockout --dry-run
 	fi
-
-	stop_app && ok "stopped BierMenu" || true
-	stop_agent && ok "stopped Bier agent" || true
-	rm -f "$HOME/Library/LaunchAgents/com.bier.agent.plist"
-	if [ -e "$HOME/.local/share/bier/agent" ]; then
-		rm -rf "$HOME/.local/share/bier/agent"
-		ok "removed the local Bier agent"
-	fi
-	for candidate in /Applications/BierMenu.app "$HOME/Applications/BierMenu.app"; do
-		if [ -d "$candidate" ]; then
-			rm -rf "$candidate"
-			ok "removed: $candidate"
-		fi
-	done
-	if [ -L "$LINK" ]; then
-		rm -f "$LINK"
-		ok "removed: $LINK"
-	fi
-	security delete-generic-password -s bier-vault -a vault >/dev/null 2>&1 &&
-		ok "the vault passphrase is out of the keychain" || true
-	if [ -f "$CONFIG" ] && ask "delete $CONFIG as well?"; then
-		rm -f "$CONFIG"
-		ok "deleted: $CONFIG"
-	fi
-
-	cat <<EOF
-
-   bier is off this Mac. Nothing of yours was deleted:
-
-     the Brewfiles and the safe are still in the data repository
-     the vault files are still where they were, now as plain files
-     $HOME/.config/bier/config is still there
-
-   Remove those by hand if you want them gone.
-
-EOF
-	exit 0
+	exec "$HERE/Sources/bier-core/bier" knockout
 fi
 
 say "Prerequisites"

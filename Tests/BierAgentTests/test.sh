@@ -275,4 +275,21 @@ if "$peer_cli" sync 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed2551
 	exit 1
 fi
 grep -q 'HTTP 403: repository import was rejected: the Bier data repository has uncommitted changes' "$work/refused.log" || { cat "$work/refused.log" >&2; exit 1; }
+
+# Signing off: the agent forgets exactly the sender, its key and every
+# address it was reached by, and does not accept it any more.
+# Recorded at pairing (mini.local), resolving to where the sign-off came
+# from (localhost), and another Mac's, which has to stay.
+printf 'mini.local\nlocalhost\nother.invalid\n' >"$work/remote-peers"
+printf 'other %s\n' "$(cat "$work/pair-remote.pub")" >>"$work/peer_signers"
+grep -q '^mini ' "$work/peer_signers"
+"$peer_cli" leave 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --port 53992 >"$work/leave.log"
+grep -q 'Signed off at 127.0.0.1: it forgot mini.' "$work/leave.log"
+if grep -q '^mini ' "$work/peer_signers"; then echo 'the key of a Mac that signed off is still trusted' >&2; exit 1; fi
+[ "$(cat "$work/remote-peers")" = other.invalid ] || { cat "$work/remote-peers" >&2; echo 'only the addresses of the Mac that signed off may go' >&2; exit 1; }
+grep -q '^other ' "$work/peer_signers" || { echo 'another Mac lost its key' >&2; exit 1; }
+if "$peer_cli" hello 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --port 53992 >"$work/hello-after.log" 2>&1; then
+	echo 'a Mac that signed off is still accepted' >&2
+	exit 1
+fi
 printf '%s\n' 'Swift Bier agent tests passed.'

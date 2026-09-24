@@ -26,7 +26,7 @@ assert_contains "$OUT" "no Mac called" "an unknown Mac cannot be retired"
 
 # Yourself, by name: refused, with the way that does work.
 assert_fails bier mini retire mini
-assert_contains "$OUT" "install.sh --uninstall" "it has to point at the right way"
+assert_contains "$OUT" "bier knockout" "it has to point at the right way"
 
 # The other one, for real.
 answer y

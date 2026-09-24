@@ -295,6 +295,24 @@ final class AgentServer {
 			}
 			return
 		}
+		if method == "POST" && path == "/v1/peer/leave" {
+			guard let peerSigners, let pairingStore, let peer = headers["x-bier-peer"], let time = headers["x-bier-time"],
+				let nonce = headers["x-bier-nonce"], let encoded = headers["x-bier-signature"], let signature = Data(base64Encoded: encoded) else {
+				respond(connection, status: 403, body: "peer is not authorised")
+				return
+			}
+			do {
+				// Only the sender itself, proven by its signature, can take
+				// itself out; nobody can sign off another Mac.
+				try verifyPeer(method: method, path: path, peer: peer, signers: peerSigners, time: time, nonce: nonce, body: body, signature: signature)
+				if try store.record("peer-\(peer)-\(nonce)") { respond(connection, status: 409, body: "peer request was already processed"); return }
+				var source: String?
+				if case let .hostPort(host, _) = connection.endpoint { source = "\(host)" }
+				try pairingStore.forget(peer: peer, from: source)
+				respond(connection, status: 200, body: "{\"status\":\"peer-left\"}", contentType: "application/json")
+			} catch { respond(connection, status: 403, body: "peer is not authorised") }
+			return
+		}
 		if method == "GET" && path == "/v1/peer/manifest" {
 			guard let peerSigners, let dataDirectory, let peer = headers["x-bier-peer"], let time = headers["x-bier-time"],
 				let nonce = headers["x-bier-nonce"], let encoded = headers["x-bier-signature"], let signature = Data(base64Encoded: encoded) else {

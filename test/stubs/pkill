@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# pkill stand-in: tests must never stop or unload anything on the real Mac.
+printf '%s\n' "$*" >>"${WORK:?WORK is not set}/pkill.args"
+exit 0

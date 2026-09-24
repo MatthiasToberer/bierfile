@@ -50,6 +50,7 @@ public func peerPairingResponseProof(code: String, request: PeerPairingRequest, 
 
 public final class PeerPairingStore {
 	private let offerURL: URL
+	private let addressesURL: URL
 	private let signersURL: URL
 	private let localKeyURL: URL
 	private let peersURL: URL?
@@ -57,6 +58,7 @@ public final class PeerPairingStore {
 
 	public init(stateDirectory: URL, signersURL: URL, localKeyURL: URL, peersURL: URL? = nil) {
 		offerURL = stateDirectory.appendingPathComponent("pairing-offer.json")
+		addressesURL = stateDirectory.appendingPathComponent("paired-addresses")
 		self.signersURL = signersURL
 		self.localKeyURL = localKeyURL
 		self.peersURL = peersURL
@@ -85,6 +87,7 @@ public final class PeerPairingStore {
 		guard validPublicKey(localKey) else { throw PeerPairingError.invalidKey }
 		try remember(peer: request.peer, key: request.publicKey)
 		try remember(address: request.address)
+		try append("\(request.peer) \(request.address)", to: addressesURL)
 		try FileManager.default.removeItem(at: offerURL)
 		return PeerPairingResponse(status: "paired", agent: agent, publicKey: localKey,
 			proof: peerPairingResponseProof(code: offer.code, request: request, agent: agent, publicKey: localKey))
@@ -99,6 +102,79 @@ public final class PeerPairingStore {
 			attributes: [.posixPermissions: 0o700])
 		try (peers + [address]).joined(separator: "\n").appending("\n").write(to: peersURL, atomically: true, encoding: .utf8)
 		try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: peersURL.path)
+	}
+
+	/// A paired Mac signs off: its key goes, so it is not trusted any
+	/// more, and so do the addresses this Mac used to reach it. Those are
+	/// the one it gave when pairing, its own name, and -- for pairings
+	/// from before that was recorded -- any that resolves to the address
+	/// the sign-off came from. Returns the addresses removed.
+	@discardableResult
+	public func forget(peer: String, from source: String?) throws -> [String] {
+		lock.lock()
+		defer { lock.unlock() }
+		guard validName(peer) else { throw PeerPairingError.rejected }
+		let signers = (try? String(contentsOf: signersURL, encoding: .utf8)) ?? ""
+		let kept = signers.split(separator: "\n", omittingEmptySubsequences: true).filter {
+			$0.split(whereSeparator: \.isWhitespace).first.map(String.init) != peer
+		}
+		try (kept.map(String.init).joined(separator: "\n") + (kept.isEmpty ? "" : "\n"))
+			.write(to: signersURL, atomically: true, encoding: .utf8)
+
+		let recorded = ((try? String(contentsOf: addressesURL, encoding: .utf8)) ?? "")
+			.split(whereSeparator: \.isNewline).map { $0.split(separator: " ", maxSplits: 1).map(String.init) }
+		var names: Set<String> = [peer, "\(peer).local"]
+		for pair in recorded where pair.count == 2 && pair[0] == peer { names.insert(pair[1]) }
+		let origin = source.map(normalisedAddress)
+		guard let peersURL else { return [] }
+		let peers = ((try? String(contentsOf: peersURL, encoding: .utf8)) ?? "").split(whereSeparator: \.isNewline).map(String.init)
+		var removed: [String] = []
+		let left = peers.filter { address in
+			let gone = names.contains(address) || (origin.map { resolves(address, to: $0) } ?? false)
+			if gone { removed.append(address) }
+			return !gone
+		}
+		try (left.joined(separator: "\n") + (left.isEmpty ? "" : "\n")).write(to: peersURL, atomically: true, encoding: .utf8)
+		let rest = recorded.filter { !($0.count == 2 && $0[0] == peer) }.map { $0.joined(separator: " ") }
+		try (rest.joined(separator: "\n") + (rest.isEmpty ? "" : "\n")).write(to: addressesURL, atomically: true, encoding: .utf8)
+		return removed
+	}
+
+	private func append(_ line: String, to url: URL) throws {
+		let prior = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+		var lines = prior.split(whereSeparator: \.isNewline).map(String.init)
+		guard !lines.contains(line) else { return }
+		lines.append(line)
+		try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
+			attributes: [.posixPermissions: 0o700])
+		try (lines.joined(separator: "\n") + "\n").write(to: url, atomically: true, encoding: .utf8)
+		try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+	}
+
+	private func normalisedAddress(_ value: String) -> String {
+		var address = value
+		if let percent = address.firstIndex(of: "%") { address = String(address[..<percent]) }
+		if address.hasPrefix("::ffff:") { address = String(address.dropFirst(7)) }
+		return address
+	}
+
+	private func resolves(_ name: String, to address: String) -> Bool {
+		if normalisedAddress(name) == address { return true }
+		var hints = addrinfo()
+		hints.ai_socktype = SOCK_STREAM
+		var result: UnsafeMutablePointer<addrinfo>?
+		guard getaddrinfo(name, nil, &hints, &result) == 0, let first = result else { return false }
+		defer { freeaddrinfo(first) }
+		var entry: UnsafeMutablePointer<addrinfo>? = first
+		while let current = entry {
+			var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+			if getnameinfo(current.pointee.ai_addr, current.pointee.ai_addrlen, &host, socklen_t(host.count),
+				nil, 0, NI_NUMERICHOST) == 0, normalisedAddress(String(cString: host)) == address {
+				return true
+			}
+			entry = current.pointee.ai_next
+		}
+		return false
 	}
 
 	private func remember(peer: String, key: String) throws {

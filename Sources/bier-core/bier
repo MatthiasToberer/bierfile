@@ -947,13 +947,26 @@ $peers
 EOF
 }
 
+# Forgets a paired Mac: its address, and its key if the name is the one
+# it signs with. That is how a Mac taken off without signing off, or
+# unreachable when it did, is got rid of by hand.
 cmd_peer_remove() {
-	local peer=${1:-} tmp
+	local peer=${1:-} tmp found=no
 	[ $# -eq 1 ] && peer_name_ok "$peer" ||
 		die 'usage: bier peer remove <host>'
-	peer_list | grep -qxF "$peer" || die "no peer called $peer"
-	peer_forget "$peer"
-	info "Peer removed: $peer"
+	if peer_list | grep -qxF "$peer"; then
+		peer_forget "$peer"
+		info "Peer removed: $peer"
+		found=yes
+	fi
+	if [ -f "$LOCAL_PEER_SIGNERS" ] && awk -v p="$peer" '$1 == p { f = 1 } END { exit !f }' "$LOCAL_PEER_SIGNERS"; then
+		tmp=$(tmpfile)
+		awk -v p="$peer" '$1 != p' "$LOCAL_PEER_SIGNERS" >"$tmp"
+		cat "$tmp" >"$LOCAL_PEER_SIGNERS"
+		info "Key removed: $peer is no longer trusted here"
+		found=yes
+	fi
+	[ "$found" = yes ] || die "no peer called $peer"
 }
 
 cmd_peer_check() {
@@ -1571,7 +1584,7 @@ bier peer — manage Macs Bier may contact
   bier peer install <host> install a signed Bier agent via SSH
   bier peer upgrade <host> replace an agent with the latest signed release
   bier peer uninstall <host> stop and remove a Bier agent via SSH
-  bier peer remove <host> forget a remembered Mac
+  bier peer remove <host> forget a remembered Mac, its address or its key
 EOF
 }
 
@@ -3435,6 +3448,154 @@ EOF
 	rm -rf "$staging"
 }
 
+# Takes bier off this Mac, and this Mac out of the group -- the tidy way
+# out; "rm -rf ~/.barrel" is the blunt one. The other Macs are told, so
+# they stop trusting this one and stop trying to reach it, and the files
+# from the vault stay where they are, as plain files.
+cmd_knockout() {
+	local dry=no answer peers="" peer unsigned="" left_out="" profile tmp agent_plist
+	[ "${1:-}" != --dry-run ] || dry=yes
+	[ ! -x "$PEER_CLIENT" ] || peers=$(peer_list)
+
+	info "This takes bier off $HOST and out of the group:"
+	info ""
+	info "  1. sync one last time, so nothing made here is lost"
+	info "  2. take $HOST out: Brewfiles/$HOST and the vault groups"
+	if [ -n "$peers" ]; then
+		info "  3. sign off at every paired Mac: $(printf '%s ' $peers | sed 's/ $//; s/ /, /g')"
+		info "     (each forgets this Mac's key and address)"
+	else
+		info "  3. no paired Macs to sign off at"
+	fi
+	info "  4. take bier off this Mac: the agent, BierMenu, the bier command,"
+	info "     the PATH line and the passphrase in the keychain."
+	info "     Files from the vault stay where they are, as plain files."
+	info "  5. ask whether to delete $BARREL as well"
+	if [ "$dry" = yes ]; then
+		info ""
+		info "Nothing has been changed."
+		return 0
+	fi
+	[ -t 0 ] || [ -n "${BIER_TEST_TTY:-}" ] ||
+		die "knockout asks before it changes anything, and there is no terminal to ask at"
+	info ""
+	printf 'Type "knockout" to go on: '
+	read -r answer || answer=""
+	if [ "$answer" != knockout ]; then
+		info "Cancelled. Nothing was changed."
+		return 0
+	fi
+
+	if [ -n "$DATA" ] && [ -d "$DATA/.git" ]; then
+		info ""
+		info "== 1. The last sync"
+		if ! (cmd_sync "$HOST: last sync before leaving"); then
+			printf 'The last sync failed. Go on anyway? [y/N] '
+			read -r answer || answer=""
+			case $answer in
+			y | Y | j | J) ;;
+			*) die "stopped; nothing after the sync was changed" ;;
+			esac
+		fi
+
+		info ""
+		info "== 2. Out of the group"
+		if [ -f "$BREW_DIR/$HOST" ] || grep -qs "$HOST" "$VAULT/.groups"; then
+			[ -f "$BREW_DIR/$HOST" ] || : >"$BREW_DIR/$HOST"
+			(RETIRE_CONFIRMED=yes cmd_retire --self) || info "  could not take $HOST out -- do it from another Mac: bier retire $HOST"
+		else
+			info "  $HOST has no list of its own and is in no group"
+		fi
+		# The removal travels before the sign-off: afterwards the other
+		# Macs no longer take anything from here.
+		for peer in $peers; do
+			(cmd_peer_sync "$peer") >/dev/null 2>&1 || left_out="$left_out $peer"
+		done
+	fi
+
+	info ""
+	info "== 3. Signing off"
+	for peer in $peers; do
+		if "$PEER_CLIENT" leave "$peer" --local "$HOST" --identity "$PEER_IDENTITY" --port "$PEER_PORT"; then
+			peer_forget "$peer"
+		else
+			unsigned="$unsigned $peer"
+		fi
+	done
+	[ -n "$peers" ] || info "  no paired Macs"
+
+	info ""
+	info "== 4. Taking bier off this Mac"
+	vault_unlink
+	pkill -f 'MacOS/BierMenu' >/dev/null 2>&1 && info "  stopped BierMenu" || true
+	agent_plist=$HOME/Library/LaunchAgents/com.bier.agent.plist
+	if [ -f "$agent_plist" ]; then
+		launchctl bootout "gui/$(id -u)" "$agent_plist" >/dev/null 2>&1 || true
+		rm -f "$agent_plist"
+		info "  stopped and removed the Bier agent"
+	fi
+	for profile in "$HOME/.zshrc" "$HOME/.bash_profile"; do
+		[ -f "$profile" ] && grep -q '^# added by bier$' "$profile" || continue
+		tmp=$(tmpfile)
+		awk '
+			/^# added by bier$/ { held = $0; next }
+			held != "" && /export PATH=.*(\/\.barrel\/bin|\/\.local\/bin)/ { held = ""; next }
+			held != "" { print held; held = "" }
+			{ print }
+			END { if (held != "") print held }
+		' "$profile" >"$tmp"
+		cat "$tmp" >"$profile"
+		info "  removed the PATH line from $profile"
+	done
+	security delete-generic-password -s bier-vault -a vault >/dev/null 2>&1 &&
+		info "  removed the vault passphrase from the keychain" || true
+	case $(readlink "$HOME/.local/bin/bier" 2>/dev/null || true) in
+	*/Sources/bier-core/bier) rm -f "$HOME/.local/bin/bier" ;;
+	esac
+	for tmp in /Applications/BierMenu.app "$HOME/Applications/BierMenu.app"; do
+		[ ! -d "$tmp" ] || { rm -rf "$tmp" && info "  removed $tmp"; }
+	done
+
+	info ""
+	info "== 5. What is left"
+	if [ -n "$unsigned" ]; then
+		info "  Not reached to sign off:$unsigned. On each of them, run:"
+		info "    bier peer remove $HOST"
+		info "  and remove this Mac's address there as well (bier peer list)."
+	fi
+	[ -z "$left_out" ] ||
+		info "  Did not get the removal of $HOST:$left_out -- it reaches them through the other Macs, or run there: bier retire $HOST"
+	info "  If \"Start at login\" was on: System Settings > General > Login Items."
+	case $ROOT/ in
+	"$BARREL"/*) ;;
+	*) info "  The program's working copy stays: $ROOT" ;;
+	esac
+	if [ -d "$BARREL" ]; then
+		printf 'Delete %s as well -- the data, the vault copies and the backups? Your files stay where they are. [y/N] ' "$BARREL"
+		read -r answer || answer=""
+		case $answer in
+		y | Y | j | J)
+			info ""
+			info "bier is gone. Cheers."
+			rm -rf "$BARREL"
+			exit 0
+			;;
+		esac
+		rm -rf "$BARREL/bin" "$BARREL/BierMenu.app" "$BARREL/agent"
+		case $ROOT/ in
+		"$BARREL"/*) rm -rf "$ROOT" ;;
+		esac
+		info "  Kept in $BARREL: the data, the vault copies, the backups and the config."
+		info "  rm -rf $BARREL takes them too."
+	else
+		info "  Kept: $DATA, $VAULT and $(dirname "$CONFIG_FILE")"
+		rm -rf "$AGENT_HOME"
+	fi
+	info ""
+	info "bier is off $HOST."
+	exit 0
+}
+
 # Takes a Mac out of the fleet: the one that broke, was lost, or was
 # wiped before anybody thought of uninstalling. Run it on a Mac that is
 # still there.
@@ -3452,8 +3613,8 @@ cmd_retire() {
 	else
 		[ -n "$name" ] || die "which Mac? bier retire mini"
 		[ "$name" != "$HOST" ] ||
-			die "that is this Mac. To take it out from here:
-     $ROOT/install.sh --uninstall"
+			die "that is this Mac. To take bier off it:
+     bier knockout"
 	fi
 	[ -f "$BREW_DIR/$name" ] ||
 		die "no Mac called $name has ever recorded anything"
@@ -3472,15 +3633,17 @@ cmd_retire() {
 	[ "$own" = 0 ] ||
 		info "  $(count_word "$own") in the vault only for it — those stay"
 
-	printf 'Take %s out? [y/N] ' "$name"
-	read -r answer || answer=""
-	case $answer in
-	j | J | y | Y) ;;
-	*)
-		info "Cancelled."
-		return 0
-		;;
-	esac
+	if [ "${RETIRE_CONFIRMED:-}" != yes ]; then
+		printf 'Take %s out? [y/N] ' "$name"
+		read -r answer || answer=""
+		case $answer in
+		j | J | y | Y) ;;
+		*)
+			info "Cancelled."
+			return 0
+			;;
+		esac
+	fi
 
 	rm -f "$BREW_DIR/$name"
 	if [ -f "$VAULT/.groups" ]; then
@@ -3858,12 +4021,14 @@ bier — keeps Brewfiles in sync across Macs
   bier upgrade [--force]  install a newer release of bier itself
   bier retire <name>      take a Mac out of the fleet — the one that
                           broke, or was wiped without uninstalling
+  bier knockout           take bier off this Mac: sign off at the others,
+                          leave the vault's files in place
   bier vault [--init]     files that are not Brewfiles, encrypted
        [--passphrase]     with one passphrase all your Macs share
   bier trust [url]        trust Bier program releases; no url shows the key
   bier peer add <host>    remember a Mac that Bier may contact
   bier peer list          show remembered Macs
-  bier peer remove <host> forget a remembered Mac
+  bier peer remove <host> forget a remembered Mac, its address or its key
   bier peer check <host>  check safe, non-interactive SSH access
   bier peer hello <host>  prove authenticated Bier Agent access
   bier peer offer [--address <own-host>]  show a one-time code for SSH-free pairing
@@ -3937,6 +4102,7 @@ trust) cmd_trust "$@" ;;
 peer) cmd_peer "$@" ;;
 vault) cmd_vault "$@" ;;
 retire) cmd_retire "$@" ;;
+knockout) cmd_knockout "$@" ;;
 version | --version | -V) cmd_version ;;
 help | -h | --help) cmd_help ;;
 *) die "unknown command: $cmd (bier help)" ;;

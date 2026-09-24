@@ -12,7 +12,7 @@ private enum CLIError: LocalizedError {
 	var errorDescription: String? {
 		switch self {
 		case .usage:
-			return "usage: bier-peer <hello|pair|seed|seed-if-empty|seed-if-pristine|compare|sync> <host> --local <name> --identity <path> [--data <path>] [--address <own-host>] [--code-file <path>] [--peer-signers <path>] [--port <port>]"
+			return "usage: bier-peer <hello|pair|leave|seed|seed-if-empty|seed-if-pristine|compare|sync> <host> --local <name> --identity <path> [--data <path>] [--address <own-host>] [--code-file <path>] [--peer-signers <path>] [--port <port>]"
 		case .invalidHost:
 			return "the peer host or port is invalid"
 		case .missingData:
@@ -98,6 +98,10 @@ private enum BierPeerCLI {
 			print("Bier Agent on \(options.displayHost) accepted \(options.localHost) as a peer.")
 		case "pair":
 			try await pair(options)
+		case "leave":
+			let response = try JSONDecoder().decode(HelloResponse.self, from: try await transport.send(method: "POST", path: "/v1/peer/leave", body: Data()))
+			guard response.status == "peer-left" else { throw CLIError.invalidResponse }
+			print("Signed off at \(options.displayHost): it forgot \(options.localHost).")
 		case "seed", "seed-if-empty", "seed-if-pristine":
 			guard let data = options.data else { throw CLIError.missingData }
 			do {

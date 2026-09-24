@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# launchctl stand-in: tests must never stop or unload anything on the real Mac.
+printf '%s\n' "$*" >>"${WORK:?WORK is not set}/launchctl.args"
+exit 0
