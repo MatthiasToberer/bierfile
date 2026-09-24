@@ -1,4 +1,6 @@
+#if BIER_PACKAGE
 import BierCore
+#endif
 import Darwin
 import Foundation
 

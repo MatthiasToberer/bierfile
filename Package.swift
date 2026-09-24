@@ -24,7 +24,13 @@ let package = Package(
 			sources: ["BierAgent.swift"],
 			swiftSettings: [.define("BIER_PACKAGE")]
 		),
-		.executableTarget(name: "BierPeer", dependencies: ["BierCore"], path: "Sources/bier-peer", exclude: ["build", "build.sh"]),
+		.executableTarget(
+			name: "BierPeer",
+			dependencies: ["BierCore"],
+			path: "Sources/bier-peer",
+			exclude: ["build", "build.sh"],
+			swiftSettings: [.define("BIER_PACKAGE")]
+		),
 		.testTarget(
 			name: "BierCoreTests",
 			dependencies: ["BierCore"],

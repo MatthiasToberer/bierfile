@@ -14,8 +14,9 @@ trap cleanup EXIT
 
 agent="$work/bier-agent"
 "$root/Sources/bier-agent/build.sh" "$agent" >/dev/null
-swift build --package-path "$root" --product bier-peer >/dev/null
-peer_cli=$(swift build --package-path "$root" --show-bin-path)/bier-peer
+# The way install.sh builds it, without SwiftPM.
+peer_cli=$work/bier-peer
+"$root/Sources/bier-peer/build.sh" "$peer_cli" >/dev/null
 swiftc -O -framework Foundation -framework CryptoKit -o "$work/snapshot-test" "$root/Sources/bier-core/swift/DataManifest.swift" "$root/Sources/bier-core/swift/DataSnapshot.swift" "$here/SnapshotTest.swift"
 "$work/snapshot-test"
 swiftc -O -framework Foundation -framework CryptoKit -o "$work/git-repository-test" "$root/Sources/bier-core/swift/DataManifest.swift" "$root/Sources/bier-core/swift/DataSnapshot.swift" "$root/Sources/bier-core/swift/GitRepository.swift" "$root/Sources/bier-core/swift/GitBundleStore.swift" "$here/GitRepositoryTest.swift"
