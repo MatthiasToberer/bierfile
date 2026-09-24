@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# mas stand-in. Installed apps are the mas lines of the simulated
+# system; the store is $WORK/mas-store ("<id> <name>" per line).
+set -euo pipefail
+SYS=${BIER_TEST_SYSTEM:?}
+case ${1:-} in
+list) sed -nE 's/^mas "([^"]+)", id: ([0-9]+).*/\2  \1  (1.0)/p' "$SYS" ;;
+search)
+	while read -r id name; do
+		[ "$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')" = "$(printf '%s' "${2:-}" | tr '[:upper:]' '[:lower:]')" ] &&
+			printf '%s  %s  (1.0)\n' "$id" "$name"
+	done <"${WORK:?}/mas-store"
+	;;
+install)
+	name=$(awk -v id="${2:-}" '$1 == id { $1 = ""; sub(/^ /, ""); print }' "${WORK:?}/mas-store")
+	[ -n "$name" ] || exit 1
+	printf 'mas "%s", id: %s\n' "$name" "$2" >>"$SYS"
+	;;
+*) exit 1 ;;
+esac

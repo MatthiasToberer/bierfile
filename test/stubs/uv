@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# uv stand-in: records what bier asked for.
+printf '%s\n' "$*" >>"${WORK:?WORK is not set}/uv.args"

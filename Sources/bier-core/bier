@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.42.0
+BIER_VERSION=0.43.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -270,13 +270,18 @@ need_code() {
 		die "no git repository at $ROOT — check \"root\" in $CONFIG_FILE"
 }
 
+# Every kind of entry brew bundle writes. Kept in one place: an entry of
+# a kind missing here would drop out of the lists on the next dump, and
+# install would refuse the file as holding something that is no entry.
+KINDS='tap|brew|cask|mas|vscode|go|cargo|uv|npm|krew|flatpak|whalebrew|winget'
+
 # Print the entries of a Brewfile normalised: 'kind "name"', sorted.
 # Comment lines and options (args:, id: …) are dropped.
 entries() {
 	[ -f "$1" ] || return 0
 	# No match is not an error — an empty file is a valid state. Without
 	# the || true, pipefail drags every assignment down with it.
-	{ grep -E '^[[:space:]]*(tap|brew|cask|mas|vscode)[[:space:]]+"' "$1" || true; } |
+	{ grep -E "^[[:space:]]*($KINDS)[[:space:]]+\"" "$1" || true; } |
 		sed -E 's/^[[:space:]]*([a-z]+)[[:space:]]+"([^"]+)".*/\1 "\2"/' |
 		sort -u
 }
@@ -296,7 +301,7 @@ brewfile_grammar() {
 	local value='(true|false|nil|[0-9]+|"[^"]*"|\[[^]]*\]|\{[^}]*\})'
 	local opt="([[:space:]]*,[[:space:]]*$key:[[:space:]]*$value)"
 	printf '%s%s%s' \
-		'^[[:space:]]*(tap|brew|cask|mas|vscode)[[:space:]]+' \
+		"^[[:space:]]*($KINDS)[[:space:]]+" \
 		"$name$opt*[[:space:]]*(#.*)?\$" \
 		'|^[[:space:]]*(#.*)?$'
 }
@@ -508,7 +513,7 @@ delta() {
 	# error message.
 	[ -f "$1" ] || return 0
 	base_keys=$(entries "$2")
-	{ grep -E '^[[:space:]]*(tap|brew|cask|mas|vscode)[[:space:]]+"' "$1" || true; } |
+	{ grep -E "^[[:space:]]*($KINDS)[[:space:]]+\"" "$1" || true; } |
 		while IFS= read -r line; do
 			key=$(printf '%s\n' "$line" |
 				sed -E 's/^[[:space:]]*([a-z]+)[[:space:]]+"([^"]+)".*/\1 "\2"/')
@@ -591,7 +596,7 @@ strip_entry_in() {
 # then ask Homebrew, and taps last.
 kind_of() {
 	local name=$1 rx kind
-	rx="^[[:space:]]*(tap|brew|cask|mas|vscode)[[:space:]]+\"$(rx_quote "$name")\""
+	rx="^[[:space:]]*($KINDS)[[:space:]]+\"$(rx_quote "$name")\""
 	kind=$({ grep -hE "$rx" "$BREW_DIR"/* 2>/dev/null || true; } |
 		head -1 | sed -E 's/^[[:space:]]*([a-z]+).*/\1/')
 	if [ -n "$kind" ]; then
@@ -615,7 +620,7 @@ kind_of() {
 	fi
 
 	# Last resort: the short name of a fully qualified entry, taps excluded.
-	rx="^[[:space:]]*(brew|cask|mas|vscode)[[:space:]]+\"[^\"]*/$(rx_quote "$name")\""
+	rx="^[[:space:]]*(${KINDS#tap|})[[:space:]]+\"[^\"]*/$(rx_quote "$name")\""
 	{ grep -hE "$rx" "$BREW_DIR"/* 2>/dev/null || true; } |
 		head -1 | sed -E 's/^[[:space:]]*([a-z]+).*/\1/' | tr -d '\n'
 }
@@ -629,11 +634,20 @@ uninstall_one() {
 	cask) brew uninstall --cask "$name" ;;
 	tap) brew untap "$name" ;;
 	vscode) code --uninstall-extension "$name" ;;
+	npm) npm uninstall --global "$name" ;;
+	cargo) cargo uninstall "$name" ;;
+	uv) uv tool uninstall "$name" ;;
+	krew) kubectl krew uninstall "$name" ;;
+	whalebrew) whalebrew uninstall "$name" ;;
+	flatpak) flatpak uninstall -y "$name" ;;
 	mas)
 		info "  $name came from the App Store — please remove it from"
 		info "  /Applications by hand. I will take it out of the Brewfiles."
 		;;
-	*) die "unknown kind for $name" ;;
+	*)
+		info "  bier cannot uninstall $kind entries; remove $name by hand."
+		info "  I will take it out of the Brewfiles."
+		;;
 	esac
 }
 
@@ -1819,16 +1833,30 @@ cmd_add() {
 	done
 	[ $# -ge 1 ] || die "usage: bier add [--main | --here] [--settings | --no-settings] <package>…"
 
+	local store line
 	for name in "$@"; do
-		kind=$(add_kind "$name") || die "$name is neither a formula nor a cask Homebrew knows"
+		line=""
+		ADD_MAS_ID=""
+		if kind=$(add_kind "$name") && [ "$kind" != mas ]; then
+			line=$(printf '%s "%s"' "$kind" "$name")
+		elif store=$(mas_lookup "$name"); then
+			# An App Store app, by the name the store gives it.
+			kind=mas
+			ADD_MAS_ID=${store%%$'\t'*}
+			name=${store#*$'\t'}
+			line=$(printf 'mas "%s", id: %s' "$name" "$ADD_MAS_ID")
+		else
+			die "$name is neither a formula, a cask nor an App Store app"
+		fi
 		if ! add_installed "$kind" "$name"; then
 			info "Installing $name …"
 			case $kind in
 			cask) brew install --cask "$name" ;;
+			mas) mas install "$ADD_MAS_ID" ;;
 			*) brew install "$name" ;;
 			esac || die "could not install $name; nothing was added"
 		fi
-		add_to_list "$kind" "$name" "$where"
+		add_to_list "$kind" "$name" "$where" "$line"
 		add_settings "$kind" "$name" "$settings"
 		added="$added $name"
 	done
@@ -1856,18 +1884,49 @@ add_installed() {
 	case $1 in
 	cask) brew list --cask 2>/dev/null | grep -qxF "${2##*/}" ;;
 	brew) brew list --formula 2>/dev/null | grep -qxF "$2" ;;
+	mas) mas list 2>/dev/null | awk '{ print $1 }' | grep -qxF "$ADD_MAS_ID" ;;
 	*) return 0 ;;
 	esac
+}
+
+# An App Store app by its exact name, installed or in the store:
+# "<id>\t<name>". The names in a Brewfile are the store's.
+ADD_MAS_ID=""
+mas_lookup() {
+	command -v mas >/dev/null 2>&1 || return 1
+	local found
+	found=$({ mas list 2>/dev/null; mas search "$1" 2>/dev/null; } | awk -v n="$1" '
+		{ id = $1; $1 = ""; sub(/^ +/, ""); sub(/ +\(.*$/, "")
+		  if (tolower($0) == tolower(n)) { print id "\t" $0; exit } }')
+	[ -n "$found" ] && printf '%s' "$found"
+}
+
+# Where an App Store app is: Spotlight knows it by its store id; the file
+# name need not be the store name ("Keynote" is "Keynote Creator
+# Studio.app").
+mas_app_path() {
+	local path dir
+	path=$(mdfind "kMDItemAppStoreAdamID == $1" 2>/dev/null | grep '\.app$' | head -1 || true)
+	if [ -n "$path" ] && [ -d "$path" ]; then
+		printf '%s' "$path"
+		return 0
+	fi
+	for dir in "${BIER_APPS_DIR:-/Applications}" "$HOME/Applications"; do
+		[ -d "$dir/$2.app" ] || continue
+		printf '%s' "$dir/$2.app"
+		return 0
+	done
+	return 1
 }
 
 # Onto main or this Mac's list. The last choice is remembered for the
 # settings: only here means only for this Mac.
 ADD_SCOPE=""
 add_to_list() {
-	local kind=$1 name=$2 where=$3 answer line
-	line=$(printf '%s "%s"' "$kind" "$name")
+	local kind=$1 name=$2 where=$3 line=$4 answer key
+	key=$(printf '%s "%s"' "$kind" "$name")
 	ADD_SCOPE=""
-	if entries "$MAIN_FILE" | grep -qxF "$line"; then
+	if entries "$MAIN_FILE" | grep -qxF "$key"; then
 		info "$name is in main already."
 		return 0
 	fi
@@ -1889,7 +1948,7 @@ add_to_list() {
 		printf '%s\n' "$line" >>"$MAIN_FILE"
 		info "Added to Brewfiles/main."
 	else
-		entries "$BREW_DIR/$HOST" | grep -qxF "$line" || printf '%s\n' "$line" >>"$BREW_DIR/$HOST"
+		entries "$BREW_DIR/$HOST" | grep -qxF "$key" || printf '%s\n' "$line" >>"$BREW_DIR/$HOST"
 		ADD_SCOPE=$HOST
 		info "Added to Brewfiles/$HOST."
 	fi
@@ -1906,6 +1965,26 @@ add_app_path() {
 		printf '%s' "$dir/$app"
 		return 0
 	done
+	return 1
+}
+
+# Never offered on its own: what holds keys, passwords or accounts. VPN
+# clients and password managers keep them in their settings; sharing
+# them should be a decision, taken with bier vault add by hand.
+add_secret_path() {
+	case $1 in
+	*/.ssh | */.ssh/* | */.gnupg | */.gnupg/* | */Keychains/* | *.keychain* | \
+		*[Cc]redential* | *[Tt]oken* | *[Pp]assword* | *[Ss]ecret* | *.pem | *.key | *.p12) return 0 ;;
+	esac
+	return 1
+}
+
+add_secret_app() {
+	case $1 in
+	io.tailscale.* | com.wireguard.* | net.tunnelblick.* | com.bitwarden.* | com.1password.* | \
+		com.agilebits.* | org.keepassxc.* | com.nordvpn.* | com.expressvpn.* | ch.protonvpn.* | \
+		me.proton.pass.*) return 0 ;;
+	esac
 	return 1
 }
 
@@ -1938,10 +2017,20 @@ add_zap_settings() {
 # a command-line tool. Only what exists here is offered.
 add_settings() {
 	local kind=$1 name=$2 choice=$3 app="" id="" label c found="" path n picks i
-	if [ "$kind" = cask ]; then
-		app=$(add_app_path "$name") || return 0
+	if [ "$kind" = cask ] || [ "$kind" = mas ]; then
+		if [ "$kind" = cask ]; then
+			app=$(add_app_path "$name") || return 0
+		else
+			app=$(mas_app_path "$ADD_MAS_ID" "$name") || return 0
+		fi
 		id=$(plutil -extract CFBundleIdentifier raw -o - "$app/Contents/Info.plist" 2>/dev/null) || return 0
 		label=$(basename "$app" .app)
+		if add_secret_app "$id"; then
+			info ""
+			info "$label holds keys, passwords or accounts; bier does not offer"
+			info "its settings. If you are sure: bier vault add --app $label <path>"
+			return 0
+		fi
 		c=$HOME/Library/Containers/$id/Data/Library
 		if [ -d "$HOME/Library/Containers/$id" ] && ! ls "$c" >/dev/null 2>&1; then
 			info ""
@@ -1956,7 +2045,7 @@ add_settings() {
 			[ -e "$path" ] && found="$found$path
 "
 		done
-		while IFS= read -r path; do
+		[ "$kind" != cask ] || while IFS= read -r path; do
 			[ -n "$path" ] && [ -e "$path" ] && found="$found$path
 "
 		done <<EOF
@@ -1968,6 +2057,20 @@ EOF
 "
 	fi
 	found=$(printf '%s' "$found" | grep -v '^$' | awk '!seen[$0]++' || true)
+	local kept="" secret=0
+	while IFS= read -r path; do
+		[ -n "$path" ] || continue
+		if add_secret_path "$path"; then
+			secret=$((secret + 1))
+		else
+			kept="$kept$path
+"
+		fi
+	done <<EOF
+$found
+EOF
+	found=$(printf '%s' "$kept" | grep -v '^$' || true)
+	[ "$secret" = 0 ] || info "Left out $(count_word "$secret") that may hold keys or passwords."
 	[ -n "$found" ] || return 0
 	# What is shared already is not offered again.
 	local shared="" fresh=""
@@ -2967,6 +3070,8 @@ vault_excluded() {
 	local pattern
 	case ${1##*/} in
 	.DS_Store | *.lock | *.log | *[Ll]og.txt | .bier-folder) return 0 ;;
+	# What holds keys or passwords travels only when added by itself.
+	*[Tt]oken* | *[Pp]assword* | *[Ss]ecret* | *[Cc]redential* | *.pem | *.key | *.p12 | *.keychain*) return 0 ;;
 	esac
 	case "/$1" in
 	*/*[Cc]ache*/* | */*CACHE*/* | */[Ll]ogs/* | */.git/*) return 0 ;;

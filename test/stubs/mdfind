@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# mdfind stand-in: Spotlight knows nothing in the tests.
+exit 0

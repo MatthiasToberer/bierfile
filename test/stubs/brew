@@ -58,7 +58,7 @@ bundle)
 	install)
 		# Everything in the file counts as installed afterwards.
 		[ -f "$file" ] || exit 1
-		grep -E '^[[:space:]]*(tap|brew|cask|mas|vscode)[[:space:]]+"' "$file" >>"$SYS" || true
+		grep -E '^[[:space:]]*(tap|brew|cask|mas|vscode|go|cargo|uv|npm|krew|flatpak|whalebrew|winget)[[:space:]]+"' "$file" >>"$SYS" || true
 		# Collapse duplicates, the order does not matter.
 		tmp=$(mktemp)
 		sort -u "$SYS" >"$tmp"

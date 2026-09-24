@@ -18,9 +18,11 @@ A Mac named with `--keep` keeps the program installed, this one
 included. Without a flag and without a terminal to ask, bier stops
 before changing anything. `bier rm` is the same command.
 
-The name can be a formula, cask, tap or VS Code extension. App Store
-(`mas`) apps are taken off the lists, but you delete the app yourself —
-uninstalling them would need `sudo`.
+The name can be a formula, cask, tap, VS Code extension, or an `npm`,
+`cargo`, `uv`, `krew`, `whalebrew` or `flatpak` entry. App Store (`mas`)
+apps are taken off the lists, but you delete the app yourself —
+uninstalling them would need `sudo`; so are `go` entries, which have no
+uninstaller.
 
 If an uninstall fails, the entry stays on the lists as long as the
 program is installed. In automatic inventory mode this Mac's list is

@@ -76,7 +76,10 @@ files do not compress against each other. So:
   contains `cache` in any spelling, and folders called `Logs`, `logs` or
   `.git` are left out, and whatever `vault_exclude`
   in the config names — an app's own noise, such as HandBrake's queue:
-  `vault_exclude = *.hbqueue`.
+  `vault_exclude = *.hbqueue`;
+- files that may hold keys or passwords — named like tokens, passwords,
+  secrets or credentials, `.pem`, `.key`, `.p12`, keychains — stay out
+  of a folder; add one by itself if it should travel.
 
 ## Apps that are running
 
