@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.47.1
+BIER_VERSION=0.47.2
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -1632,7 +1632,10 @@ peer_introduce_all() {
 	local done_file=$AGENT_HOME/state/introduced peer other name key body
 	local -a names=() addresses=()
 	for peer in $(peer_list); do
-		name=$(peer_call name "$peer" --identity "$PEER_IDENTITY" 2>/dev/null) || continue
+		if ! name=$(peer_call name "$peer" --identity "$PEER_IDENTITY" 2>/dev/null); then
+			info "Cannot introduce $peer: no answer, or its bier is older than 0.46 (bier upgrade there)."
+			continue
+		fi
 		peer_name_ok "$name" || continue
 		names+=("$name")
 		addresses+=("$peer")
@@ -1647,9 +1650,11 @@ peer_introduce_all() {
 			! grep -qxF "${names[$peer]} ${names[$other]} $key" "$done_file" 2>/dev/null || continue
 			body=$(tmpfile)
 			printf '{"peer":"%s","address":"%s","publicKey":"%s"}' "${names[$other]}" "${addresses[$other]}" "$key" >"$body"
-			if peer_call introduce "${addresses[$peer]}" --identity "$PEER_IDENTITY" --body "$body" >/dev/null 2>&1; then
+			if peer_call introduce "${addresses[$peer]}" --identity "$PEER_IDENTITY" --body "$body" >/dev/null; then
 				printf '%s %s %s\n' "${names[$peer]}" "${names[$other]}" "$key" >>"$done_file"
 				info "Introduced ${names[$other]} to ${names[$peer]}; accept it there with: bier peer accept ${names[$other]}"
+			else
+				info "Could not introduce ${names[$other]} to ${names[$peer]}; is bier there 0.46 or later?"
 			fi
 		done
 	done
@@ -1677,6 +1682,7 @@ cmd_peer_pending() {
 # Takes the named pending Macs (or all) out of the list; prints their lines.
 pending_take() {
 	local which=$1 tmp lines
+	[ -n "$(pending_list)" ] || die "no Macs are waiting. They appear after a bier sync on a Mac paired with both."
 	lines=$(pending_list | awk -v w="$which" 'w == "all" || $1 == w')
 	[ -n "$lines" ] || die "$which is not waiting; see: bier peer pending"
 	tmp=$(mktemp "$(dirname "$PENDING_FILE")/pending.XXXXXX")
