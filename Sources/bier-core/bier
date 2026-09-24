@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.48.0
+BIER_VERSION=0.48.1
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -1133,7 +1133,8 @@ cmd_admin() {
 #   ENTRY   main|<mac> <entry>         what a list holds
 #   APPSET  <package> <app> <what> <scope>  an app's shared settings
 #   FILE    <path> <scope>             a file or folder/ shared by path
-#   PEER    <address> <commit|never>   a paired Mac, and what it last had
+#   PEER    <address> <commit|never> <time>  a paired Mac, what it last
+#                                      had, and when it was last synced
 cmd_report() {
 	local h f scope peer
 	cmd_state
@@ -1151,8 +1152,11 @@ cmd_report() {
 		esac
 		printf 'FILE\t%s\t%s\n' "$f" "$scope"
 	done
+	local sent
 	for peer in $(peer_list); do
-		printf 'PEER\t%s\t%s\n' "$peer" "$(peer_sent_get "$peer" | grep . || echo never)"
+		sent=$(peer_sent_get "$peer")
+		printf 'PEER\t%s\t%s\t%s\n' "$peer" "${sent:-never}" \
+			"$(awk -F '\t' -v peer="$peer" '$1 == peer { t = $3 } END { print t }' "$STATE_DIR/peers-sent" 2>/dev/null)"
 	done
 }
 
@@ -1353,7 +1357,7 @@ peer_sent_set() {
 	mkdir -p "$STATE_DIR"
 	next=$(mktemp "$STATE_DIR/peers-sent.XXXXXX")
 	[ ! -f "$list" ] || awk -F '\t' -v peer="$1" '$1 != peer' "$list" >"$next"
-	printf '%s\t%s\n' "$1" "$(git -C "$DATA" rev-parse HEAD)" >>"$next"
+	printf '%s\t%s\t%s\n' "$1" "$(git -C "$DATA" rev-parse HEAD)" "$(date +%s)" >>"$next"
 	mv "$next" "$list"
 }
 
