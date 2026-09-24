@@ -125,6 +125,26 @@ public final class PeerPairingStore {
 		try write(kept + ["\(introduction.peer) \(introduction.address) \(peer) \(key)"], to: pendingURL)
 	}
 
+	/// The key a pending Mac was introduced with, as an allowed-signers
+	/// line, so that its own signature can be checked against it.
+	public func pendingSigner(_ peer: String) -> String? {
+		lock.lock()
+		defer { lock.unlock() }
+		return pendingLines().first { $0[0] == peer }.map { "\($0[0]) \($0[3]) \($0[4])" }
+	}
+
+	/// A pending Mac confirms it accepted this one: a person has trusted
+	/// it on one side, a trusted peer vouched for it, and it proved its
+	/// key. So it is trusted here as well, without a second accept.
+	public func confirm(_ peer: String) throws {
+		lock.lock()
+		defer { lock.unlock() }
+		guard let line = pendingLines().first(where: { $0[0] == peer }) else { throw PeerPairingError.rejected }
+		try remember(peer: peer, key: "\(line[3]) \(line[4])")
+		try remember(address: line[1])
+		try write(pendingLines().filter { $0[0] != peer }.map { $0.joined(separator: " ") }, to: pendingURL)
+	}
+
 	private func pendingLines() -> [[String]] {
 		((try? String(contentsOf: pendingURL, encoding: .utf8)) ?? "").split(whereSeparator: \.isNewline)
 			.map { $0.split(separator: " ").map(String.init) }.filter { $0.count >= 5 }

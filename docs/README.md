@@ -31,6 +31,8 @@ would rather have every step explained.
 - **[The seven-minute pilsner](tutorials/seven-minute-pilsner.md)** — two
   Macs from scratch, every step explained
 - **[Two Macs: installing something new](tutorials/new-tool-on-two-macs.md)**
+- **[One Mac, then any number, over Tailscale](tutorials/many-macs-over-tailscale.md)**
+  — pair each new Mac with one, accept it once, done
 - **[Three Macs: one with special equipment](tutorials/special-equipment.md)**
 - **[Getting rid of something everywhere](tutorials/removing-everywhere.md)**
 - **[Your dotfiles on a new Mac](tutorials/dotfiles-on-a-new-mac.md)**

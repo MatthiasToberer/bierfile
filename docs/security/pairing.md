@@ -74,8 +74,10 @@ bier peer accept febook    # or: bier peer accept all
 bier peer reject febook    # or: bier peer reject all
 ```
 
-Accept on both sides: on the old Mac the new one, on the new Mac the
-old one. Then `bier sync`. Only a trusted Mac can introduce, and a Mac
+Accept once, on any one of the two Macs. `accept` tells the other one,
+signed with this Mac's key; it trusts back only a Mac that is waiting
+there with exactly that key, introduced by a Mac it trusts. Then
+`bier sync`. Only a trusted Mac can introduce, and a Mac
 that signs off (`bier knockout`) takes its introductions with it.
 The menu bar and `bier brewmaster` point out Macs that wait.
 

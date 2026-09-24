@@ -1698,11 +1698,18 @@ cmd_peer_accept() {
 		chmod 600 "$tmp"
 		mv "$tmp" "$LOCAL_PEER_SIGNERS"
 		peer_remember "$address"
-		info "Accepted $name ($address), introduced by $by."
+		# It has this Mac waiting too; the confirmation, signed with this
+		# Mac's key, lets it trust this one without a second accept.
+		if peer_call confirm "$address" --identity "$PEER_IDENTITY" >/dev/null 2>&1; then
+			info "Accepted $name ($address), introduced by $by; it trusts $HOST now as well."
+		else
+			info "Accepted $name ($address), introduced by $by."
+			info "  $name could not be told; on $name run: bier peer accept $HOST"
+		fi
 	done <<EOF
 $lines
 EOF
-	info "It syncs with this Mac once it has accepted $HOST too; then: bier sync"
+	info "Next: bier sync"
 }
 
 cmd_peer_reject() {
@@ -1733,7 +1740,7 @@ bier peer — manage Macs Bier may contact
   bier peer uninstall <host> stop and remove a Bier agent via SSH
   bier peer remove <host> forget a remembered Mac, its address or its key
   bier peer pending       Macs another peer introduced, waiting to be trusted
-  bier peer accept <mac>|all  trust an introduced Mac and sync with it
+  bier peer accept <mac>|all  trust an introduced Mac, on both sides
   bier peer reject <mac>|all  drop an introduced Mac
 EOF
 }
@@ -4999,7 +5006,7 @@ bier — keeps Brewfiles in sync across Macs
   bier peer list          show remembered Macs
   bier peer remove <host> forget a remembered Mac, its address or its key
   bier peer pending       Macs another peer introduced, waiting to be trusted
-  bier peer accept <mac>|all  trust an introduced Mac and sync with it
+  bier peer accept <mac>|all  trust an introduced Mac, on both sides
   bier peer reject <mac>|all  drop an introduced Mac
   bier peer check <host>  check safe, non-interactive SSH access
   bier peer hello <host>  prove authenticated Bier Agent access

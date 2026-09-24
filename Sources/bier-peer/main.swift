@@ -14,7 +14,7 @@ private enum CLIError: LocalizedError {
 	var errorDescription: String? {
 		switch self {
 		case .usage:
-			return "usage: bier-peer <hello|name|introduce|pair|leave|seed|seed-if-empty|seed-if-pristine|compare|sync> <host> --local <name> --identity <path> [--data <path>] [--address <own-host>] [--code-file <path>] [--peer-signers <path>] [--port <port>] [--via <host>] [--body <path>]"
+			return "usage: bier-peer <hello|name|introduce|confirm|pair|leave|seed|seed-if-empty|seed-if-pristine|compare|sync> <host> --local <name> --identity <path> [--data <path>] [--address <own-host>] [--code-file <path>] [--peer-signers <path>] [--port <port>] [--via <host>] [--body <path>]"
 		case .invalidHost:
 			return "the peer host or port is invalid"
 		case .missingData:
@@ -114,6 +114,9 @@ private enum BierPeerCLI {
 			guard let body = options.body else { throw CLIError.usage }
 			let response = try JSONDecoder().decode(HelloResponse.self, from: try await transport.send(method: "POST", path: "/v1/peer/introduce", body: Data(contentsOf: body)))
 			guard response.status == "introduced" else { throw CLIError.invalidResponse }
+		case "confirm":
+			let response = try JSONDecoder().decode(HelloResponse.self, from: try await transport.send(method: "POST", path: "/v1/peer/confirm", body: Data()))
+			guard response.status == "confirmed" else { throw CLIError.invalidResponse }
 		case "pair":
 			try await pair(options)
 		case "leave":

@@ -50,6 +50,7 @@ assert_contains "$OUT" "new was introduced by one and waits to be trusted."
 
 assert_ok bier mini peer reject bad
 assert_ok bier mini peer accept new
+assert_contains "$OUT" "it trusts mini now as well"
 assert_file_has "$h/.barrel/agent/peer_signers" "new $k1"
 assert_ok bier mini peer list
 assert_contains "$OUT" "new.ts.net"

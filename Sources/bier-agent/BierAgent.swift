@@ -268,6 +268,25 @@ final class AgentServer {
 			} catch { respond(connection, status: 403, body: "peer is not authorised") }
 			return
 		}
+		if method == "POST" && path == "/v1/peer/confirm" {
+			guard let pairingStore, let peer = headers["x-bier-peer"], let time = headers["x-bier-time"],
+				let nonce = headers["x-bier-nonce"], let encoded = headers["x-bier-signature"], let signature = Data(base64Encoded: encoded),
+				let signer = pairingStore.pendingSigner(peer) else {
+				respond(connection, status: 403, body: "peer is not waiting here")
+				return
+			}
+			let signers = FileManager.default.temporaryDirectory.appendingPathComponent("bier-pending-\(UUID().uuidString)")
+			defer { try? FileManager.default.removeItem(at: signers) }
+			do {
+				// Signed with the very key it was introduced with.
+				try (signer + "\n").write(to: signers, atomically: true, encoding: .utf8)
+				try verifyPeer(method: method, path: path, peer: peer, signers: signers.path, time: time, nonce: nonce, body: body, signature: signature)
+				if try store.record("peer-\(peer)-\(nonce)") { respond(connection, status: 409, body: "peer request was already processed"); return }
+				try pairingStore.confirm(peer)
+				respond(connection, status: 200, body: "{\"status\":\"confirmed\"}", contentType: "application/json")
+			} catch { respond(connection, status: 403, body: "peer is not authorised") }
+			return
+		}
 		if method == "GET" && path == "/v1/peer/manifest" {
 			guard let peerSigners, let dataDirectory, let peer = headers["x-bier-peer"], let time = headers["x-bier-time"],
 				let nonce = headers["x-bier-nonce"], let encoded = headers["x-bier-signature"], let signature = Data(base64Encoded: encoded) else {
