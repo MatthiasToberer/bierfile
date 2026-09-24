@@ -114,6 +114,51 @@ uninstall)
 	echo "Uninstalling $name"
 	;;
 
+install)
+	# What can be installed: $WORK/brew-casks ("token App.app" per line)
+	# and $WORK/brew-formulas (one name per line).
+	kind=brew
+	if [ "${1:-}" = "--cask" ]; then
+		kind=cask
+		shift
+	fi
+	name=${1:?}
+	if [ "$kind" = cask ]; then
+		grep -q "^$name " "${WORK:?}/brew-casks" 2>/dev/null || { echo "Error: no cask $name" >&2; exit 1; }
+	else
+		grep -qx "$name" "${WORK:?}/brew-formulas" 2>/dev/null || { echo "Error: no formula $name" >&2; exit 1; }
+	fi
+	printf '%s "%s"\n' "$kind" "$name" >>"$SYS"
+	echo "installed $name"
+	;;
+
+info)
+	kind=""
+	json=no
+	while [ $# -gt 1 ]; do
+		case $1 in
+		--cask) kind=cask ;;
+		--formula) kind=brew ;;
+		--json=*) json=yes ;;
+		esac
+		shift
+	done
+	name=${1:?}
+	if [ "$kind" != brew ] && line=$(grep "^$name " "${WORK:?}/brew-casks" 2>/dev/null); then
+		if [ "$json" = yes ]; then
+			printf '{"casks":[{"token":"%s","artifacts":[{"app":["%s"]}]}]}\n' "$name" "${line#* }"
+		else
+			echo "==> $name"
+		fi
+		exit 0
+	fi
+	if [ "$kind" != cask ] && grep -qx "$name" "${WORK:?}/brew-formulas" 2>/dev/null; then
+		echo "==> $name"
+		exit 0
+	fi
+	exit 1
+	;;
+
 --version) echo "Homebrew 7.0.0-fake" ;;
 *) exit 0 ;;
 esac

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# open stand-in: no test starts a real app. Starting one by bundle id
+# does what macOS does on an app's first start: it makes its container.
+printf '%s\n' "$*" >>"${WORK:?WORK is not set}/open.args"
+id=""
+while [ $# -gt 0 ]; do
+	[ "$1" != -b ] || id=${2:-}
+	shift
+done
+[ -n "$id" ] || exit 0
+grep -qx "$id" "$WORK/installed-apps" 2>/dev/null || exit 1
+mkdir -p "$HOME/Library/Containers/$id/Data/Library"

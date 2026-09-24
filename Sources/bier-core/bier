@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.38.2
+BIER_VERSION=0.39.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -1752,6 +1752,202 @@ cmd_main() {
 	fi
 }
 
+# Installs a package if it is not here yet, puts it on a list, and
+# offers to share the app's settings as well. The counterpart of
+# uninstall, and the way to add something in manual inventory mode.
+#
+#   --main | --here          which list, instead of asking
+#   --settings | --no-settings   share every settings location found,
+#                            or none, instead of asking
+cmd_add() {
+	need_brew
+	need_repo
+	local where="" settings="" name kind added=""
+	while [ $# -gt 0 ]; do
+		case $1 in
+		--main) where=main ;;
+		--here) where=here ;;
+		--settings) settings=all ;;
+		--no-settings) settings=none ;;
+		--) shift; break ;;
+		-*) die "unknown option: $1" ;;
+		*) break ;;
+		esac
+		shift
+	done
+	[ $# -ge 1 ] || die "usage: bier add [--main | --here] [--settings | --no-settings] <package>…"
+
+	for name in "$@"; do
+		kind=$(add_kind "$name") || die "$name is neither a formula nor a cask Homebrew knows"
+		if ! add_installed "$kind" "$name"; then
+			info "Installing $name …"
+			case $kind in
+			cask) brew install --cask "$name" ;;
+			*) brew install "$name" ;;
+			esac || die "could not install $name; nothing was added"
+		fi
+		add_to_list "$kind" "$name" "$where"
+		add_settings "$kind" "$name" "$settings"
+		added="$added $name"
+	done
+	[ -n "$added" ] || return 0
+	publish "$HOST: added${added}"
+}
+
+# What a new name is: known from the lists or installed, else asked of
+# Homebrew, casks first -- an app is what people add by name.
+add_kind() {
+	local kind
+	kind=$(kind_of "$1")
+	if [ -n "$kind" ]; then
+		printf '%s' "$kind"
+	elif brew info --cask "$1" >/dev/null 2>&1; then
+		printf cask
+	elif brew info --formula "$1" >/dev/null 2>&1; then
+		printf brew
+	else
+		return 1
+	fi
+}
+
+add_installed() {
+	case $1 in
+	cask) brew list --cask 2>/dev/null | grep -qxF "${2##*/}" ;;
+	brew) brew list --formula 2>/dev/null | grep -qxF "$2" ;;
+	*) return 0 ;;
+	esac
+}
+
+# Onto main or this Mac's list. The last choice is remembered for the
+# settings: only here means only for this Mac.
+ADD_SCOPE=""
+add_to_list() {
+	local kind=$1 name=$2 where=$3 answer line
+	line=$(printf '%s "%s"' "$kind" "$name")
+	ADD_SCOPE=""
+	if entries "$MAIN_FILE" | grep -qxF "$line"; then
+		info "$name is in main already."
+		return 0
+	fi
+	if [ -z "$where" ]; then
+		printf 'Where to?  [m] main, every Mac   [h] only %s   [c] cancel: ' "$HOST"
+		read -r answer ||
+			die "nobody to ask. Say where: bier add --main | --here $name"
+		case $answer in
+		m | M) where=main ;;
+		h | H) where=here ;;
+		*)
+			info "Cancelled; $name stays installed but on no list."
+			return 0
+			;;
+		esac
+	fi
+	if [ "$where" = main ]; then
+		strip_entry "$kind" "$name"
+		printf '%s\n' "$line" >>"$MAIN_FILE"
+		info "Added to Brewfiles/main."
+	else
+		entries "$BREW_DIR/$HOST" | grep -qxF "$line" || printf '%s\n' "$line" >>"$BREW_DIR/$HOST"
+		ADD_SCOPE=$HOST
+		info "Added to Brewfiles/$HOST."
+	fi
+}
+
+# The app a cask installs, as a path.
+add_app_path() {
+	local app dir
+	app=$(brew info --cask --json=v2 "$1" 2>/dev/null |
+		grep -oE '"[^"/]+\.app"' | head -1 | tr -d '"')
+	[ -n "$app" ] || return 1
+	for dir in "${BIER_APPS_DIR:-/Applications}" "$HOME/Applications"; do
+		[ -d "$dir/$app" ] || continue
+		printf '%s' "$dir/$app"
+		return 0
+	done
+	return 1
+}
+
+# Where an app keeps its settings, as far as the usual places go: its
+# container, Application Support, Preferences -- or ~/.config/<name> for
+# a command-line tool. Only what exists here is offered.
+add_settings() {
+	local kind=$1 name=$2 choice=$3 app="" id="" label c found="" path n picks i
+	if [ "$kind" = cask ]; then
+		app=$(add_app_path "$name") || return 0
+		id=$(plutil -extract CFBundleIdentifier raw -o - "$app/Contents/Info.plist" 2>/dev/null) || return 0
+		label=$(basename "$app" .app)
+		c=$HOME/Library/Containers/$id/Data/Library
+		if [ -d "$HOME/Library/Containers/$id" ] && ! ls "$c" >/dev/null 2>&1; then
+			info ""
+			info "macOS did not let bier look into $label's settings. Allow your"
+			info "terminal Full Disk Access (System Settings > Privacy & Security),"
+			info "then: bier add --settings $name"
+			return 0
+		fi
+		for path in "$c/Application Support/$label" "$c/Preferences/$id.plist" \
+			"$HOME/Library/Application Support/$label" "$HOME/Library/Application Support/$id" \
+			"$HOME/Library/Preferences/$id.plist"; do
+			[ -e "$path" ] && found="$found$path
+"
+		done
+	else
+		label=$name
+		[ ! -d "$HOME/.config/$name" ] || found="$HOME/.config/$name
+"
+	fi
+	found=$(printf '%s' "$found" | grep -v '^$' || true)
+	[ -n "$found" ] || return 0
+	# What is shared already is not offered again.
+	local shared="" fresh=""
+	while IFS= read -r path; do
+		if cat "$VAULT"/apps/*/.bier-map "$VAULT"/@*/apps/*/.bier-map 2>/dev/null |
+			cut -f2 | grep -qxF "${path#"$HOME"/}"; then
+			shared="$shared ${path##*/}"
+		else
+			fresh="$fresh$path
+"
+		fi
+	done <<EOF
+$found
+EOF
+	found=$(printf '%s' "$fresh" | grep -v '^$' || true)
+	if [ -z "$found" ]; then
+		info "$label's settings are shared already."
+		return 0
+	fi
+
+	info ""
+	info "$label keeps its settings here:"
+	n=0
+	while IFS= read -r path; do
+		n=$((n + 1))
+		printf '  %2s  %s   %s\n' "$n" "${path#"$HOME"/}" "$(du -sh "$path" 2>/dev/null | cut -f1 | tr -d ' ')"
+		case $path in
+		*/Preferences/*.plist) info "      settings; also window positions and recent files" ;;
+		esac
+	done <<EOF
+$found
+EOF
+	case $choice in
+	all) picks=all ;;
+	none) return 0 ;;
+	*)
+		printf 'Share them with your other Macs?  numbers, a = all, empty = none: '
+		read -r picks || picks=""
+		;;
+	esac
+	case $picks in
+	"") return 0 ;;
+	a | A | all) picks=$(seq 1 "$n" | tr '\n' ' ') ;;
+	esac
+	for i in $picks; do
+		path=$(printf '%s\n' "$found" | sed -n "${i}p")
+		[ -n "$path" ] || die "no settings location with number $i"
+		vault_add_app "$label" "$path" "$ADD_SCOPE"
+	done
+	info "bier sync shares them."
+}
+
 # Uninstalls packages here and decides, per package, which lists lose it.
 # Removal becomes an action instead of something guessed from a dump.
 #
@@ -2526,9 +2722,30 @@ vault_name() {
 	printf '%s' "${1#"$HOME"/}" | sed -e 's#^\.#dot_#' -e 's#/\.#/dot_#g'
 }
 
+# An app's settings sit in the vault under apps/<App>/<what>, whatever
+# long path they have on the Mac; apps/<App>/.bier-map says where each
+# <what> belongs, relative to the home folder. Everything else mirrors
+# its path below the home folder.
 vault_target() {
+	local rel=$1 bare app rest entry mapped
+	bare=$(vault_strip_scope "$rel")
+	case $bare in
+	apps/*/*)
+		app=${bare#apps/}
+		app=${app%%/*}
+		rest=${bare#apps/"$app"/}
+		entry=${rest%%/*}
+		if [ "$entry" = "$rest" ]; then rest=""; else rest=${rest#"$entry"}; fi
+		mapped=$(awk -F '\t' -v e="$entry" '$1 == e { print $2; exit }' \
+			"$VAULT/${rel%"$bare"}apps/$app/.bier-map" 2>/dev/null || true)
+		if [ -n "$mapped" ]; then
+			printf '%s/%s%s' "$HOME" "$mapped" "$(printf '%s' "$rest" | sed -e 's#/dot_#/.#g')"
+			return 0
+		fi
+		;;
+	esac
 	printf '%s/%s' "$HOME" \
-		"$(vault_strip_scope "$1" | sed -e 's#^dot_#.#' -e 's#/dot_#/.#g')"
+		"$(printf '%s' "$bare" | sed -e 's#^dot_#.#' -e 's#/dot_#/.#g')"
 }
 
 # A path in the vault may start with a scope: @laptops/dot_zshrc goes to
@@ -2741,6 +2958,45 @@ vault_busy() {
 	printf '%s' "$id$name"
 }
 
+# A sandboxed app's container is made by macOS when the app first
+# starts; one made by hand lacks what macOS keeps in it. So the app is
+# started once, hidden, and quit again as soon as its container is
+# there -- its settings are only written while it is not running.
+VAULT_STARTED=""
+vault_container_ready() {
+	local target=$1 id i=0
+	case $target in
+	"$HOME"/Library/Containers/*) ;;
+	*) return 0 ;;
+	esac
+	id=${target#"$HOME"/Library/Containers/}
+	id=${id%%/*}
+	[ ! -d "$HOME/Library/Containers/$id/Data" ] || return 0
+	case " $VAULT_STARTED " in
+	*" $id "*) return 1 ;;
+	esac
+	VAULT_STARTED="$VAULT_STARTED $id"
+	if ! open -g -j -b "$id" >/dev/null 2>&1; then
+		info "waiting: $id is not installed here; its settings follow once it is"
+		return 1
+	fi
+	info "started $id once, hidden, so that macOS sets up its container"
+	while [ ! -d "$HOME/Library/Containers/$id/Data" ] && [ "$i" -lt 60 ]; do
+		sleep 0.5
+		i=$((i + 1))
+	done
+	osascript -e "tell application id \"$id\" to quit" >/dev/null 2>&1 || true
+	i=0
+	while vault_busy "$HOME/Library/Containers/$id/x" >/dev/null && [ "$i" -lt 40 ]; do
+		sleep 0.5
+		i=$((i + 1))
+	done
+	if [ ! -d "$HOME/Library/Containers/$id/Data" ]; then
+		info "waiting: $id did not set up its container; start it once by hand"
+		return 1
+	fi
+}
+
 # A file from the safe into its place. Written next to it and moved over,
 # so nothing reads half a file; preference files go through cfprefsd,
 # which would otherwise keep serving what it has cached.
@@ -2760,6 +3016,54 @@ vault_put() {
 	cp "$plain" "$target.bier-new"
 	[ -z "$mode" ] || chmod "$mode" "$target.bier-new"
 	mv "$target.bier-new" "$target"
+}
+
+# What an app's settings location is called in the vault.
+vault_app_label() {
+	case $1 in
+	*/Library/Preferences/*.plist) printf 'Preferences.plist' ;;
+	*/Library/Application\ Support/*) printf 'Application Support' ;;
+	*/.config/*) printf 'config' ;;
+	*) basename "$1" ;;
+	esac
+}
+
+# Takes an app's settings in, under apps/<App>/ in the vault.
+vault_add_app() {
+	local app=$1 src=${2%/} scope=${3:-} label base map n=2 current
+	case $src in
+	"$HOME"/*) ;;
+	*) die "only files below $HOME can go into the vault: $src" ;;
+	esac
+	[ -e "$src" ] || die "$src does not exist"
+	[ ! -L "$src" ] || die "$src is a link -- add what it points to"
+	case $app in
+	"" | */* | .*) die "not an app name: $app" ;;
+	esac
+	base=apps/$app
+	[ -z "$scope" ] || base=@$scope/$base
+	map=$VAULT/$base/.bier-map
+	current=$(awk -F '\t' -v p="${src#"$HOME"/}" '$2 == p { print $1; exit }' "$map" 2>/dev/null || true)
+	[ -z "$current" ] || die "$src is already in the vault, as $base/$current"
+	label=$(vault_app_label "$src")
+	while awk -F '\t' -v e="$label" '$1 == e { f = 1 } END { exit !f }' "$map" 2>/dev/null; do
+		label="$(vault_app_label "$src") $n"
+		n=$((n + 1))
+	done
+	mkdir -p "$VAULT/$base"
+	printf '%s\t%s\n' "$label" "${src#"$HOME"/}" >>"$map"
+	if [ -d "$src" ]; then
+		mkdir -p "$VAULT/$base/$label"
+		: >"$VAULT/$base/$label/.bier-folder"
+		rm -f "$SAFE_DIR/$base/$label/.bier-folder.forgotten"
+	else
+		! vault_too_large "$src" ||
+			die "$src is larger than vault_max_file. The vault is for settings,
+     not for documents: every version stays in the history on every Mac."
+		cp -p "$src" "$VAULT/$base/$label"
+		rm -f "$SAFE_DIR/$base/$label.forgotten"
+	fi
+	info "$base/$label   <-  $src"
 }
 
 # Takes a file or a folder in. The original stays where it is; the vault
@@ -2816,11 +3120,10 @@ EOF
 # The entries a path names: the file itself, or everything in a folder
 # and its marker. Scoped entries (@group/...) are found as well.
 vault_entries_for() {
-	local name
-	name=$(vault_name "${1%/}")
+	local path=${1%/} rel
 	vault_known | while IFS= read -r rel; do
-		case $(vault_strip_scope "$rel") in
-		"$name" | "$name"/*) printf '%s\n' "$rel" ;;
+		case $(vault_target "$rel") in
+		"$path" | "$path"/*) printf '%s\n' "$rel" ;;
 		esac
 	done
 }
@@ -3075,12 +3378,17 @@ vault_open() {
 	# The groups first: everything after this asks them whether it
 	# belongs here.
 	[ -z "$(vault_incoming .groups)" ] || printf 'groups\t.groups\n' >"$work"
+	# An app's map says where its files go, so it comes before them.
 	vault_known | while IFS= read -r rel; do
 		[ "$rel" != .groups ] || continue
 		vault_wanted "$rel" || continue
 		what=$(vault_incoming "$rel")
-		[ -z "$what" ] || printf '%s\t%s\n' "$what" "$rel"
-	done >>"$work"
+		[ -n "$what" ] || continue
+		case $rel in
+		*/.bier-map) printf '0\t%s\t%s\n' "$what" "$rel" ;;
+		*) printf '1\t%s\t%s\n' "$what" "$rel" ;;
+		esac
+	done | sort -t "$(printf '\t')" -k1,1 -s | cut -f2- >>"$work"
 	[ -s "$work" ] || return 0
 
 	if grep -qE '^(groups|new|changed|check)'$'\t' "$work"; then
@@ -3169,6 +3477,10 @@ vault_take() {
 	elif [ -z "$cur" ] || { [ -n "$base" ] && [ "$cur" = "$base" ]; }; then
 		if app=$(vault_busy "$target"); then
 			info "waiting: $app is running, $target stays as it is for now"
+			rm -f "$plain"
+			return 0
+		fi
+		if ! vault_container_ready "$target"; then
 			rm -f "$plain"
 			return 0
 		fi
@@ -3350,16 +3662,26 @@ cmd_vault() {
 	add)
 		need_gpg
 		shift
-		local scope=""
-		case ${1:-} in
-		--for)
-			scope=${2:-}
-			[ -n "$scope" ] || die "--for what? a group or a device name"
-			shift 2
-			;;
-		esac
+		local scope="" app=""
+		while [ $# -gt 0 ]; do
+			case $1 in
+			--for)
+				scope=${2:-}
+				[ -n "$scope" ] || die "--for what? a group or a device name"
+				shift 2
+				;;
+			--app)
+				app=${2:-}
+				[ -n "$app" ] || die "--app what? the app's name, e.g. --app HandBrake"
+				shift 2
+				;;
+			*) break ;;
+			esac
+		done
 		[ $# -gt 0 ] || die "which file? bier vault add ~/.zshrc"
-		for pass in "$@"; do vault_add "$pass" "$scope"; done
+		for pass in "$@"; do
+			if [ -n "$app" ]; then vault_add_app "$app" "$pass" "$scope"; else vault_add "$pass" "$scope"; fi
+		done
 		return 0
 		;;
 	--unlink)
@@ -4011,6 +4333,8 @@ bier — keeps Brewfiles in sync across Macs
   bier status             check the system against the Brewfiles
   bier diff [host...]     compare the inventory with other devices
   bier install            install main + this device's own Brewfile
+  bier add <pkg>          install it if needed, put it on main or this Mac's
+                          list, and offer to share the app's settings
   bier uninstall <pkg>    uninstall here; asks: off every list, only out of
                           main (some Macs keep it), or only off this Mac's
   bier prune              remove what was deleted elsewhere or left main
@@ -4088,6 +4412,7 @@ dump)
 	;;
 main) cmd_main "$@" ;;
 uninstall | rm) cmd_uninstall "$@" ;;
+add) cmd_add "$@" ;;
 prune) cmd_prune ;;
 list) cmd_list ;;
 status) cmd_status "$@" ;;

@@ -55,6 +55,7 @@ bier list                   # what do the others have on top?
 bier take                   # adopt some of it
 bier uninstall htop         # asks: everywhere, only out of main, or only here
 bier prune                  # remove here what was deleted elsewhere
+bier add handbrake-app      # install, put it on a list, share its settings
 bier vault add ~/.zshrc     # a file, not only packages
 bier knockout               # sign off and take bier off this Mac
 ```

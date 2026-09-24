@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# osascript stand-in: tests must never script real apps.
+printf '%s\n' "$*" >>"${WORK:?WORK is not set}/osascript.args"
+exit 0

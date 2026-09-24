@@ -19,6 +19,7 @@
 | --- | --- |
 | [`bier install`](install.md) | install `main` and this Mac's own list |
 | [`bier take [--from-main]`](take.md) | move entries between `main` and device lists |
+| [`bier add <pkg>…`](add.md) | install, put it on a list, offer to share its settings |
 | [`bier uninstall <pkg>…`](uninstall.md) | uninstall; asks which lists lose it |
 | [`bier prune`](prune.md) | remove what was deleted on another Mac |
 | [`bier dump [--adopt]`](dump.md) | record this Mac's extras |

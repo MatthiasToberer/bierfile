@@ -8,7 +8,7 @@ profiles.
 
 ```sh
 bier vault add ~/.zshrc
-bier vault add ~/Library/Application\ Support/HandBrake
+bier add handbrake-app          # installs it, and offers its settings
 ```
 
 The file stays where it is; the vault keeps a copy. `bier sync` encrypts
@@ -35,7 +35,15 @@ by accident.
 
 Names in the vault mirror the path below your home folder, with `dot_`
 for a leading dot: `~/.config/nvim/init.lua` is
-`dot_config/nvim/init.lua`.
+`dot_config/nvim/init.lua`. An app's settings sit under `apps/<App>/`
+instead, whatever long path they have on the Mac —
+`apps/HandBrake/Application Support/` — and `apps/<App>/.bier-map` says
+where each belongs. [`bier add`](../reference/commands/add.md) puts them
+there, or by hand:
+
+```sh
+bier vault add --app HandBrake ~/Library/Containers/fr.handbrake.HandBrake/Data/Library/Application\ Support/HandBrake
+```
 
 ## Commands
 
@@ -44,6 +52,7 @@ for a leading dot: `~/.config/nvim/init.lua` is
 | `bier vault` | what is in it, and whether this Mac knows the passphrase |
 | `bier vault add <path>…` | take files or folders in |
 | `bier vault add --for <group> <path>` | only for some Macs — see [Groups](groups.md) |
+| `bier vault add --app <App> <path>` | an app's settings, kept under `apps/<App>/` |
 | `bier vault forget <path>` | stop syncing it; the file stays **on every Mac** |
 | `bier vault drop <path>` | remove it **everywhere**, into the Trash, after asking |
 | `bier vault --restore` | put back a file deleted here by mistake, from the vault's copy |
@@ -78,7 +87,10 @@ running app, under `~/Library/Containers/<app>`,
   .  vault            ~/Library/Application Support/HandBrake/presets.json waiting: HandBrake is running
 ```
 
-and the first sync after quitting the app applies it. Preference files
+and the first sync after quitting the app applies it. A sandboxed app
+that has never run on this Mac has no container yet; bier starts it
+once, hidden, so that macOS sets one up, quits it, and then puts the
+settings in. Preference files
 — in `~/Library/Preferences` or in an app's container — are written
 through `defaults import`, so the system's preferences cache picks them
 up.
