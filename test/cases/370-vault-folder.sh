@@ -77,17 +77,17 @@ assert_ok bier macbook sync
 assert_eq 'window=2' "$(cat "$WORK/home-macbook/$app/settings.ini")" "and updated once it has quit"
 
 # The version replaced is in the backups ...
-backup=$(find "$WORK/home-macbook/.local/state/bier/backups" -name settings.ini | head -1)
+backup=$(find "$WORK/home-macbook/.barrel/state/backups" -name settings.ini | head -1)
 [ -n "$backup" ] || fail "the replaced version has to be in the backups"
 assert_eq 'window=1' "$(cat "$backup")"
 # ... unless the config says no.
-printf 'vault_backup = no\n' >>"$WORK/config-macbook/bier/config"
-rm -rf "$WORK/home-macbook/.local/state/bier/backups"
+printf 'vault_backup = no\n' >>"$WORK/home-macbook/.barrel/config"
+rm -rf "$WORK/home-macbook/.barrel/state/backups"
 printf 'window=3\n' >"$WORK/home-mini/$app/settings.ini"
 assert_ok bier mini sync
 assert_ok bier macbook sync
 assert_eq 'window=3' "$(cat "$WORK/home-macbook/$app/settings.ini")"
-[ ! -e "$WORK/home-macbook/.local/state/bier/backups" ] || fail "vault_backup = no makes no backups"
+[ ! -e "$WORK/home-macbook/.barrel/state/backups" ] || fail "vault_backup = no makes no backups"
 
 # Forgetting the folder stops the syncing; the files stay everywhere.
 assert_ok bier mini vault forget "$WORK/home-mini/$app"

@@ -45,7 +45,7 @@ assert_ok bier mini sync
 assert_eq "no" "$([ -L "$WORK/home-mini/.probe" ] && echo yes || echo no)" \
 	"bier leaves a plain file where it was"
 rm -f "$WORK/home-mini/.probe"
-ln -s "$WORK/home-mini/.bierfilevault/dot_probe" "$WORK/home-mini/.probe"
+ln -s "$WORK/home-mini/.barrel/vault/dot_probe" "$WORK/home-mini/.probe"
 
 assert_ok bier mini vault --unlink
 assert_eq "no" "$([ -L "$WORK/home-mini/.probe" ] && echo yes || echo no)" \

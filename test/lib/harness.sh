@@ -131,10 +131,10 @@ world() {
 		mkdir -p "$WORK/home-$host"
 		: >"$WORK/sys-$host"
 		: >"$WORK/.in"
-		mkdir -p "$WORK/config-$host/bier"
+		mkdir -p "$WORK/home-$host/.barrel"
 		printf 'root = %s\ndata = %s\nhost = %s\n' \
 			"$WORK/code-$host" "$WORK/$host" "$host" \
-			>"$WORK/config-$host/bier/config"
+			>"$WORK/home-$host/.barrel/config"
 	done
 }
 
@@ -198,11 +198,9 @@ bier() {
 		BIER_HOST=$host \
 		HOME=$WORK/home-$host \
 		GNUPGHOME=$GPGHOME \
-		BIER_VAULT=$WORK/home-$host/.bierfilevault \
 		BIER_TEST_SYSTEM=$WORK/sys-$host \
 		BIER_TRASH_DIR=$WORK/trash-$host \
 		BIER_TEST_RUNNING=${BIER_TEST_RUNNING:-} \
-		XDG_CONFIG_HOME=$WORK/config-$host \
 		"$WORK/code-$host/Sources/bier-core/bier" "$@" <"$WORK/.in" >"$WORK/.out" 2>&1 || rc=$?
 	OUT=$(cat "$WORK/.out")
 	assert_sane "$OUT"

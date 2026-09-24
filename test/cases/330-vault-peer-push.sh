@@ -51,7 +51,7 @@ assert_eq drei-beide "$(cat "$WORK/home-mini/.fakezshrc")" "the merged version h
 # A Mac that has never recorded what it agreed on -- after moving from
 # links, or with its state lost -- is not guessed at: the shared version
 # wins, and its own is kept next to it.
-rm -rf "$WORK/home-mini/.local/state/bier"
+rm -rf "$WORK/home-mini/.barrel/state"
 printf 'vier\n' >"$WORK/home-mini/.fakezshrc"
 assert_ok bier mini sync
 assert_contains "$OUT" "kept: $WORK/home-mini/.fakezshrc.backup"

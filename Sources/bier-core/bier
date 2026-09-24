@@ -7,7 +7,7 @@
 #   ROOT  the program — public, this is what gets developed
 #   DATA  the Brewfiles — private, they reveal what runs on the Macs
 #
-# Both are recorded in ~/.config/bier/config. Git commands go to DATA
+# Both are recorded in ~/.barrel/config. Git commands go to DATA
 # unless the code itself is meant (bier upgrade, bier version).
 #
 # Brewfiles/main is the shared inventory, Brewfiles/<host> holds only what
@@ -43,9 +43,29 @@ count_word() {
 	if [ "$1" = "1" ]; then printf '1 entry'; else printf '%s entries' "$1"; fi
 }
 
-CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/bier
-CONFIG_FILE=${BIER_CONFIG:-$CONFIG_DIR/config}
-PEER_IDENTITY=${BIER_PEER_IDENTITY:-$HOME/.local/share/bier/agent/identity}
+# Everything bier keeps lives in one folder, so that leaving it is
+# "rm -rf ~/.barrel". An installation from before the barrel keeps its
+# old places until install.sh moves it in; until then bier finds it
+# there.
+BARREL=${BIER_BARREL:-$HOME/.barrel}
+LEGACY_CONFIG=${XDG_CONFIG_HOME:-$HOME/.config}/bier/config
+if [ -n "${BIER_CONFIG:-}" ]; then
+	CONFIG_FILE=$BIER_CONFIG
+elif [ ! -f "$BARREL/config" ] && [ -f "$LEGACY_CONFIG" ]; then
+	CONFIG_FILE=$LEGACY_CONFIG
+else
+	CONFIG_FILE=$BARREL/config
+fi
+if [ "$CONFIG_FILE" = "$LEGACY_CONFIG" ]; then
+	AGENT_HOME=$HOME/.barrel/agent
+	STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/bier
+	VAULT_DEFAULT=$HOME/.bierfilevault
+else
+	AGENT_HOME=$BARREL/agent
+	STATE_DIR=$BARREL/state
+	VAULT_DEFAULT=$BARREL/vault
+fi
+PEER_IDENTITY=${BIER_PEER_IDENTITY:-$AGENT_HOME/identity}
 
 # Where the program lives when the config says nothing: the repository root.
 # this script. Resolve symlinks by hand, readlink -f is not everywhere on
@@ -100,7 +120,7 @@ root = $(script_root)
 # Where your Brewfiles live — your own, private repository. They reveal
 # which software runs on your Macs and therefore do not belong in the
 # public program repository. Set it up with install.sh.
-# data = $HOME/bierdata
+# data = $BARREL/data
 
 # Device name; decides which file under Brewfiles/ belongs to this Mac.
 host = $(hostname -s)
@@ -108,7 +128,7 @@ host = $(hostname -s)
 # Where the plain files of the vault live. Outside any repository, so
 # that nothing can commit them by accident. Only the encrypted copies
 # under Safe/ in the data repository ever leave this Mac.
-vault = $HOME/.bierfilevault
+vault = $VAULT_DEFAULT
 EOF
 	info "Config created: $CONFIG_FILE"
 }
@@ -147,8 +167,8 @@ RELEASE_TRUST_URL=${BIER_RELEASE_TRUST_URL:-https://bier.uber.space/bier/allowed
 PEERS_FILE=$(dirname "$CONFIG_FILE")/peers
 PEER_PORT=${BIER_PEER_PORT:-53991}
 PEER_CLIENT=${BIER_PEER_CLIENT:-$ROOT/Sources/bier-peer/build/bier-peer}
-PAIRING_OFFER=$HOME/.local/share/bier/agent/state/pairing-offer.json
-LOCAL_PEER_SIGNERS=$HOME/.local/share/bier/agent/peer_signers
+PAIRING_OFFER=$AGENT_HOME/state/pairing-offer.json
+LOCAL_PEER_SIGNERS=$AGENT_HOME/peer_signers
 
 DATA=${BIER_DATA:-$(config_get data)}
 if [ -z "$DATA" ] && [ -d "$ROOT/Brewfiles" ]; then
@@ -174,8 +194,7 @@ BREW_DIR=$DATA/Brewfiles
 # repository on purpose: a .gitignore is a rule that can be got wrong,
 # a different directory is a fact. Only the encrypted copies travel.
 VAULT=${BIER_VAULT:-$(config_get vault)}
-VAULT=${VAULT:-$HOME/.bierfilevault}
-STATE_DIR=${XDG_STATE_HOME:-$HOME/.local/state}/bier
+VAULT=${VAULT:-$VAULT_DEFAULT}
 case $VAULT in
 "~/"*) VAULT=$HOME/${VAULT#\~/} ;;
 esac
@@ -429,8 +448,8 @@ peer_authorize() {
 		while IFS= read -r key; do
 			if ! grep -qxF "$key" "$HOME/.ssh/authorized_keys"; then
 				printf "%s\n" "$key" >>"$HOME/.ssh/authorized_keys"
-				mkdir -p "$HOME/.local/share/bier/agent"
-				printf "%s\n" "$key" >"$HOME/.local/share/bier/agent/ssh-key-installed"
+				mkdir -p "$HOME/.barrel/agent"
+				printf "%s\n" "$key" >"$HOME/.barrel/agent/ssh-key-installed"
 			fi
 		done
 	' || die "could not authorise this Mac for SSH on $peer"
@@ -981,7 +1000,7 @@ cmd_peer_offer() {
 			die 'usage: bier peer offer [--address <own-host>]'
 		address=$2
 	fi
-	[ -x "$HOME/.local/share/bier/agent/bin/bier-agent" ] || die "the local Bier agent is not installed; run install.sh"
+	[ -x "$AGENT_HOME/bin/bier-agent" ] || die "the local Bier agent is not installed; run install.sh"
 	[ -r "$PEER_IDENTITY.pub" ] || die "the local Bier peer identity is missing; run install.sh"
 	local code expires tmp shown
 	code=$(uuidgen | tr -d '-' | tr '[:upper:]' '[:lower:]')
@@ -1271,17 +1290,17 @@ cmd_peer_uninstall() {
 	info "1/3  Checking SSH access to $peer …"
 	peer_ssh "$peer" true || die "cannot reach $peer over SSH"
 	info '     SSH access is ready.'
-	peer_ssh "$peer" 'mkdir -p "$HOME/.local/share/bier/agent"' ||
+	peer_ssh "$peer" 'mkdir -p "$HOME/.barrel/agent"' ||
 		die "cannot prepare Bier removal on $peer"
 	if [ -r "$key" ]; then
-		peer_scp "$key" "$peer:.local/share/bier/agent/uninstall-key.new" ||
+		peer_scp "$key" "$peer:.barrel/agent/uninstall-key.new" ||
 			die "cannot prepare SSH key removal on $peer"
 	fi
 	info '2/3  Removing the Bier agent and SSH access …'
 	peer_ssh "$peer" 'set -e
 plist="$HOME/Library/LaunchAgents/com.bier.agent.plist"
 legacy_plist="$HOME/Library/LaunchAgents/com.bierkasten.agent.plist"
-state_dir="$HOME/.local/share/bier/agent"
+state_dir="$HOME/.barrel/agent"
 legacy_state_dir="$HOME/.local/share/bierkasten"
 authorized_keys="$HOME/.ssh/authorized_keys"
 launchctl bootout "gui/$(id -u)" "$plist" >/dev/null 2>&1 || true
@@ -1337,16 +1356,16 @@ write_agent_launch_agent() {
 <plist version="1.0"><dict>
   <key>Label</key><string>com.bier.agent</string>
   <key>ProgramArguments</key><array>
-    <string>$home/.local/share/bier/agent/bin/bier-agent</string>
+    <string>$home/.barrel/agent/bin/bier-agent</string>
     <string>serve</string>
     <string>--agent</string><string>$agent</string>
-    <string>--allowed-signers</string><string>$home/.local/share/bier/agent/allowed_signers</string>
-    <string>--peer-signers</string><string>$home/.local/share/bier/agent/peer_signers</string>
-    <string>--peer-key</string><string>$home/.local/share/bier/agent/identity.pub</string>
-	<string>--peers-file</string><string>$home/.config/bier/peers</string>
+    <string>--allowed-signers</string><string>$home/.barrel/agent/allowed_signers</string>
+    <string>--peer-signers</string><string>$home/.barrel/agent/peer_signers</string>
+    <string>--peer-key</string><string>$home/.barrel/agent/identity.pub</string>
+	<string>--peers-file</string><string>$home/.barrel/peers</string>
     <string>--data-dir</string><string>$data</string>
     <string>--port</string><string>53991</string>
-    <string>--state-dir</string><string>$home/.local/share/bier/agent/state</string>
+    <string>--state-dir</string><string>$home/.barrel/agent/state</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
@@ -1369,10 +1388,11 @@ cmd_peer_install() {
 	home=$(printf '%s' "$home" | tr -d '\r\n')
 	printf '%s\n' "$home" | grep -Eq '^/[A-Za-z0-9._/-]+$' ||
 		die "the home directory reported by $peer is not safe to install into"
-	data=$(peer_ssh "$peer" 'config="$HOME/.config/bier/config" # bier-agent-data-directory
+	data=$(peer_ssh "$peer" 'config="$HOME/.barrel/config" # bier-agent-data-directory
+[ -f "$config" ] || config="$HOME/.config/bier/config"
 data=$(sed -nE "s/^[[:space:]]*data[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$config" 2>/dev/null | tail -1)
 case "$data" in "~/"*) data="$HOME/${data#\~/}" ;; esac
-if [ -n "$data" ] && [ -d "$data/.git" ]; then printf "%s\n" "$data"; else printf "%s\n" "$HOME/.local/share/bier/data"; fi') ||
+if [ -n "$data" ] && [ -d "$data/.git" ]; then printf "%s\n" "$data"; else printf "%s\n" "$HOME/.barrel/data"; fi') ||
 		die "cannot determine the Bier data directory on $peer"
 	data=$(printf '%s' "$data" | tr -d '\r\n')
 	printf '%s\n' "$data" | grep -Eq '^/[A-Za-z0-9._/-]+$' ||
@@ -1384,38 +1404,38 @@ if [ -n "$data" ] && [ -d "$data/.git" ]; then printf "%s\n" "$data"; else print
 	write_agent_launch_agent "$plist" "$home" "$agent" "$data"
 
 	peer_ssh "$peer" 'set -e
-mkdir -p "$HOME/.local/share/bier/agent/bin" "$HOME/Library/LaunchAgents"
-if [ ! -r "$HOME/.local/share/bier/agent/identity" ] || [ ! -r "$HOME/.local/share/bier/agent/identity.pub" ]; then
-	rm -f "$HOME/.local/share/bier/agent/identity" "$HOME/.local/share/bier/agent/identity.pub"
-	ssh-keygen -q -t ed25519 -N "" -C "bier@$(hostname -s)" -f "$HOME/.local/share/bier/agent/identity"
+mkdir -p "$HOME/.barrel/agent/bin" "$HOME/Library/LaunchAgents"
+if [ ! -r "$HOME/.barrel/agent/identity" ] || [ ! -r "$HOME/.barrel/agent/identity.pub" ]; then
+	rm -f "$HOME/.barrel/agent/identity" "$HOME/.barrel/agent/identity.pub"
+	ssh-keygen -q -t ed25519 -N "" -C "bier@$(hostname -s)" -f "$HOME/.barrel/agent/identity"
 fi
-chmod 600 "$HOME/.local/share/bier/agent/identity" "$HOME/.local/share/bier/agent/identity.pub"' ||
+chmod 600 "$HOME/.barrel/agent/identity" "$HOME/.barrel/agent/identity.pub"' ||
 		die "cannot prepare the Bier agent directory on $peer"
-	peer_scp "$SIGNERS_FILE" "$peer:.local/share/bier/agent/allowed_signers.new" ||
+	peer_scp "$SIGNERS_FILE" "$peer:.barrel/agent/allowed_signers.new" ||
 		die "cannot copy the public release keys to $peer"
-	peer_scp "$peer_key" "$peer:.local/share/bier/agent/peer-key.new" ||
+	peer_scp "$peer_key" "$peer:.barrel/agent/peer-key.new" ||
 		die "cannot copy this Mac's peer key to $peer"
 	peer_scp "$plist" "$peer:Library/LaunchAgents/com.bier.agent.plist.new" ||
 		die "cannot copy the Bier agent LaunchAgent to $peer"
 	peer_ssh "$peer" "set -e
-rm -rf \"\$HOME/.local/share/bier/agent/source.new\"
-git init --quiet \"\$HOME/.local/share/bier/agent/source.new\"
-git -C \"\$HOME/.local/share/bier/agent/source.new\" remote add origin https://github.com/MatthiasToberer/bierfile.git
-git -C \"\$HOME/.local/share/bier/agent/source.new\" fetch --quiet --depth 1 origin \"refs/tags/$tag:refs/tags/$tag\"
-git -C \"\$HOME/.local/share/bier/agent/source.new\" checkout --quiet --detach \"$tag\"
-git -C \"\$HOME/.local/share/bier/agent/source.new\" -c gpg.ssh.allowedSignersFile=\"\$HOME/.local/share/bier/agent/allowed_signers.new\" verify-tag \"$tag\" >/dev/null
-\"\$HOME/.local/share/bier/agent/source.new/Sources/bier-agent/build.sh\" \"\$HOME/.local/share/bier/agent/bin/bier-agent.new\" >/dev/null
-mv \"\$HOME/.local/share/bier/agent/bin/bier-agent.new\" \"\$HOME/.local/share/bier/agent/bin/bier-agent\"
-chmod 700 \"\$HOME/.local/share/bier/agent/bin/bier-agent\"
-mv \"\$HOME/.local/share/bier/agent/allowed_signers.new\" \"\$HOME/.local/share/bier/agent/allowed_signers\"
-touch \"\$HOME/.local/share/bier/agent/peer_signers\"
-awk -v peer=\"$HOST\" '\$1 != peer' \"\$HOME/.local/share/bier/agent/peer_signers\" >\"\$HOME/.local/share/bier/agent/peer_signers.new\" || true
-printf '%s ' \"$HOST\" >>\"\$HOME/.local/share/bier/agent/peer_signers.new\"
-cat \"\$HOME/.local/share/bier/agent/peer-key.new\" >>\"\$HOME/.local/share/bier/agent/peer_signers.new\"
-mv \"\$HOME/.local/share/bier/agent/peer_signers.new\" \"\$HOME/.local/share/bier/agent/peer_signers\"
-rm -f \"\$HOME/.local/share/bier/agent/peer-key.new\"
-rm -rf \"\$HOME/.local/share/bier/agent/source\"
-mv \"\$HOME/.local/share/bier/agent/source.new\" \"\$HOME/.local/share/bier/agent/source\"
+rm -rf \"\$HOME/.barrel/agent/source.new\"
+git init --quiet \"\$HOME/.barrel/agent/source.new\"
+git -C \"\$HOME/.barrel/agent/source.new\" remote add origin https://github.com/MatthiasToberer/bierfile.git
+git -C \"\$HOME/.barrel/agent/source.new\" fetch --quiet --depth 1 origin \"refs/tags/$tag:refs/tags/$tag\"
+git -C \"\$HOME/.barrel/agent/source.new\" checkout --quiet --detach \"$tag\"
+git -C \"\$HOME/.barrel/agent/source.new\" -c gpg.ssh.allowedSignersFile=\"\$HOME/.barrel/agent/allowed_signers.new\" verify-tag \"$tag\" >/dev/null
+\"\$HOME/.barrel/agent/source.new/Sources/bier-agent/build.sh\" \"\$HOME/.barrel/agent/bin/bier-agent.new\" >/dev/null
+mv \"\$HOME/.barrel/agent/bin/bier-agent.new\" \"\$HOME/.barrel/agent/bin/bier-agent\"
+chmod 700 \"\$HOME/.barrel/agent/bin/bier-agent\"
+mv \"\$HOME/.barrel/agent/allowed_signers.new\" \"\$HOME/.barrel/agent/allowed_signers\"
+touch \"\$HOME/.barrel/agent/peer_signers\"
+awk -v peer=\"$HOST\" '\$1 != peer' \"\$HOME/.barrel/agent/peer_signers\" >\"\$HOME/.barrel/agent/peer_signers.new\" || true
+printf '%s ' \"$HOST\" >>\"\$HOME/.barrel/agent/peer_signers.new\"
+cat \"\$HOME/.barrel/agent/peer-key.new\" >>\"\$HOME/.barrel/agent/peer_signers.new\"
+mv \"\$HOME/.barrel/agent/peer_signers.new\" \"\$HOME/.barrel/agent/peer_signers\"
+rm -f \"\$HOME/.barrel/agent/peer-key.new\"
+rm -rf \"\$HOME/.barrel/agent/source\"
+mv \"\$HOME/.barrel/agent/source.new\" \"\$HOME/.barrel/agent/source\"
 rm -rf \"\$HOME/.local/share/bierkasten\"
 mv \"\$HOME/Library/LaunchAgents/com.bier.agent.plist.new\" \"\$HOME/Library/LaunchAgents/com.bier.agent.plist\"
 launchctl bootout \"gui/\$(id -u)\" \"\$HOME/Library/LaunchAgents/com.bier.agent.plist\" >/dev/null 2>&1 || true
@@ -3777,7 +3797,7 @@ cmd_version() {
 	info "  Device  $HOST"
 
 	local app
-	for app in /Applications/BierMenu.app "$HOME/Applications/BierMenu.app"; do
+	for app in "$BARREL/BierMenu.app" /Applications/BierMenu.app "$HOME/Applications/BierMenu.app"; do
 		if [ -d "$app" ]; then
 			info "  App     $(defaults read "$app/Contents/Info" \
 				CFBundleShortVersionString 2>/dev/null || echo "?") ($app)"
@@ -3871,7 +3891,7 @@ private repository holding your Brewfiles. They reveal what runs on your
 Macs and therefore do not belong in the public program repository.
 install.sh sets up both.
 
-The config lives in ~/.config/bier/config and is created on first run.
+The config lives in ~/.barrel/config and is created on first run.
 It knows "root", "data", "host" (the device name) and whether inventory
 collection is "automatic" or "manual".
 

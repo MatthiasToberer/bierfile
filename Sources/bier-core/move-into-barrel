@@ -1,0 +1,114 @@
+#!/bin/sh
+#
+# Moves an installation from before the barrel into ~/.barrel, once.
+# install.sh runs it; it does nothing where there is no old layout or
+# where the barrel already has a config.
+#
+#   move-into-barrel [--dry-run]
+#
+# What moves, and where to:
+#
+#   ~/.config/bier/{config,peers,allowed_signers*}  ~/.barrel/
+#   ~/.local/share/bier/agent                       ~/.barrel/agent
+#   ~/.local/state/bier                             ~/.barrel/state
+#   ~/bierdata                                      ~/.barrel/data
+#   ~/.bierfilevault                                ~/.barrel/vault
+#
+# Links from the vault into the home folder become plain files first:
+# the old vault path they point at is about to go. A data folder or vault
+# set up somewhere else stays where it is. The agent and BierMenu are
+# expected to be stopped by the caller.
+
+set -eu
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+BARREL=${BIER_BARREL:-$HOME/.barrel}
+OLD_CONFIG_DIR=${XDG_CONFIG_HOME:-$HOME/.config}/bier
+OLD_STATE=${XDG_STATE_HOME:-$HOME/.local/state}/bier
+OLD_AGENT=$HOME/.local/share/bier/agent
+DRY=no
+[ "${1:-}" != --dry-run ] || DRY=yes
+
+ok() { printf '   %s\n' "$*"; }
+
+[ -f "$OLD_CONFIG_DIR/config" ] && [ ! -f "$BARREL/config" ] || exit 0
+
+config_get() {
+	sed -nE "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*(.*)\$/\1/p" "$2" 2>/dev/null |
+		tail -1 | sed -E 's/[[:space:]]+$//; s/^"(.*)"$/\1/; s#^~/#'"$HOME"'/#'
+}
+
+config_set() {
+	if grep -qE "^[[:space:]]*$1[[:space:]]*=" "$BARREL/config"; then
+		sed -i '' "s|^[[:space:]]*$1[[:space:]]*=.*|$1 = $2|" "$BARREL/config"
+	else
+		printf '%s = %s\n' "$1" "$2" >>"$BARREL/config"
+	fi
+}
+
+# move <from> <to> <what>
+move() {
+	[ -e "$1" ] || return 0
+	if [ -e "$2" ]; then
+		ok "kept apart: $1 ($2 exists already)"
+		return 0
+	fi
+	if [ "$DRY" = yes ]; then
+		ok "$3  $1 -> $2"
+		return 0
+	fi
+	mkdir -p "$(dirname "$2")"
+	mv "$1" "$2"
+	ok "$3  $1 -> $2"
+}
+
+data=$(config_get data "$OLD_CONFIG_DIR/config")
+vault=$(config_get vault "$OLD_CONFIG_DIR/config")
+vault=${vault:-$HOME/.bierfilevault}
+
+# The links first, while the old bier still finds its vault.
+if [ "$DRY" = yes ]; then
+	ok "links      vault links in your home folder become plain files"
+else
+	"$HERE/bier" vault --unlink >/dev/null 2>&1 ||
+		ok "! some vault links could not be turned into files -- check with: bier vault"
+fi
+
+[ "$DRY" = yes ] || mkdir -p "$BARREL"
+for f in config peers allowed_signers allowed_signers.url; do
+	move "$OLD_CONFIG_DIR/$f" "$BARREL/$f" "settings "
+done
+[ "$DRY" = yes ] || rmdir "$OLD_CONFIG_DIR" 2>/dev/null || true
+move "$OLD_AGENT" "$BARREL/agent" "agent    "
+move "$OLD_STATE" "$BARREL/state" "state    "
+
+if [ "$data" = "$HOME/bierdata" ]; then
+	move "$HOME/bierdata" "$BARREL/data" "data     "
+	[ "$DRY" = yes ] || [ -e "$HOME/bierdata" ] || config_set data "$BARREL/data"
+fi
+if [ "$vault" = "$HOME/.bierfilevault" ]; then
+	move "$HOME/.bierfilevault" "$BARREL/vault" "vault    "
+	[ "$DRY" = yes ] || [ -e "$HOME/.bierfilevault" ] || config_set vault "$BARREL/vault"
+fi
+
+# The old command and app. Only bier's own: a link pointing at some
+# other program of the same name is somebody else's.
+case $(readlink "$HOME/.local/bin/bier" 2>/dev/null || true) in
+*/Sources/bier-core/bier)
+	if [ "$DRY" = yes ]; then
+		ok "command   $HOME/.local/bin/bier removed; bier is in $BARREL/bin"
+	else
+		rm -f "$HOME/.local/bin/bier"
+		ok "command   $HOME/.local/bin/bier removed; bier is in $BARREL/bin"
+	fi
+	;;
+esac
+for app in /Applications/BierMenu.app "$HOME/Applications/BierMenu.app"; do
+	[ -d "$app" ] || continue
+	if [ "$DRY" = yes ]; then
+		ok "app       $app replaced by $BARREL/BierMenu.app"
+	else
+		rm -rf "$app"
+		ok "app       $app replaced by $BARREL/BierMenu.app"
+	fi
+done

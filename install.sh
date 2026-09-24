@@ -1,10 +1,12 @@
 #!/bin/sh
 #
-# Sets up bier and BierMenu on this Mac. The program repository has to be
-# cloned already; this script creates the local repository for the Brewfiles:
+# Sets up bier and BierMenu on this Mac, everything inside ~/.barrel.
+# bootstrap.sh fetches the program and runs this; by hand:
 #
-#   git clone git@github.com:MatthiasToberer/bierfile.git ~/bierfile
-#   ~/bierfile/install.sh
+#   git clone https://github.com/MatthiasToberer/bierfile.git ~/.barrel/bier
+#   ~/.barrel/bier/install.sh
+#
+# An installation from before the barrel is moved in on the way.
 #
 #   ./install.sh --data ~/my-bierdata  use another local folder
 #   ./install.sh --data git@your-server:bierfile.git   optional legacy remote
@@ -17,9 +19,10 @@
 set -eu
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-BIN_DIR=$HOME/.local/bin
+BARREL=${BIER_BARREL:-$HOME/.barrel}
+BIN_DIR=$BARREL/bin
 LINK=$BIN_DIR/bier
-CONFIG=${XDG_CONFIG_HOME:-$HOME/.config}/bier/config
+CONFIG=$BARREL/config
 
 say() { printf '\n== %s\n' "$*"; }
 ok() { printf '   %s\n' "$*"; }
@@ -65,15 +68,10 @@ ask() {
 	esac
 }
 
-# /Applications belongs to root:admin and is writable for admins. Anyone
-# without admin rights gets the app in their own directory.
+# The app lives in the barrel like everything else: out of sight, and
+# gone with it.
 app_target() {
-	if [ -w /Applications ]; then
-		echo /Applications/BierMenu.app
-	else
-		mkdir -p "$HOME/Applications"
-		echo "$HOME/Applications/BierMenu.app"
-	fi
+	echo "$BARREL/BierMenu.app"
 }
 
 # Stops a running BierMenu and waits until it is really gone. A fixed
@@ -105,6 +103,19 @@ stop_agent() {
 	launchctl bootout "gui/$(id -u)" "$plist" >/dev/null 2>&1 || true
 	return 0
 }
+
+# --- The program into the barrel --------------------------------------
+#
+# A checkout at ~/bierfile, where the old instructions put it, moves to
+# ~/.barrel/bier and the installation carries on from there. One with
+# changes of its own is somebody's working copy and stays.
+if [ "$UNINSTALL" = no ] && [ "$DRY" = no ] && [ "$HERE" = "$HOME/bierfile" ] &&
+	[ ! -e "$BARREL/bier" ] && [ -z "$(git -C "$HERE" status --porcelain 2>/dev/null || echo dirty)" ]; then
+	mkdir -p "$BARREL"
+	mv "$HERE" "$BARREL/bier"
+	printf '\n== Moved the program: %s -> %s\n' "$HERE" "$BARREL/bier"
+	exec /bin/sh "$BARREL/bier/install.sh" "$@"
+fi
 
 # --- Prerequisites -----------------------------------------------------
 
@@ -280,6 +291,10 @@ else
 fi
 
 if [ "$DRY" = yes ]; then
+	if [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/bier/config" ] && [ ! -f "$CONFIG" ]; then
+		say "What would move into $BARREL"
+		"$HERE/Sources/bier-core/move-into-barrel" --dry-run
+	fi
 	say "What it would do"
 	if [ -L "$LINK" ] && [ "$(readlink "$LINK")" = "$HERE/Sources/bier-core/bier" ]; then
 		ok "link       $LINK — already correct"
@@ -304,7 +319,7 @@ if [ "$DRY" = yes ]; then
 	if [ -n "$d" ] && [ -d "$d/.git" ]; then
 		ok "data       $d — a git repository, kept"
 	else
-		ok "data       would create the local repository $HOME/bierdata"
+		ok "data       would create the local repository $BARREL/data"
 	fi
 	if "$HERE/Sources/bier-core/bier" vault 2>/dev/null | grep -q 'remembered on this Mac'; then
 		ok "vault      create the folder; the passphrase is already known"
@@ -425,6 +440,13 @@ config_set() {
 	fi
 }
 
+if [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/bier/config" ] && [ ! -f "$CONFIG" ]; then
+	say "Moving into $BARREL"
+	stop_app && ok "stopped BierMenu" || true
+	stop_agent && ok "stopped the Bier agent" || true
+	"$HERE/Sources/bier-core/move-into-barrel"
+fi
+
 say "Configuration"
 config_set root "$HERE"
 config_set host "$(hostname -s)"
@@ -452,7 +474,7 @@ if [ -n "$DATA_ARG" ]; then
 	case $DATA_ARG in
 	*://* | *@*:* )
 		# An address: clone it unless that has already happened.
-		target=$HOME/bierdata
+		target=$BARREL/data
 		if [ -d "$target/.git" ]; then
 			ok "$target is already there"
 		else
@@ -468,7 +490,7 @@ if [ -n "$DATA_ARG" ]; then
 fi
 
 if [ -z "$DATA" ]; then
-	DATA=$HOME/bierdata
+	DATA=$BARREL/data
 	git init -q --initial-branch=main "$DATA" || die "could not create $DATA"
 	ok "created $DATA"
 elif [ ! -d "$DATA/.git" ]; then
@@ -498,7 +520,7 @@ say "Vault"
 VAULTDIR=$(sed -nE 's/^[[:space:]]*vault[[:space:]]*=[[:space:]]*(.*)$/\1/p' \
 	"$CONFIG" 2>/dev/null | tail -1)
 case ${VAULTDIR:-} in
-"") VAULTDIR=$HOME/.bierfilevault ;;
+"") VAULTDIR=$BARREL/vault ;;
 "~/"*) VAULTDIR=$HOME/${VAULTDIR#\~/} ;;
 esac
 
@@ -546,11 +568,11 @@ fi
 # --- Local peer agent -------------------------------------------------
 
 say "Installing the local Bier agent"
-AGENT_HOME=$HOME/.local/share/bier/agent
+AGENT_HOME=$BARREL/agent
 AGENT_BIN=$AGENT_HOME/bin/bier-agent
 AGENT_PLIST=$HOME/Library/LaunchAgents/com.bier.agent.plist
 PEER_SIGNERS=$AGENT_HOME/peer_signers
-RELEASE_SIGNERS=$HOME/.config/bier/allowed_signers
+RELEASE_SIGNERS=$BARREL/allowed_signers
 mkdir -p "$AGENT_HOME/bin" "$AGENT_HOME/state" "$HOME/Library/LaunchAgents" "$(dirname "$RELEASE_SIGNERS")"
 touch "$PEER_SIGNERS" "$RELEASE_SIGNERS"
 chmod 700 "$AGENT_HOME" "$AGENT_HOME/bin" "$AGENT_HOME/state"
@@ -566,7 +588,7 @@ mv "$AGENT_BIN.new" "$AGENT_BIN"
 chmod 700 "$AGENT_BIN"
 
 xml_data=$(printf '%s' "$DATA" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
-xml_home=$(printf '%s' "$HOME" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
+xml_barrel=$(printf '%s' "$BARREL" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
 xml_host=$(hostname -s | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g')
 cat >"$AGENT_PLIST.new" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -574,16 +596,23 @@ cat >"$AGENT_PLIST.new" <<EOF
 <plist version="1.0"><dict>
   <key>Label</key><string>com.bier.agent</string>
   <key>ProgramArguments</key><array>
-    <string>$xml_home/.local/share/bier/agent/bin/bier-agent</string>
+    <!-- Starts the agent while the barrel is there. After "rm -rf ~/.barrel"
+         it removes this file and unloads itself instead of failing on
+         every restart. -->
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>if [ -x "$1" ]; then exec "$@"; fi; rm -f "$HOME/Library/LaunchAgents/com.bier.agent.plist"; exec launchctl bootout "gui/$(id -u)/com.bier.agent"</string>
+    <string>bier-agent</string>
+    <string>$xml_barrel/agent/bin/bier-agent</string>
     <string>serve</string>
     <string>--agent</string><string>$xml_host</string>
-    <string>--allowed-signers</string><string>$xml_home/.config/bier/allowed_signers</string>
-    <string>--peer-signers</string><string>$xml_home/.local/share/bier/agent/peer_signers</string>
-	<string>--peer-key</string><string>$xml_home/.local/share/bier/agent/identity.pub</string>
-	<string>--peers-file</string><string>$xml_home/.config/bier/peers</string>
+    <string>--allowed-signers</string><string>$xml_barrel/allowed_signers</string>
+    <string>--peer-signers</string><string>$xml_barrel/agent/peer_signers</string>
+    <string>--peer-key</string><string>$xml_barrel/agent/identity.pub</string>
+    <string>--peers-file</string><string>$xml_barrel/peers</string>
     <string>--data-dir</string><string>$xml_data</string>
     <string>--port</string><string>53991</string>
-    <string>--state-dir</string><string>$xml_home/.local/share/bier/agent/state</string>
+    <string>--state-dir</string><string>$xml_barrel/agent/state</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>

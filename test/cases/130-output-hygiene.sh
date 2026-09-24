@@ -17,7 +17,7 @@ EOF
 err=$(
 	BIER_ROOT=$WORK/code-mini BIER_DATA=$WORK/mini BIER_HOST=mini \
 		BIER_TEST_SYSTEM=$WORK/sys-mini \
-		XDG_CONFIG_HOME=$WORK/config-mini \
+		HOME=$WORK/home-mini \
 		"$WORK/code-mini/Sources/bier-core/bier" list 2>&1 >/dev/null | head -1
 )
 assert_eq "" "$err" "list must not complain when its output is cut short"
@@ -25,7 +25,7 @@ assert_eq "" "$err" "list must not complain when its output is cut short"
 both=$(
 	BIER_ROOT=$WORK/code-mini BIER_DATA=$WORK/mini BIER_HOST=mini \
 		BIER_TEST_SYSTEM=$WORK/sys-mini \
-		XDG_CONFIG_HOME=$WORK/config-mini \
+		HOME=$WORK/home-mini \
 		"$WORK/code-mini/Sources/bier-core/bier" list 2>&1 | head -2
 )
 assert_sane "$both"

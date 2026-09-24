@@ -56,10 +56,16 @@ enum Bier {
 	/// Command Line Tools therefore have to be added explicitly.
 	static let path = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-	/// Finds the bier script: via root from the config, then on PATH.
+	/// Finds the bier script: the barrel's command, then root from the
+	/// config (the barrel's, or the one from before it), then on PATH.
 	static func executable() -> String? {
-		let config = ("~/.config/bier/config" as NSString).expandingTildeInPath
-		if let text = try? String(contentsOfFile: config, encoding: .utf8) {
+		let command = ("~/.barrel/bin/bier" as NSString).expandingTildeInPath
+		if FileManager.default.isExecutableFile(atPath: command) {
+			return command
+		}
+		for path in ["~/.barrel/config", "~/.config/bier/config"] {
+			let config = (path as NSString).expandingTildeInPath
+			guard let text = try? String(contentsOfFile: config, encoding: .utf8) else { continue }
 			for line in text.split(separator: "\n") {
 				let parts = line.split(separator: "=", maxSplits: 1)
 				guard parts.count == 2, parts[0].trimmed == "root" else { continue }
@@ -92,8 +98,7 @@ enum Bier {
 	@discardableResult
 	static func run(_ args: [String]) -> (out: String, err: String, ok: Bool) {
 		guard let exe = executable() else {
-			return ("", "bier not found — is the repository still at the path "
-				+ "from ~/.config/bier/config?", false)
+			return ("", "bier not found — is ~/.barrel still there?", false)
 		}
 		let task = Process()
 		task.executableURL = URL(fileURLWithPath: exe)

@@ -69,14 +69,14 @@ export BIER_RELEASE_TRUST_URL
 
 mkdir -p "$WORK/home-mini/.ssh"
 ssh-keygen -q -t ed25519 -N '' -f "$WORK/home-mini/.ssh/id_ed25519"
-mkdir -p "$WORK/home-mini/.local/share/bier/agent/bin"
-ssh-keygen -q -t ed25519 -N '' -f "$WORK/home-mini/.local/share/bier/agent/identity"
-: >"$WORK/home-mini/.local/share/bier/agent/bin/bier-agent"
-chmod +x "$WORK/home-mini/.local/share/bier/agent/bin/bier-agent"
+mkdir -p "$WORK/home-mini/.barrel/agent/bin"
+ssh-keygen -q -t ed25519 -N '' -f "$WORK/home-mini/.barrel/agent/identity"
+: >"$WORK/home-mini/.barrel/agent/bin/bier-agent"
+chmod +x "$WORK/home-mini/.barrel/agent/bin/bier-agent"
 assert_ok bier mini peer offer
 assert_contains "$OUT" 'Pairing is open for 10 minutes.'
 assert_contains "$OUT" 'One-time code:'
-test -f "$WORK/home-mini/.local/share/bier/agent/state/pairing-offer.json"
+test -f "$WORK/home-mini/.barrel/agent/state/pairing-offer.json"
 cat >"$WORK/peer-client" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$*" >>"$BIER_TEST_PEER_LOG"
@@ -144,7 +144,7 @@ assert_file_has "$WORK/ssh.args" 'fetch --quiet --depth 1 origin'
 assert_file_has "$WORK/ssh.args" 'source.new/Sources/bier-agent/build.sh'
 assert_file_has "$WORK/ssh.args" 'bier-agent-data-directory'
 assert_file_has "$WORK/agent.plist" '<string>--data-dir</string><string>/Users/bier/configured-data</string>'
-assert_file_has "$WORK/agent.plist" '<string>--peer-key</string><string>/Users/bier/.local/share/bier/agent/identity.pub</string>'
+assert_file_has "$WORK/agent.plist" '<string>--peer-key</string><string>/Users/bier/.barrel/agent/identity.pub</string>'
 assert_file_has "$WORK/ssh.args" 'peer_signers'
 assert_file_has "$WORK/curl.args" 'http://studio.local:53991/v1/health'
 assert_ok bier mini peer list
@@ -199,7 +199,7 @@ assert_contains "$OUT" '2/3  Removing the Bier agent and SSH access'
 assert_contains "$OUT" '3/3  Removing local Bier connection details'
 assert_contains "$OUT" 'Done. Bier agent removed from studio.local.'
 assert_file_has "$WORK/ssh.args" 'launchctl bootout'
-assert_file_has "$WORK/ssh.args" '.local/share/bier/agent'
+assert_file_has "$WORK/ssh.args" '.barrel/agent'
 assert_file_has "$WORK/ssh.args" 'ssh-key-installed'
 assert_file_has "$WORK/ssh.args" 'authorized_keys.bier'
 assert_file_has "$WORK/scp.args" 'uninstall-key.new'

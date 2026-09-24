@@ -7,9 +7,9 @@
 # meant to stay private.
 
 # A setup as it is right after "git clone": program there, data not.
-rm -f "$WORK/config-mini/bier/config"
+rm -f "$WORK/home-mini/.barrel/config"
 printf 'root = %s\nhost = mini\n' "$WORK/code-mini" \
-	>"$WORK/config-mini/bier/config"
+	>"$WORK/home-mini/.barrel/config"
 
 system mini <<'EOF'
 brew "wget"

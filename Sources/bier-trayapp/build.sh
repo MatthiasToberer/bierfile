@@ -60,7 +60,8 @@ fi
 echo "built: $APP"
 
 if [ "${1:-}" = "--install" ]; then
-	rm -rf /Applications/BierMenu.app
-	cp -R "$APP" /Applications/
-	echo "installiert: /Applications/BierMenu.app"
+	mkdir -p "${BIER_BARREL:-$HOME/.barrel}"
+	rm -rf "${BIER_BARREL:-$HOME/.barrel}/BierMenu.app"
+	cp -R "$APP" "${BIER_BARREL:-$HOME/.barrel}/"
+	echo "installed: ${BIER_BARREL:-$HOME/.barrel}/BierMenu.app"
 fi

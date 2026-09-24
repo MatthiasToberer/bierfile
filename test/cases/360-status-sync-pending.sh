@@ -74,8 +74,8 @@ cat >"$WORK/peer-client" <<'EOF'
 printf '%s\n' 'Bier data is in sync.'
 EOF
 chmod +x "$WORK/peer-client"
-mkdir -p "$WORK/home-mini/.local/share/bier/agent"
-ssh-keygen -q -t ed25519 -N '' -f "$WORK/home-mini/.local/share/bier/agent/identity"
+mkdir -p "$WORK/home-mini/.barrel/agent"
+ssh-keygen -q -t ed25519 -N '' -f "$WORK/home-mini/.barrel/agent/identity"
 BIER_PEER_CLIENT=$WORK/peer-client
 export BIER_PEER_CLIENT
 assert_ok bier mini peer add macbook.local

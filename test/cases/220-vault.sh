@@ -19,7 +19,7 @@ is_link() { [ -L "$1" ] && echo yes || echo no; }
 printf 'export EDITOR=vim\n' >"$WORK/home-mini/.zshrc"
 assert_ok bier mini vault add "$WORK/home-mini/.zshrc"
 assert_eq "no" "$(is_link "$WORK/home-mini/.zshrc")" "the original has to stay a real file"
-assert_file_has "$WORK/home-mini/.bierfilevault/dot_zshrc" "EDITOR=vim" \
+assert_file_has "$WORK/home-mini/.barrel/vault/dot_zshrc" "EDITOR=vim" \
 	"and the vault has to hold a copy"
 
 # Sync encrypts it. What lands in the repository must not be readable.
@@ -43,7 +43,7 @@ assert_eq "export EDITOR=nano" "$(cat "$WORK/home-mini/.zshrc")" \
 assert_contains "$OUT" "updated: $WORK/home-mini/.zshrc"
 
 # The version it replaced is kept in the backups.
-backup=$(find "$WORK/home-mini/.local/state/bier/backups" -name .zshrc | head -1)
+backup=$(find "$WORK/home-mini/.barrel/state/backups" -name .zshrc | head -1)
 [ -n "$backup" ] || fail "the replaced version has to be in the backups"
 assert_eq "export EDITOR=vim" "$(cat "$backup")"
 

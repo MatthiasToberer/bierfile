@@ -58,7 +58,7 @@ assert_eq "fremd" "$(cat "$WORK/home-macbook/.fremdlink")" "and left as it was"
 # The README install.sh leaves in the vault explains the folder. It is
 # the same everywhere and must not travel, or it turns up as
 # ~/README.txt on every Mac.
-printf 'erklaerung\n' >"$WORK/home-mini/.bierfilevault/README.txt"
+printf 'erklaerung\n' >"$WORK/home-mini/.barrel/vault/README.txt"
 assert_ok bier mini sync
 assert_eq "no" \
 	"$([ -e "$WORK/mini/Safe/README.txt.gpg" ] && echo yes || echo no)" \
@@ -69,18 +69,18 @@ assert_eq "no" "$([ -e "$WORK/home-macbook/README.txt" ] && echo yes || echo no)
 
 # A vault holding nothing but bier's own README is empty as far as
 # anybody cares, and must not demand a passphrase for it.
-rm -rf "$WORK/home-macbook/.bierfilevault"
-mkdir -p "$WORK/home-macbook/.bierfilevault"
-printf 'erklaerung\n' >"$WORK/home-macbook/.bierfilevault/README.txt"
+rm -rf "$WORK/home-macbook/.barrel/vault"
+mkdir -p "$WORK/home-macbook/.barrel/vault"
+printf 'erklaerung\n' >"$WORK/home-macbook/.barrel/vault/README.txt"
 BIER_VAULT_PASS="" assert_ok bier macbook vault
 assert_contains "$OUT" "0 entries" "a vault with only the README is empty"
 
 # And the case that broke a real installation: syncing with nothing but
 # the README in the vault demanded a passphrase for files that are not
 # there. install.sh leaves that README behind, so every fresh Mac hit it.
-rm -rf "$WORK/home-mini/.bierfilevault" "$WORK/mini/Safe"
-mkdir -p "$WORK/home-mini/.bierfilevault"
-printf 'erklaerung\n' >"$WORK/home-mini/.bierfilevault/README.txt"
+rm -rf "$WORK/home-mini/.barrel/vault" "$WORK/mini/Safe"
+mkdir -p "$WORK/home-mini/.barrel/vault"
+printf 'erklaerung\n' >"$WORK/home-mini/.barrel/vault/README.txt"
 BIER_VAULT_PASS="" assert_ok bier mini sync
 assert_not_contains "$OUT" "no passphrase is set" \
 	"a vault holding only the README must not ask for anything"
