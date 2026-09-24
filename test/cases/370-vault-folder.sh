@@ -28,6 +28,8 @@ printf 'noise\n' >"$WORK/home-mini/$app/GPUCache/data"
 printf 'noise\n' >"$WORK/home-mini/$app/logs/today"
 printf 'noise\n' >"$WORK/home-mini/$app/TestApp-activitylog.txt"
 printf 'noise\n' >"$WORK/home-mini/$app/Queue.hbqueue"
+printf 'copy\n' >"$WORK/home-mini/$app/settings.ini.from-safe"
+printf 'copy\n' >"$WORK/home-mini/$app/settings.ini.backup"
 printf 'vault_exclude = *.hbqueue\n' >>"$WORK/home-mini/.barrel/config"
 head -c 4096 /dev/zero >"$WORK/home-mini/$app/huge.bin"
 
@@ -42,7 +44,8 @@ assert_contains "$OUT" "huge.bin not taken: larger than vault_max_file"
 assert_ok bier macbook sync
 assert_eq '{"preset":"fast"}' "$(cat "$WORK/home-macbook/$app/Presets/fast.json")"
 assert_eq 'window=1' "$(cat "$WORK/home-macbook/$app/settings.ini")"
-for left_out in Caches/blob .DS_Store huge.bin TestApp-activitylog.txt Queue.hbqueue GPUCache/data logs/today; do
+for left_out in Caches/blob .DS_Store huge.bin TestApp-activitylog.txt Queue.hbqueue GPUCache/data logs/today \
+	settings.ini.from-safe settings.ini.backup; do
 	[ ! -e "$WORK/home-macbook/$app/$left_out" ] || fail "$left_out must stay out"
 done
 

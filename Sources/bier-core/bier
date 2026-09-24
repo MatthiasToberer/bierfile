@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.44.0
+BIER_VERSION=0.44.1
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -3156,6 +3156,8 @@ vault_excluded() {
 	local pattern
 	case ${1##*/} in
 	.DS_Store | *.lock | *.log | *[Ll]og.txt | .bier-folder) return 0 ;;
+	# bier's own copies: a conflict's other side, a replaced file.
+	*.from-safe | *.from-safe.[0-9]* | *.backup | *.backup.[0-9]* | *.bier-new) return 0 ;;
 	# What holds keys or passwords travels only when added by itself.
 	*[Tt]oken* | *[Pp]assword* | *[Ss]ecret* | *[Cc]redential* | *.pem | *.key | *.p12 | *.keychain*) return 0 ;;
 	esac
