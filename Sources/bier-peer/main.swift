@@ -14,7 +14,7 @@ private enum CLIError: LocalizedError {
 	var errorDescription: String? {
 		switch self {
 		case .usage:
-			return "usage: bier-peer <hello|name|introduce|confirm|pair|leave|seed|seed-if-empty|seed-if-pristine|compare|sync> <host> --local <name> --identity <path> [--data <path>] [--address <own-host>] [--code-file <path>] [--peer-signers <path>] [--port <port>] [--via <host>] [--body <path>]"
+			return "usage: bier-peer <hello|name|introduce|confirm|status|admin-pair|admin-run|pair|leave|seed|seed-if-empty|seed-if-pristine|compare|sync> <host> --local <name> --identity <path> [--data <path>] [--address <own-host>] [--code-file <path>] [--peer-signers <path>] [--port <port>] [--via <host>] [--body <path>]"
 		case .invalidHost:
 			return "the peer host or port is invalid"
 		case .missingData:
@@ -76,6 +76,12 @@ private struct Options {
 	}
 }
 
+private struct RunResponse: Decodable {
+	let status: Int32
+	let out: String
+	let err: String
+}
+
 private struct HelloResponse: Decodable {
 	let status: String
 	let agent: String?
@@ -114,6 +120,18 @@ private enum BierPeerCLI {
 			guard let body = options.body else { throw CLIError.usage }
 			let response = try JSONDecoder().decode(HelloResponse.self, from: try await transport.send(method: "POST", path: "/v1/peer/introduce", body: Data(contentsOf: body)))
 			guard response.status == "introduced" else { throw CLIError.invalidResponse }
+		case "status", "admin-run":
+			// status: how another Mac is doing; admin-run: bier on this Mac,
+			// as Bierkasten runs it (--body holds {"args": [...]}).
+			let data = options.command == "status"
+				? try await transport.send(method: "GET", path: "/v1/peer/status", body: Data())
+				: try await transport.send(method: "POST", path: "/v1/admin/run", body: Data(contentsOf: options.body ?? URL(fileURLWithPath: "/dev/null")))
+			let result = try JSONDecoder().decode(RunResponse.self, from: data)
+			FileHandle.standardOutput.write(Data(result.out.utf8))
+			FileHandle.standardError.write(Data(result.err.utf8))
+			exit(result.status)
+		case "admin-pair":
+			try await pair(options, path: "v1/admin/pair")
 		case "confirm":
 			let response = try JSONDecoder().decode(HelloResponse.self, from: try await transport.send(method: "POST", path: "/v1/peer/confirm", body: Data()))
 			guard response.status == "confirmed" else { throw CLIError.invalidResponse }
@@ -152,7 +170,7 @@ private enum BierPeerCLI {
 		}
 	}
 
-	private static func pair(_ options: Options) async throws {
+	private static func pair(_ options: Options, path: String = "v1/pair") async throws {
 		guard let codeFile = options.codeFile, let signers = options.peerSigners else { throw CLIError.missingPairing }
 		let code = try String(contentsOf: codeFile, encoding: .utf8)
 			.lowercased().filter { $0.isHexDigit }
@@ -167,7 +185,7 @@ private enum BierPeerCLI {
 			proof: peerPairingProof(code: code, peer: options.localHost, address: address, publicKey: publicKey))
 		let encoder = JSONEncoder()
 		encoder.outputFormatting = .withoutEscapingSlashes
-		var request = URLRequest(url: try options.baseURL.appendingPathComponent("v1/pair"))
+		var request = URLRequest(url: try options.baseURL.appendingPathComponent(path))
 		request.httpMethod = "POST"
 		request.httpBody = try encoder.encode(pairing)
 		request.setValue("application/json", forHTTPHeaderField: "Content-Type")

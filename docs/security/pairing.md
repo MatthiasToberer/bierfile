@@ -81,6 +81,28 @@ there with exactly that key, introduced by a Mac it trusts. Then
 that signs off (`bier knockout`) takes its introductions with it.
 The menu bar and `bier brewmaster` point out Macs that wait.
 
+## Bierkasten: managing this Mac from an app
+
+Bierkasten does not run bier itself: it asks the local agent, and the
+agent runs bier. It pairs once, like a peer:
+
+```sh
+bier admin offer     # a one-time code for Bierkasten, open for 10 minutes
+bier admin list      # what is connected
+bier admin remove <name>
+```
+
+Its key goes into `admin_signers`, not into the peer keys: a paired Mac
+is never an admin, and an admin is only heard from this Mac itself
+(127.0.0.1). It may run a fixed set of bier commands -- report, state,
+sync, brewmaster, list, status, peer pending/accept/reject/list, add,
+install, take, vault add/forget -- never anything that asks, and never
+a shell. `bier report` is what it reads: every fact in tab-separated
+lines.
+
+Peers may ask one thing more: `GET /v1/peer/status`, the `bier state`
+of this Mac, read only, for the fleet view elsewhere.
+
 ## Network
 
 The agent listens on **TCP port 53991** and announces itself via Bonjour

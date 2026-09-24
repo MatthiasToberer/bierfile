@@ -37,6 +37,52 @@ struct BundleReadRequest: Decodable {
 	let length: Int
 }
 
+// Bierkasten manages this Mac through the agent, and the agent runs bier
+// for it: the logic stays in one place. Only these commands may run --
+// the first words must match -- and nothing asks: stdin is empty.
+let adminCommands: [[String]] = [
+	["report"], ["state"], ["sync"], ["brewmaster"], ["status"], ["list"],
+	["peer", "pending"], ["peer", "accept"], ["peer", "reject"], ["peer", "list"],
+	["add"], ["install"], ["take"], ["vault", "add"], ["vault", "forget"],
+]
+
+struct AdminRunRequest: Decodable {
+	let args: [String]
+}
+
+struct AdminRunResponse: Encodable {
+	let status: Int32
+	let out: String
+	let err: String
+}
+
+func runBier(_ bier: String, _ args: [String]) -> AdminRunResponse {
+	let process = Process()
+	process.executableURL = URL(fileURLWithPath: bier)
+	process.arguments = args
+	var environment = ProcessInfo.processInfo.environment
+	environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+	process.environment = environment
+	process.standardInput = FileHandle.nullDevice
+	let out = Pipe(), err = Pipe()
+	process.standardOutput = out
+	process.standardError = err
+	do { try process.run() } catch { return AdminRunResponse(status: 127, out: "", err: "cannot run bier at \(bier)") }
+	// Both pipes are read while bier runs: a full one would stop it.
+	var output = Data()
+	let reader = DispatchGroup()
+	reader.enter()
+	DispatchQueue.global().async {
+		output = out.fileHandleForReading.readDataToEndOfFile()
+		reader.leave()
+	}
+	let errors = err.fileHandleForReading.readDataToEndOfFile()
+	reader.wait()
+	process.waitUntilExit()
+	return AdminRunResponse(status: process.terminationStatus, out: String(decoding: output, as: UTF8.self),
+		err: String(decoding: errors, as: UTF8.self))
+}
+
 struct BundlePutRequest: Decodable {
 	let id: String
 	let offset: UInt64
@@ -118,10 +164,14 @@ final class AgentServer {
 	private let snapshotStore: DataSnapshotStore?
 	private let bundleStore: GitBundleStore?
 	private let pairingStore: PeerPairingStore?
+	private let adminStore: PeerPairingStore?
+	private let adminSigners: String?
+	private let bier: String?
 	private let store: ReplayStore
 	private let listener: NWListener
 
-	init(agent: String, peerSigners: String?, peerKey: String?, peersFile: String?, dataDirectory: URL?, stateDirectory: URL, port: UInt16, bonjour: Bool) throws {
+	init(agent: String, peerSigners: String?, peerKey: String?, peersFile: String?, adminSigners: String?, bier: String?,
+		dataDirectory: URL?, stateDirectory: URL, port: UInt16, bonjour: Bool) throws {
 		guard validHostName(agent),
 			let endpointPort = NWEndpoint.Port(rawValue: port) else {
 			throw NSError(domain: "BierAgent", code: 1, userInfo: [NSLocalizedDescriptionKey: "invalid server configuration"])
@@ -134,6 +184,16 @@ final class AgentServer {
 		} else {
 			pairingStore = nil
 		}
+		// Bierkasten pairs like a peer, but into a list of its own: a peer
+		// is never an admin, and an admin only ever talks from this Mac.
+		if let adminSigners, let peerKey {
+			adminStore = PeerPairingStore(stateDirectory: stateDirectory.appendingPathComponent("admin"),
+				signersURL: URL(fileURLWithPath: adminSigners), localKeyURL: URL(fileURLWithPath: peerKey))
+		} else {
+			adminStore = nil
+		}
+		self.adminSigners = adminSigners
+		self.bier = bier
 		self.dataDirectory = dataDirectory
 		if let dataDirectory {
 			snapshotStore = try DataSnapshotStore(live: dataDirectory)
@@ -212,6 +272,53 @@ final class AgentServer {
 			} catch {
 				respond(connection, status: 403, body: "pairing was rejected")
 			}
+			return
+		}
+		if method == "POST" && path == "/v1/admin/pair" {
+			guard isLocal(connection), let adminStore, let request = try? JSONDecoder().decode(PeerPairingRequest.self, from: body) else {
+				respond(connection, status: 403, body: "admin pairing is only open to this Mac")
+				return
+			}
+			do {
+				let encoder = JSONEncoder()
+				encoder.outputFormatting = .withoutEscapingSlashes
+				respond(connection, status: 200, data: try encoder.encode(adminStore.accept(request, agent: agent)), contentType: "application/json")
+			} catch {
+				respond(connection, status: 403, body: "pairing was rejected")
+			}
+			return
+		}
+		if method == "POST" && path == "/v1/admin/run" {
+			guard isLocal(connection), let adminSigners, let bier, let admin = headers["x-bier-peer"], let time = headers["x-bier-time"],
+				let nonce = headers["x-bier-nonce"], let encoded = headers["x-bier-signature"], let signature = Data(base64Encoded: encoded),
+				let request = try? JSONDecoder().decode(AdminRunRequest.self, from: body) else {
+				respond(connection, status: 403, body: "admin is not authorised")
+				return
+			}
+			guard adminCommands.contains(where: { request.args.starts(with: $0) }) else {
+				respond(connection, status: 403, body: "command not allowed")
+				return
+			}
+			do {
+				try verifyPeer(method: method, path: path, peer: admin, signers: adminSigners, time: time, nonce: nonce, body: body, signature: signature)
+				if try store.record("admin-\(admin)-\(nonce)") { respond(connection, status: 409, body: "request was already processed"); return }
+				respond(connection, status: 200, data: try JSONEncoder().encode(runBier(bier, request.args)), contentType: "application/json")
+			} catch { respond(connection, status: 403, body: "admin is not authorised") }
+			return
+		}
+		if method == "GET" && path == "/v1/peer/status" {
+			guard let peerSigners, let bier, let peer = headers["x-bier-peer"], let time = headers["x-bier-time"],
+				let nonce = headers["x-bier-nonce"], let encoded = headers["x-bier-signature"], let signature = Data(base64Encoded: encoded) else {
+				respond(connection, status: 403, body: "peer is not authorised")
+				return
+			}
+			do {
+				// How this Mac is doing, for the fleet view on another Mac:
+				// read only, the same lines BierMenu reads.
+				try verifyPeer(method: method, path: path, peer: peer, signers: peerSigners, time: time, nonce: nonce, body: body, signature: signature)
+				if try store.record("peer-\(peer)-\(nonce)") { respond(connection, status: 409, body: "peer request was already processed"); return }
+				respond(connection, status: 200, data: try JSONEncoder().encode(runBier(bier, ["state"])), contentType: "application/json")
+			} catch { respond(connection, status: 403, body: "peer is not authorised") }
 			return
 		}
 		if method == "GET" && path == "/v1/peer/hello" {
@@ -447,6 +554,12 @@ final class AgentServer {
 		respond(connection, status: 404, body: "not found")
 	}
 
+	private func isLocal(_ connection: NWConnection) -> Bool {
+		guard case let .hostPort(host, _) = connection.endpoint else { return false }
+		let address = "\(host)"
+		return address == "127.0.0.1" || address.hasPrefix("::1") || address.hasPrefix("::ffff:127.0.0.1")
+	}
+
 	// The peer has proven who it is by now, and "rejected" alone left
 	// it guessing. Only the repository's own reasons go out.
 	private func rejection(_ message: String, _ error: Error) -> String {
@@ -486,10 +599,16 @@ case "serve":
 	let peerSigners = option(arguments, "--peer-signers")
 	let peerKey = option(arguments, "--peer-key")
 	let peersFile = option(arguments, "--peers-file")
+	// Next to the peer keys and the barrel's bin; older LaunchAgents do
+	// not name them.
+	let barrelAgent = peerSigners.map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
+	let adminSigners = option(arguments, "--admin-signers") ?? barrelAgent?.appendingPathComponent("admin_signers").path
+	let bier = option(arguments, "--bier") ?? barrelAgent?.deletingLastPathComponent().appendingPathComponent("bin/bier").path
 	let dataDirectory = option(arguments, "--data-dir").map(URL.init(fileURLWithPath:))
 	let state = option(arguments, "--state-dir").map(URL.init(fileURLWithPath:))
 		?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Bier")
-	do { try AgentServer(agent: agent, peerSigners: peerSigners, peerKey: peerKey, peersFile: peersFile, dataDirectory: dataDirectory, stateDirectory: state, port: port, bonjour: bonjour).start() }
+	do { try AgentServer(agent: agent, peerSigners: peerSigners, peerKey: peerKey, peersFile: peersFile,
+		adminSigners: adminSigners, bier: bier, dataDirectory: dataDirectory, stateDirectory: state, port: port, bonjour: bonjour).start() }
 	catch { agentError(error.localizedDescription) }
 default:
 	agentError("unknown command")

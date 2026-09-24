@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.47.2
+BIER_VERSION=0.48.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -1075,18 +1075,85 @@ cmd_peer_offer() {
 	fi
 	[ -x "$AGENT_HOME/bin/bier-agent" ] || die "the local Bier agent is not installed; run install.sh"
 	[ -r "$PEER_IDENTITY.pub" ] || die "the local Bier peer identity is missing; run install.sh"
-	local code expires tmp shown
-	code=$(uuidgen | tr -d '-' | tr '[:upper:]' '[:lower:]')
-	expires=$(date -v+10M +%s)
-	mkdir -p "$(dirname "$PAIRING_OFFER")"
-	tmp=$(mktemp "$(dirname "$PAIRING_OFFER")/pairing-offer.XXXXXX")
-	printf '{"version":1,"code":"%s","expires":%s,"attempts":0}\n' "$code" "$expires" >"$tmp"
-	chmod 600 "$tmp"
-	mv "$tmp" "$PAIRING_OFFER"
-	shown=$(printf '%s' "$code" | sed -E 's/(.{4})/\1-/g; s/-$//')
+	local shown
+	shown=$(pairing_offer_open "$PAIRING_OFFER")
 	info "Pairing is open for 10 minutes."
 	info "On the other Mac run:  bier peer pair $address"
 	info "One-time code: $shown"
+}
+
+# Opens pairing for 10 minutes: the agent takes one request that proves
+# it knows the code. Prints the code, in groups of four.
+pairing_offer_open() {
+	local offer=$1 code tmp
+	code=$(uuidgen | tr -d '-' | tr '[:upper:]' '[:lower:]')
+	mkdir -p "$(dirname "$offer")"
+	tmp=$(mktemp "$(dirname "$offer")/pairing-offer.XXXXXX")
+	printf '{"version":1,"code":"%s","expires":%s,"attempts":0}\n' "$code" "$(date -v+10M +%s)" >"$tmp"
+	chmod 600 "$tmp"
+	mv "$tmp" "$offer"
+	printf '%s' "$code" | sed -E 's/(.{4})/\1-/g; s/-$//'
+}
+
+# Bierkasten manages this Mac through the local agent. It pairs once, like
+# a peer, into a list of its own: admin_signers. A peer is never an admin.
+ADMIN_SIGNERS=$AGENT_HOME/admin_signers
+cmd_admin() {
+	local sub=${1:-}
+	[ $# -gt 0 ] && shift
+	case $sub in
+	offer)
+		[ -x "$AGENT_HOME/bin/bier-agent" ] || die "the local Bier agent is not installed; run install.sh"
+		local shown
+		shown=$(pairing_offer_open "$AGENT_HOME/state/admin/pairing-offer.json")
+		info "Bierkasten can connect to this Mac for 10 minutes."
+		info "Enter this code in Bierkasten: $shown"
+		;;
+	list)
+		if [ -s "$ADMIN_SIGNERS" ]; then awk '{ print $1 }' "$ADMIN_SIGNERS"; else info "No Bierkasten is connected."; fi
+		;;
+	remove)
+		[ $# -eq 1 ] || die 'usage: bier admin remove <name>'
+		[ -f "$ADMIN_SIGNERS" ] && awk -v n="$1" '$1 == n { f = 1 } END { exit !f }' "$ADMIN_SIGNERS" ||
+			die "$1 is not connected; see: bier admin list"
+		local tmp
+		tmp=$(mktemp "$AGENT_HOME/admin_signers.XXXXXX")
+		awk -v n="$1" '$1 != n' "$ADMIN_SIGNERS" >"$tmp"
+		chmod 600 "$tmp"
+		mv "$tmp" "$ADMIN_SIGNERS"
+		info "Disconnected $1."
+		;;
+	*) die 'usage: bier admin <offer|list|remove <name>>' ;;
+	esac
+}
+
+# Everything Bierkasten shows, in lines of tab-separated fields: what
+# bier state says, and
+#   MAC     <name>                     a Mac with a list of its own
+#   ENTRY   main|<mac> <entry>         what a list holds
+#   APPSET  <package> <app> <what> <scope>  an app's shared settings
+#   FILE    <path> <scope>             a file or folder/ shared by path
+#   PEER    <address> <commit|never>   a paired Mac, and what it last had
+cmd_report() {
+	local h f scope peer
+	cmd_state
+	for h in $(host_list); do printf 'MAC\t%s\n' "$h"; done
+	entries "$MAIN_FILE" | sed 's/^/ENTRY'$'\t''main'$'\t''/'
+	for f in "$BREW_DIR"/*; do
+		[ -f "$f" ] && [ "$f" != "$MAIN_FILE" ] || continue
+		entries "$f" | sed "s/^/ENTRY"$'\t'"${f##*/}"$'\t'"/"
+	done
+	list_app_settings | sed 's/^/APPSET'$'\t''/'
+	list_files | sed -n 's/^  //p' | while IFS= read -r f; do
+		scope=""
+		case $f in
+		*" (only "*")") scope=${f##* (only }; scope=${scope%)}; f=${f% (only *} ;;
+		esac
+		printf 'FILE\t%s\t%s\n' "$f" "$scope"
+	done
+	for peer in $(peer_list); do
+		printf 'PEER\t%s\t%s\n' "$peer" "$(peer_sent_get "$peer" | grep . || echo never)"
+	done
 }
 
 cmd_peer_pair() {
@@ -5013,6 +5080,7 @@ bier — keeps Brewfiles in sync across Macs
   bier upgrade [--force]  install a newer release of bier itself
   bier retire <name>      take a Mac out of the fleet — the one that
                           broke, or was wiped without uninstalling
+  bier admin offer        let Bierkasten connect to this Mac (one-time code)
   bier brewmaster         check this Mac, its peers and the vault, and say
                           how to fix what is wrong (like brew doctor)
   bier access             how to let bier read app settings in their
@@ -5105,6 +5173,8 @@ retire) cmd_retire "$@" ;;
 knockout) cmd_knockout "$@" ;;
 access) cmd_access ;;
 brewmaster | doctor) cmd_brewmaster ;;
+report) cmd_report ;;
+admin) cmd_admin "$@" ;;
 version | --version | -V) cmd_version ;;
 help | -h | --help) cmd_help ;;
 *) die "unknown command: $cmd (bier help)" ;;
