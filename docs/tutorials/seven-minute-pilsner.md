@@ -214,18 +214,17 @@ open the menu.
 
 | Glass | Meaning |
 | --- | --- |
-| full, with a head of foam | all in order |
-| empty | something differs — click it and it says what |
+| full, with a head of foam | nothing to do |
+| empty | something arrived from another Mac, or something is wrong — click it and it says what |
 | level rising and falling | bier is working |
 
-In the menu, differences are grouped by what they cost:
+**Sync now** in the menu shares what you installed and picks up what
+the others did, without a terminal. When something arrived:
 
-- **installed but not recorded** — you installed something and have not
-  shared it yet. *Pour a round* does that in seconds.
-- **recorded but not installed** — something was added on another Mac.
-  *Install missing* opens a terminal, because it can take a while.
-- **removed elsewhere, still here** — something was removed on another
-  Mac. *Remove* clears it out here too.
+- **to install** — something was added on another Mac. *Install …*
+  opens a terminal, because it can take a while.
+- **removed on another Mac** — *Remove …* clears it out here too.
+- **settings from another Mac** — *Sync now* puts them in place.
 
 In the terminal you really only need one command, after every
 installation:

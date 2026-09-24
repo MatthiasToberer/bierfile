@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# in manual mode unrecorded software does not empty the glass
+# unrecorded software does not empty the glass
 #
-# sync records nothing in manual mode, so the menu's "record and push"
-# could never fill the glass again: it stayed empty for good. What is
-# not listed is a choice there, until somebody asks with --record.
+# The menu bar speaks up when something arrived or something is wrong.
+# Something installed here and not on a list is neither: in manual mode
+# it is a choice, in automatic mode the next sync records it. It stays
+# reported for status, and --record records it in manual mode.
 
 system mini <<'EOF'
 EOF
@@ -17,7 +18,6 @@ EOF
 
 bier mini state
 assert_contains "$OUT" "STATE"$'\t'"ok" "unlisted software is a choice in manual mode"
-assert_contains "$OUT" "INVENTORY"$'\t'"manual"
 assert_contains "$OUT" "NEW"$'\t''brew "firefox"' "but it is still reported"
 
 # A plain sync leaves it alone.
@@ -32,12 +32,12 @@ bier mini state
 assert_contains "$OUT" "STATE"$'\t'"ok"
 assert_not_contains "$OUT" "NEW"$'\t'
 
-# In automatic mode it is drift, as before.
+# In automatic mode the next sync records it: nothing for the glass.
 assert_ok bier mini config inventory automatic
 system mini <<'EOF'
 brew "firefox"
 brew "htop"
 EOF
 bier mini state
-assert_contains "$OUT" "STATE"$'\t'"drift"
-assert_contains "$OUT" "INVENTORY"$'\t'"automatic"
+assert_contains "$OUT" "STATE"$'\t'"ok"
+assert_contains "$OUT" "NEW"$'\t''brew "htop"'

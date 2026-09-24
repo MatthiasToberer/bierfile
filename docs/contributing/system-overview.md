@@ -13,7 +13,7 @@ trust boundaries run. For the code layout see
 | --- | --- | --- | --- |
 | **bier** | the command-line tool: inventory, vault, sync, upgrade | `bierfile` | released |
 | **bier-agent** | a small background service on every Mac; the only network endpoint | `bierfile` | released with bier |
-| **Bierkasten** | an optional macOS frontend for status, peer overview and recipes | [`bierkasten`](https://github.com/MatthiasToberer/bierkasten) | planned |
+| **Bierkasten** | an optional macOS frontend for status and peer overview | [`bierkasten`](https://github.com/MatthiasToberer/bierkasten) | planned |
 
 The dependency runs one way: Bierkasten talks to the agent, the agent
 serves bier's data, and bier works entirely without Bierkasten. The agent
@@ -80,7 +80,6 @@ runs it as the LaunchAgent `com.bier.agent` (`RunAtLoad`, `KeepAlive`):
 ```
 bier-agent serve
   --agent <hostname -s>
-  --allowed-signers ~/.barrel/allowed_signers
   --peer-signers    ~/.barrel/agent/peer_signers
   --peer-key        ~/.barrel/agent/identity.pub
   --peers-file      ~/.barrel/peers
@@ -92,7 +91,7 @@ bier-agent serve
 Design rules, all enforced in code:
 
 - It **never executes** anything it receives — no shell, no git command
-  chosen by a peer, no recipe action beyond acknowledging it.
+  chosen by a peer.
 - It only reads and writes `.gitattributes`, `Brewfiles/` and `Safe/` in
   the data directory, plus git history as bundles.
 - Requests are capped at 64 KiB; larger data moves in chunks.
@@ -100,13 +99,16 @@ Design rules, all enforced in code:
 
 ### BierMenu — `Sources/bier-trayapp/`
 
-A menu bar app that polls `bier state` every 15 minutes and on open. It
-has no network code of its own and never touches the data directly.
+A menu bar app that polls `bier state` every 15 minutes and on open, and
+runs `bier sync` on "Sync now". The glass empties only when something
+arrived from another Mac or something is wrong. It has no network code
+of its own, never touches the data directly, and its background check
+reads no app's settings.
 
 ### Bierkasten — separate repository
 
 The planned frontend for users who want an overview across Macs: status,
-peers, and later signed *recipes* sent to agents. Its boundaries are
+and peers. Its boundaries are
 fixed now so that bier does not grow a dependency on it:
 
 - It speaks only the agent protocol. It holds **no Brewfiles, no vault
@@ -128,7 +130,7 @@ namespace:
 | --- | --- | --- | --- |
 | `~/.barrel/agent/identity` (+ `.pub`) | this Mac's private Ed25519 key, created by `install.sh` | signing peer requests | `bier-peer` |
 | `~/.barrel/agent/peer_signers` | public keys of paired Macs, written by pairing | verifying incoming peer requests | `bier-peer` |
-| `~/.barrel/allowed_signers` | release key(s) pinned with `bier trust` | verifying release tags; verifying recipes | git SSH signature / `bier-recipe` |
+| `~/.barrel/allowed_signers` | release key(s) pinned with `bier trust` | verifying release tags | git SSH signature |
 
 `~/.barrel/peers` lists the addresses this Mac contacts on
 `bier sync`. The peer identity is **not** an SSH login key; it signs
@@ -147,7 +149,6 @@ bier requests and nothing else. None of these keys leaves the Mac.
 | `POST /v1/peer/snapshot/begin` · `put` · `commit` | peer signature | stage and atomically replace data (seeding) |
 | `POST /v1/peer/repository/export` · `export/read` | peer signature | download history as a git bundle |
 | `POST /v1/peer/repository/import/begin` · `put` · `commit` | peer signature | upload history as a git bundle |
-| `POST /v1/probe` | recipe signature | accept a signed `agent.probe` recipe; executes nothing |
 
 A peer signature covers `METHOD`, `PATH`, `PEER`, `TIME`, `NONCE` and
 `SHA256(BODY)`, is checked with `ssh-keygen -Y verify` against
@@ -209,5 +210,3 @@ BierMenu, `bier-peer` and the agent and restarts the LaunchAgent.
   Tailscale address with `--address` — see
   [Syncing beyond the local network](../security/pairing.md#syncing-beyond-the-local-network-tailscale).
 - `bier sync` stops at the first peer it cannot reach.
-- Recipes: only `agent.probe` exists. Every further recipe type needs a
-  protocol change first, and there will be no type for shell commands.

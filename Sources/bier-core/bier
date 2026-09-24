@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.39.1
+BIER_VERSION=0.40.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -1372,7 +1372,6 @@ write_agent_launch_agent() {
     <string>$home/.barrel/agent/bin/bier-agent</string>
     <string>serve</string>
     <string>--agent</string><string>$agent</string>
-    <string>--allowed-signers</string><string>$home/.barrel/agent/allowed_signers</string>
     <string>--peer-signers</string><string>$home/.barrel/agent/peer_signers</string>
     <string>--peer-key</string><string>$home/.barrel/agent/identity.pub</string>
 	<string>--peers-file</string><string>$home/.barrel/peers</string>
@@ -2277,6 +2276,24 @@ sync_report() {
 	git -C "$DATA" status --porcelain --untracked-files=all -- Brewfiles 2>/dev/null |
 		sed -E 's/^.{3}/UNCOMMITTED'$'\t''/'
 	vault_report
+}
+
+# What the safe brought that is not in place here yet, and conflict
+# copies waiting to be merged -- worked out from the safe and the
+# agreed state alone. The menu bar runs this in the background, where it
+# must not read other apps' settings (macOS would refuse it anyway).
+vault_arrived() {
+	local rel in target copy
+	VAULT_QUICK=yes vault_known | while IFS= read -r rel; do
+		vault_wanted "$rel" || continue
+		vault_is_meta "$rel" && continue
+		target=$(vault_target "$rel")
+		in=$(vault_incoming "$rel")
+		[ -z "$in" ] || printf 'VAULT_IN\t%s\t%s\n' "$target" "$in"
+		for copy in "$target.from-safe" "$target.from-safe."*; do
+			[ ! -e "$copy" ] || printf 'VAULT_LEFT\t%s\n' "$copy"
+		done
+	done | awk '!seen[$0]++'
 }
 
 vault_report() {
@@ -3230,6 +3247,7 @@ vault_known() {
 			sed -e "s#^$SAFE_DIR/##" -e 's#\.gpg$##'
 		[ ! -d "$VAULT" ] || find "$VAULT" -type f -print 2>/dev/null | sed "s#^$VAULT/##"
 		[ ! -f "$STATE_DIR/vault-base" ] || cut -f2 "$STATE_DIR/vault-base"
+		[ -z "${VAULT_QUICK:-}" ] || return 0
 		{
 			[ ! -d "$SAFE_DIR" ] || find "$SAFE_DIR" -name '.bier-folder.gpg' -print 2>/dev/null |
 				sed -e "s#^$SAFE_DIR/##" -e 's#/\.bier-folder\.gpg$##'
@@ -4236,20 +4254,21 @@ cmd_update() {
 }
 
 # Machine-readable state for the menu bar app. Tab-separated lines:
-#   STATE  ok|drift        glass full or empty
+#   STATE  ok|drift        glass full or empty: empty only when something
+#                          arrived (STALE, DROPPED, GONE, VAULT_IN) or a
+#                          conflict copy waits (VAULT_LEFT)
 #   HOST   <name>
-#   INVENTORY automatic|manual   in manual mode NEW does not count as drift
 #   VERSION <number>      so BierMenu notices that it is old itself
 #   NEWCODE <number>      a newer release waits on the code server
 #   OFFLINE <which>       a server could not be reached: data, code, or both
 #   REPO   <path>         for the info menu
 #   COMMIT <short> <date> for the info menu
-#   NEW    brew "htop"     installed here, not recorded yet
+#   NEW    brew "htop"     installed here, not recorded yet (no drift)
 #   STALE  brew "ghidra"   removed elsewhere, still installed here
 #   DROPPED brew "nmap"    taken out of main, kept by another Mac, still here
 #   GONE   brew "wget"     recorded but not installed here
-#   GIT    <ahead> <behind> <dirty>
-#   SEND, UNCOMMITTED, VAULT_*    what the next sync carries, see sync_report
+#   VAULT_IN <file> <how>  settings from another Mac, not in place yet
+#   VAULT_LEFT <path>      a .from-safe copy from a conflict
 #
 # What other devices have more or less of is deliberately absent: it says
 # nothing about whether there is anything to do on *this* Mac, and in the
@@ -4286,33 +4305,18 @@ cmd_state() {
 	stale=$(printf '%s\n' "$classes" | sed -n 's/^STALE'$'\t''//p')
 	dropped=$(printf '%s\n' "$classes" | sed -n 's/^DROPPED'$'\t''//p')
 
-	local counts ahead behind dirty
-	counts=$(git -C "$DATA" rev-list --left-right --count HEAD...@{u} 2>/dev/null || echo "0	0")
-	ahead=$(printf '%s' "$counts" | awk '{print $1}')
-	behind=$(printf '%s' "$counts" | awk '{print $2}')
-	# The Brewfiles and the safe: editing the README is no reason to
-	# empty the glass, but an unsynced vault file is.
-	if [ -n "$(git -C "$DATA" status --porcelain -- Brewfiles Safe)" ]; then
-		dirty=1
-	else
-		dirty=0
-	fi
-
-	# In manual mode what is installed and not listed is a choice, not
-	# something left to do. It is still reported, just no longer as drift:
-	# the glass could never have filled, since sync records nothing then.
-	local undone=$add pending
-	[ "$INVENTORY_MODE" = automatic ] || undone=$stale$dropped
-	pending=$(sync_report)
-	undone=$undone$pending
-	if [ -z "$undone" ] && [ -z "$gone" ] &&
-		[ "$ahead" = "0" ] && [ "$behind" = "0" ] && [ "$dirty" = "0" ]; then
+	# The glass empties for two things only: something arrived from
+	# another Mac -- to install, to remove, settings to put in place --
+	# or something is wrong. What is only waiting to go out is for the
+	# next sync, not for the menu bar.
+	local arrived
+	arrived=$(vault_arrived)
+	if [ -z "$stale$dropped$gone$arrived" ]; then
 		printf 'STATE\tok\n'
 	else
 		printf 'STATE\tdrift\n'
 	fi
 	printf 'HOST\t%s\n' "$HOST"
-	printf 'INVENTORY\t%s\n' "$INVENTORY_MODE"
 	printf 'VERSION\t%s\n' "$BIER_VERSION"
 	local release
 	release=$(latest_release)
@@ -4327,8 +4331,7 @@ cmd_state() {
 	if [ -n "$stale" ]; then printf '%s\n' "$stale" | sed 's/^/STALE'$'\t''/'; fi
 	if [ -n "$dropped" ]; then printf '%s\n' "$dropped" | sed 's/^/DROPPED'$'\t''/'; fi
 	if [ -n "$gone" ]; then printf '%s\n' "$gone" | sed 's/^/GONE'$'\t''/'; fi
-	printf 'GIT\t%s\t%s\t%s\n' "$ahead" "$behind" "$dirty"
-	[ -z "$pending" ] || printf '%s\n' "$pending"
+	[ -z "$arrived" ] || printf '%s\n' "$arrived"
 	[ -z "$offline" ] || printf 'OFFLINE\t%s\n' "${offline# }"
 }
 

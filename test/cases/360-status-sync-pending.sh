@@ -28,13 +28,13 @@ assert_not_contains "$OUT" "Sync (bier sync):" "after a sync nothing is pending"
 bier mini state
 assert_contains "$OUT" "STATE"$'\t'"ok"
 
-# Changed here: pending, and the glass is empty.
+# Changed here: pending for status; the glass stays full -- it only
+# speaks up when something arrived or something is wrong.
 printf 'zwei\n' >"$WORK/home-mini/.fakezshrc"
 bier mini status
 assert_contains "$OUT" "$WORK/home-mini/.fakezshrc changed here"
 bier mini state
-assert_contains "$OUT" "VAULT_OUT"$'\t'"$WORK/home-mini/.fakezshrc"
-assert_contains "$OUT" "STATE"$'\t'"drift"
+assert_contains "$OUT" "STATE"$'\t'"ok"
 assert_ok bier mini sync
 
 # Delivered to the other Mac, as a peer does: newer in the safe.
@@ -53,8 +53,8 @@ printf 'drei\n' >"$WORK/home-mini/.fakezshrc"
 assert_ok bier mini sync
 git -C "$WORK/macbook" pull -q --rebase
 printf 'vier\n' >"$WORK/home-macbook/.fakezshrc"
-bier macbook state
-assert_contains "$OUT" "VAULT_BOTH"$'\t'"$WORK/home-macbook/.fakezshrc"
+bier macbook status
+assert_contains "$OUT" "$WORK/home-macbook/.fakezshrc changed here and in the safe"
 assert_ok bier macbook sync
 bier macbook status
 assert_contains "$OUT" "$WORK/home-macbook/.fakezshrc.from-safe left from a conflict"
@@ -89,6 +89,4 @@ printf 'brew "tree"\n' >>"$(bf mini main)"
 git -C "$WORK/mini" commit -qam 'mini: tree for everyone'
 bier mini status
 assert_contains "$OUT" "1 commit(s) from here not sent yet"
-bier mini state
-assert_contains "$OUT" "SEND"$'\t'"macbook.local"$'\t'"1"
 unset BIER_PEER_CLIENT

@@ -9,25 +9,6 @@ let agentVersion = "dev"
 let maxRequestBytes = 64 * 1024
 let maxPeerRequestAge: TimeInterval = 5 * 60
 
-struct Recipe: Decodable {
-	let version: Int
-	let id: String
-	let target: String
-	let type: String
-	let expiresAt: String
-	let issuer: String
-	let payload: [String: String]
-
-	enum CodingKeys: String, CodingKey {
-		case version, id, target, type, expiresAt = "expires_at", issuer, payload
-	}
-}
-
-struct ProbeEnvelope: Decodable {
-	let recipe: String
-	let signature: String
-}
-
 struct SnapshotBeginRequest: Decodable {
 	let id: String
 	let manifest: DataManifest
@@ -66,10 +47,6 @@ func validHostName(_ value: String) -> Bool {
 	value.range(of: "^[A-Za-z0-9][A-Za-z0-9._-]*$", options: .regularExpression) != nil
 }
 
-func validRecipeID(_ value: String) -> Bool {
-	value.count <= 128 && value.range(of: "^[A-Za-z0-9][A-Za-z0-9._-]*$", options: .regularExpression) != nil
-}
-
 func validPeerNonce(_ value: String) -> Bool {
 	value.count >= 16 && value.count <= 128 && value.range(of: "^[A-Za-z0-9._-]+$", options: .regularExpression) != nil
 }
@@ -77,43 +54,6 @@ func validPeerNonce(_ value: String) -> Bool {
 func agentError(_ message: String) -> Never {
 	fputs("bier-agent: \(message)\n", stderr)
 	exit(1)
-}
-
-func verifyRecipe(agent: String, signers: String, raw: Data, signature: Data) throws -> Recipe {
-	guard validHostName(agent),
-		let recipe = try? JSONDecoder().decode(Recipe.self, from: raw),
-		recipe.version == 1,
-		validRecipeID(recipe.id),
-		recipe.target == agent,
-		recipe.type == "agent.probe",
-		validHostName(recipe.issuer),
-		recipe.payload.isEmpty else {
-		throw NSError(domain: "BierAgent", code: 1, userInfo: [NSLocalizedDescriptionKey: "recipe is not allowed for this agent"])
-	}
-	let formatter = ISO8601DateFormatter()
-	guard let expiry = formatter.date(from: recipe.expiresAt), expiry > Date() else {
-		throw NSError(domain: "BierAgent", code: 1, userInfo: [NSLocalizedDescriptionKey: "recipe has expired or has an invalid expiry"])
-	}
-	let signatureURL = FileManager.default.temporaryDirectory.appendingPathComponent("bier-agent-signature-\(UUID().uuidString)")
-	try signature.write(to: signatureURL, options: .atomic)
-	try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: signatureURL.path)
-	defer { try? FileManager.default.removeItem(at: signatureURL) }
-
-	let process = Process()
-	process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh-keygen")
-	process.arguments = ["-Y", "verify", "-f", signers, "-I", recipe.issuer, "-n", "bier-recipe", "-s", signatureURL.path]
-	let input = Pipe(), output = Pipe()
-	process.standardInput = input
-	process.standardOutput = output
-	process.standardError = output
-	try process.run()
-	input.fileHandleForWriting.write(raw)
-	input.fileHandleForWriting.closeFile()
-	process.waitUntilExit()
-	guard process.terminationStatus == 0 else {
-		throw NSError(domain: "BierAgent", code: 1, userInfo: [NSLocalizedDescriptionKey: "recipe signature is not trusted"])
-	}
-	return recipe
 }
 
 func peerPayload(method: String, path: String, peer: String, time: String, nonce: String, body: Data) -> Data {
@@ -173,7 +113,6 @@ final class ReplayStore {
 
 final class AgentServer {
 	private let agent: String
-	private let signers: String
 	private let peerSigners: String?
 	private let dataDirectory: URL?
 	private let snapshotStore: DataSnapshotStore?
@@ -182,13 +121,12 @@ final class AgentServer {
 	private let store: ReplayStore
 	private let listener: NWListener
 
-	init(agent: String, signers: String, peerSigners: String?, peerKey: String?, peersFile: String?, dataDirectory: URL?, stateDirectory: URL, port: UInt16, bonjour: Bool) throws {
-		guard validHostName(agent), FileManager.default.fileExists(atPath: signers),
+	init(agent: String, peerSigners: String?, peerKey: String?, peersFile: String?, dataDirectory: URL?, stateDirectory: URL, port: UInt16, bonjour: Bool) throws {
+		guard validHostName(agent),
 			let endpointPort = NWEndpoint.Port(rawValue: port) else {
 			throw NSError(domain: "BierAgent", code: 1, userInfo: [NSLocalizedDescriptionKey: "invalid server configuration"])
 		}
 		self.agent = agent
-		self.signers = signers
 		self.peerSigners = peerSigners
 		if let peerSigners, let peerKey {
 			pairingStore = PeerPairingStore(stateDirectory: stateDirectory, signersURL: URL(fileURLWithPath: peerSigners),
@@ -470,23 +408,7 @@ final class AgentServer {
 			} catch { respond(connection, status: 403, body: rejection("repository import was rejected", error)) }
 			return
 		}
-		guard method == "POST", path == "/v1/probe",
-			let envelope = try? JSONDecoder().decode(ProbeEnvelope.self, from: body),
-			let raw = Data(base64Encoded: envelope.recipe),
-			let signature = Data(base64Encoded: envelope.signature) else {
-			respond(connection, status: 400, body: "invalid probe request")
-			return
-		}
-		do {
-			let recipe = try verifyRecipe(agent: agent, signers: signers, raw: raw, signature: signature)
-			if try store.record(recipe.id) {
-				respond(connection, status: 409, body: "recipe was already processed")
-			} else {
-				respond(connection, status: 200, body: "{\"status\":\"accepted\"}", contentType: "application/json")
-			}
-		} catch {
-			respond(connection, status: 403, body: "recipe rejected")
-		}
+		respond(connection, status: 404, body: "not found")
 	}
 
 	// The peer has proven who it is by now, and "rejected" alone left
@@ -513,22 +435,15 @@ func option(_ args: [String], _ name: String) -> String? {
 }
 
 let arguments = Array(CommandLine.arguments.dropFirst())
-guard let command = arguments.first else { agentError("usage: bier-agent <version|verify|serve>") }
+guard let command = arguments.first else { agentError("usage: bier-agent <version|serve>") }
 switch command {
 case "version":
 	print(agentVersion)
-case "verify":
-	guard let agent = option(arguments, "--agent"), let recipePath = option(arguments, "--recipe"), let signers = option(arguments, "--allowed-signers"),
-		let raw = try? Data(contentsOf: URL(fileURLWithPath: recipePath)), let signature = try? Data(contentsOf: URL(fileURLWithPath: recipePath + ".sig")) else {
-		agentError("agent, recipe and allowed-signers are required")
-	}
-	do {
-		let recipe = try verifyRecipe(agent: agent, signers: signers, raw: raw, signature: signature)
-		print("Recipe \(recipe.id) is valid for \(recipe.target). Nothing was executed.")
-	} catch { agentError(error.localizedDescription) }
 case "serve":
-	guard let agent = option(arguments, "--agent"), let signers = option(arguments, "--allowed-signers") else {
-		agentError("agent and allowed-signers are required")
+	// --allowed-signers belonged to signed recipes, which are gone; older
+	// LaunchAgents still pass it, and it is ignored.
+	guard let agent = option(arguments, "--agent") else {
+		agentError("agent is required")
 	}
 	let port = UInt16(option(arguments, "--port") ?? "53991") ?? 0
 	let bonjour = option(arguments, "--bonjour") != "false"
@@ -538,7 +453,7 @@ case "serve":
 	let dataDirectory = option(arguments, "--data-dir").map(URL.init(fileURLWithPath:))
 	let state = option(arguments, "--state-dir").map(URL.init(fileURLWithPath:))
 		?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Bier")
-	do { try AgentServer(agent: agent, signers: signers, peerSigners: peerSigners, peerKey: peerKey, peersFile: peersFile, dataDirectory: dataDirectory, stateDirectory: state, port: port, bonjour: bonjour).start() }
+	do { try AgentServer(agent: agent, peerSigners: peerSigners, peerKey: peerKey, peersFile: peersFile, dataDirectory: dataDirectory, stateDirectory: state, port: port, bonjour: bonjour).start() }
 	catch { agentError(error.localizedDescription) }
 default:
 	agentError("unknown command")

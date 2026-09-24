@@ -1,15 +1,13 @@
 // BierMenu — a beer glass in the menu bar.
 //
-// Full glass: system and Brewfile agree. Empty glass: something
-// differs. A click shows what, and offers to sort it out.
-//
-// This is about *this* Mac and nothing else. What other devices have
-// more or less of is deliberately absent from the menu — that belongs
-// in the terminal ("bier list") and says nothing about whether there
-// is anything to do here.
+// Full glass: nothing to do. Empty glass: something arrived from another
+// Mac, or something is wrong. The menu says which, and "Sync now" runs
+// bier sync without a terminal. Everything else -- what waits to go out,
+// what is installed but not listed -- is for "bier status".
 //
 // The app computes nothing itself — it calls "bier state" and renders
-// its output.
+// its output. That check reads nobody's settings, so it needs no
+// permission beyond bier's own folder.
 
 import AppKit
 import ServiceManagement
@@ -19,29 +17,15 @@ import ServiceManagement
 struct BierState {
 	var ok = false
 	var host = ""
-	var manual = false // inventory = manual: unrecorded software is a choice
-	var fresh: [String] = [] // installed here, not recorded yet
-	var stale: [String] = [] // removed elsewhere, still installed here
-	var dropped: [String] = [] // taken out of main, another Mac keeps it
-	var pending: [String] = [] // what the next sync carries, ready to show
-	var vaultIn: [String] = [] // delivered by a peer, not opened here yet
-	var vaultBoth: [String] = [] // changed here and in the safe
-	var denied: [String] = [] // app settings macOS does not let bier read
-	var gone: [String] = [] // recorded, but not installed here
+	var install: [String] = [] // arrived: on this Mac's lists, not installed
+	var remove: [String] = [] // arrived: removed elsewhere or out of main
+	var settings: [String] = [] // arrived: settings from another Mac
+	var conflicts: [String] = [] // wrong: .from-safe copies to merge
 	var version = "" // the script's version, for the out-of-date hint
 	var release = "" // a newer release on the code server, empty if none
-	var offline = "" // servers that could not be reached: data, code, both
 	var repo = "" // path to the repository, for the info menu
 	var commit = "" // short hash and date, for the info menu
-	var ahead = 0
-	var behind = 0
-	var dirty = false
 	var error: String?
-
-	var hasAnything: Bool {
-		!fresh.isEmpty || !stale.isEmpty || !dropped.isEmpty || !gone.isEmpty || !pending.isEmpty || !denied.isEmpty
-			|| ahead > 0 || behind > 0 || dirty
-	}
 }
 
 // MARK: - Calling bier
@@ -97,7 +81,7 @@ enum Bier {
 
 	/// Runs bier and returns (output, error text, success).
 	@discardableResult
-	static func run(_ args: [String]) -> (out: String, err: String, ok: Bool) {
+	static func run(_ args: [String], limit: TimeInterval = runLimit) -> (out: String, err: String, ok: Bool) {
 		guard let exe = executable() else {
 			return ("", "bier not found — is ~/.barrel still there?", false)
 		}
@@ -125,13 +109,13 @@ enum Bier {
 				task.terminate()
 			}
 		}
-		DispatchQueue.global().asyncAfter(deadline: .now() + runLimit, execute: watchdog)
+		DispatchQueue.global().asyncAfter(deadline: .now() + limit, execute: watchdog)
 		defer { watchdog.cancel() }
 		let out = String(data: outPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
 		let err = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
 		task.waitUntilExit()
 		if timedOut {
-			return ("", "bier did not answer within \(Int(runLimit)) seconds "
+			return ("", "bier did not answer within \(Int(limit)) seconds "
 				+ "— is a server or the App Store unreachable?", false)
 		}
 		task.waitUntilExit()
@@ -148,60 +132,18 @@ enum Bier {
 		}
 		for line in r.out.split(separator: "\n") {
 			let f = line.split(separator: "\t").map(String.init)
-			guard let tag = f.first else { continue }
+			guard let tag = f.first, f.count > 1 else { continue }
 			switch tag {
-			case "STATE": s.ok = f.count > 1 && f[1] == "ok"
-			case "HOST": if f.count > 1 { s.host = f[1] }
-			case "INVENTORY": s.manual = f.count > 1 && f[1] == "manual"
-			case "VERSION": if f.count > 1 { s.version = f[1] }
-			case "NEWCODE": if f.count > 1 { s.release = f[1] }
-			case "OFFLINE": if f.count > 1 { s.offline = f[1] }
-			case "REPO": if f.count > 1 { s.repo = f[1] }
-			case "COMMIT":
-				if f.count > 2 { s.commit = "\(f[1]) of \(f[2])" }
-			case "NEW": if f.count > 1 { s.fresh.append(f[1]) }
-			case "STALE": if f.count > 1 { s.stale.append(f[1]) }
-			case "DROPPED": if f.count > 1 { s.dropped.append(f[1]) }
-			case "SEND":
-				if f.count > 2 {
-					s.pending.append(f[2] == "never"
-						? "\(f[1]): never synced"
-						: "\(f[1]): \(f[2]) commit(s) not sent yet")
-				}
-			case "UNCOMMITTED": if f.count > 1 { s.pending.append("\(f[1]) changed") }
-			case "VAULT_OUT":
-				if f.count > 1 {
-					let how = f.count > 2 ? f[2] : "changed"
-					s.pending.append("\(f[1]) \(how == "new" ? "new here" : how == "deleted" ? "deleted here" : "changed here")")
-				}
-			case "VAULT_IN":
-				if f.count > 1 {
-					let how = f.count > 2 ? f[2] : "changed"
-					s.vaultIn.append(f[1])
-					switch how {
-					case "new": s.pending.append("\(f[1]) new from another Mac")
-					case "deleted": s.pending.append("\(f[1]) deleted elsewhere, goes to the Trash")
-					case "forgotten": s.pending.append("\(f[1]) no longer synced")
-					case "check": s.pending.append("\(f[1]) to be compared")
-					default: s.pending.append("\(f[1]) newer in the safe")
-					}
-				}
-			case "VAULT_WAIT": if f.count > 2 { s.pending.append("\(f[1]) waits: \(f[2]) is running") }
-			case "VAULT_LARGE": if f.count > 1 { s.pending.append("\(f[1]) too large for the vault") }
-			case "VAULT_DENIED": if f.count > 1 { s.denied.append(f[1]) }
-			case "VAULT_BOTH":
-				if f.count > 1 {
-					s.vaultBoth.append(f[1])
-					s.pending.append("\(f[1]) changed here and in the safe")
-				}
-			case "VAULT_LEFT": if f.count > 1 { s.pending.append("\(f[1]) left from a conflict") }
-			case "GONE": if f.count > 1 { s.gone.append(f[1]) }
-			case "GIT":
-				if f.count > 3 {
-					s.ahead = Int(f[1]) ?? 0
-					s.behind = Int(f[2]) ?? 0
-					s.dirty = f[3] == "1"
-				}
+			case "STATE": s.ok = f[1] == "ok"
+			case "HOST": s.host = f[1]
+			case "VERSION": s.version = f[1]
+			case "NEWCODE": s.release = f[1]
+			case "REPO": s.repo = f[1]
+			case "COMMIT": if f.count > 2 { s.commit = "\(f[1]) of \(f[2])" }
+			case "GONE": s.install.append(f[1])
+			case "STALE", "DROPPED": s.remove.append(f[1])
+			case "VAULT_IN": s.settings.append(f[1])
+			case "VAULT_LEFT": s.conflicts.append(f[1])
 			default: break
 			}
 		}
@@ -281,26 +223,19 @@ class Controller: NSObject, NSMenuDelegate {
 				self.state = s
 				self.lastCheck = Date()
 				self.checking = false
-				self.statusItem.button?.toolTip = s.error ?? (s.ok
+				self.statusItem.button?.toolTip = s.error ?? (self.isOk
 					? "Everything in sync"
-					: "There are differences")
+					: "Something to look at")
 				self.endBusy()
 				self.build(self.statusItem.menu!)
-				self.openDeliveredVault(s)
 			}
 		}
 	}
 
-	/// What a peer delivered to the safe, with nothing changed here, is
-	/// put in place without asking: there is nothing to decide. Tried
-	/// once per delivery, so a locked keychain does not turn into a loop.
-	private var openedFor: [String] = []
+	/// What the last "Sync now" ran into, until the next one succeeds.
+	var syncTrouble: [String] = []
 
-	private func openDeliveredVault(_ s: BierState) {
-		guard !s.vaultIn.isEmpty, s.vaultBoth.isEmpty, s.vaultIn != openedFor else { return }
-		openedFor = s.vaultIn
-		runQuietly(["vault", "open"], "Opening the vault")
-	}
+	var isOk: Bool { state.ok && state.error == nil && syncTrouble.isEmpty }
 
 	// MARK: Foam while something is running
 
@@ -328,7 +263,7 @@ class Controller: NSObject, NSMenuDelegate {
 	}
 
 	private func showStateIcon() {
-		statusItem.button?.image = (state.ok && state.error == nil) ? full : empty
+		statusItem.button?.image = isOk ? full : empty
 	}
 
 	// MARK: Menu
@@ -398,126 +333,48 @@ class Controller: NSObject, NSMenuDelegate {
 			menu.addItem(header("Error"))
 			menu.addItem(detail(error))
 			menu.addItem(.separator())
-			addFooter(menu)
-			return
-		}
-
-		// Say it before anything else. What follows is the last state
-		// that could be fetched, and without this line it reads as the
-		// current one.
-		if !state.offline.isEmpty {
-			let what = state.offline == "data code"
-				? "Neither server could be reached"
-				: state.offline == "code"
-					? "The code server could not be reached"
-					: "The inventory server could not be reached"
-			menu.addItem(header(what))
-			menu.addItem(detail("what follows is the last state it knows"))
-			menu.addItem(.separator())
-		}
-
-		if state.ok {
+		} else if isOk {
 			menu.addItem(header("Everything in sync"))
 			menu.addItem(.separator())
 		}
 
-		// Manual inventory: not listed on purpose, until somebody asks.
-		// "Pour a round" would not have recorded them -- sync leaves the
-		// Brewfiles alone in this mode.
-		if state.manual && !state.fresh.isEmpty {
-			menu.addItem(header("\(state.fresh.count) installed, not in your Brewfiles"))
-			listing(state.fresh, into: menu)
-			menu.addItem(action("Record them and sync", #selector(doRecord)))
+		// Something is wrong: what the last sync ran into, and conflicts.
+		if !syncTrouble.isEmpty || !state.conflicts.isEmpty {
+			menu.addItem(header("Something needs you"))
+			for line in (syncTrouble + state.conflicts.map { "merge, then delete: \($0)" }).prefix(6) {
+				menu.addItem(detail(short(line)))
+			}
+			if syncTrouble.contains(where: { $0.contains("no access") }) {
+				menu.addItem(action("Allow access … (Full Disk Access)", #selector(doAccess)))
+			}
 			menu.addItem(.separator())
 		}
 
-		if !state.ok {
-			// Installed here, not recorded yet: quick and harmless.
-			if !state.manual && !state.fresh.isEmpty {
-				menu.addItem(header("\(state.fresh.count) installed but not recorded"))
-				listing(state.fresh, into: menu)
-				menu.addItem(action("Pour a round: record and push",
-				                    #selector(doSync)))
-				menu.addItem(.separator())
-			}
-
-			// Removed on another Mac. This uninstalls software, so it
-			// belongs in the terminal and not behind a single click.
-			if !state.stale.isEmpty {
-				menu.addItem(header("\(state.stale.count) removed elsewhere, still here"))
-				listing(state.stale, into: menu)
-				menu.addItem(action("Remove … (in Terminal)",
-				                    #selector(doPrune)))
-				menu.addItem(.separator())
-			}
-
-			// Taken out of main while another Mac keeps it. Whether it
-			// stays here is a question only the person at this Mac can
-			// answer, so both ways are offered.
-			if !state.dropped.isEmpty {
-				menu.addItem(header("\(state.dropped.count) no longer in main, still here"))
-				listing(state.dropped, into: menu)
-				menu.addItem(action("Remove … (in Terminal)",
-				                    #selector(doPrune)))
-				menu.addItem(action("Keep on this Mac … (in Terminal)",
-				                    #selector(doTake)))
-				menu.addItem(.separator())
-			}
-
-			// Recorded but not installed.
-			if !state.gone.isEmpty {
-				menu.addItem(header("\(state.gone.count) recorded but not installed"))
-				listing(state.gone, into: menu)
-				menu.addItem(action("Install missing … (in Terminal)",
-				                    #selector(doInstall)))
-				menu.addItem(.separator())
-			}
-
-			// macOS keeps app containers from anybody not granted Full
-			// Disk Access -- and BierMenu is a program of its own there.
-			if !state.denied.isEmpty {
-				menu.addItem(header("\(state.denied.count) app settings bier may not read"))
-				for line in state.denied.prefix(4) {
-					menu.addItem(detail(line.replacingOccurrences(of: NSHomeDirectory(), with: "~")))
-				}
-				menu.addItem(action("Allow access … (Full Disk Access)", #selector(doAccess)))
-				menu.addItem(.separator())
-			}
-
-			// What the next sync carries: Brewfiles and vault alike.
-			if !state.pending.isEmpty {
-				menu.addItem(header("Waiting for a sync"))
-				for line in state.pending.prefix(8) {
-					menu.addItem(detail(line.replacingOccurrences(of: NSHomeDirectory(), with: "~")))
-				}
-				if state.pending.count > 8 {
-					menu.addItem(detail("and \(state.pending.count - 8) more"))
-				}
-				menu.addItem(action("Pour a round: record and push",
-				                    #selector(doSync)))
-				menu.addItem(.separator())
-			}
-
-			// Git is lagging.
-			if state.dirty {
-				menu.addItem(header("Changes are not committed"))
-				menu.addItem(action("Pour a round: record and push",
-				                    #selector(doSync)))
-				menu.addItem(.separator())
-			}
-			if state.behind > 0 {
-				menu.addItem(header("origin is \(state.behind) commits ahead"))
-				menu.addItem(action("Fetch (git pull)", #selector(doPull)))
-				menu.addItem(.separator())
-			}
-			if state.ahead > 0, !state.dirty {
-				menu.addItem(header("\(state.ahead) commits not pushed"))
-				menu.addItem(action("Push", #selector(doPush)))
-				menu.addItem(.separator())
-			}
+		// Something arrived from another Mac.
+		if !state.settings.isEmpty {
+			menu.addItem(header("\(state.settings.count) settings from another Mac"))
+			for line in state.settings.prefix(4) { menu.addItem(detail(short(line))) }
+			menu.addItem(.separator())
+		}
+		if !state.install.isEmpty {
+			menu.addItem(header("\(state.install.count) to install"))
+			listing(state.install, into: menu, limit: 4)
+			menu.addItem(action("Install … (in Terminal)", #selector(doInstall)))
+			menu.addItem(.separator())
+		}
+		if !state.remove.isEmpty {
+			menu.addItem(header("\(state.remove.count) removed on another Mac"))
+			listing(state.remove, into: menu, limit: 4)
+			menu.addItem(action("Remove … (in Terminal)", #selector(doPrune)))
+			menu.addItem(.separator())
 		}
 
+		menu.addItem(action("Sync now", #selector(doSync)))
 		addFooter(menu)
+	}
+
+	private func short(_ path: String) -> String {
+		path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
 	}
 
 	/// The version this app was stamped with when it was built.
@@ -549,7 +406,6 @@ class Controller: NSObject, NSMenuDelegate {
 			menu.addItem(.separator())
 		}
 
-		menu.addItem(action("Check now", #selector(doCheck)))
 
 		let login = NSMenuItem(title: "Start at login",
 		                       action: #selector(toggleLogin), keyEquivalent: "")
@@ -604,21 +460,33 @@ class Controller: NSObject, NSMenuDelegate {
 
 	// MARK: Actions
 
-	@objc private func doCheck() { refresh(fetch: true) }
-
-	@objc private func doSync() { runQuietly(["sync"], "Recording and pushing") }
-
-	@objc private func doRecord() { runQuietly(["sync", "--record"], "Recording and syncing") }
-
-	@objc private func doPull() { runQuietly(["state", "--fetch"], "Fetching") }
-
-	@objc private func doPush() { runQuietly(["sync"], "Pushing") }
+	/// bier sync, without a terminal. Installing and removing software
+	/// stay in the terminal: they take long, may ask for a password,
+	/// and are worth watching.
+	@objc private func doSync() {
+		beginBusy()
+		DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+			let r = Bier.run(["sync"], limit: 600)
+			let said = (r.out + "\n" + r.err).split(separator: "\n").map { $0.trimmed }
+			var trouble = said.filter {
+				$0.hasPrefix("no access:") || $0.hasPrefix("changed here and on another Mac:")
+					|| $0.hasPrefix("waiting:")
+			}
+			if !r.ok {
+				trouble.insert("sync failed: " + (said.last(where: { $0.hasPrefix("bier:") }) ?? "see bier sync"), at: 0)
+			}
+			DispatchQueue.main.async {
+				guard let self else { return }
+				self.syncTrouble = trouble
+				self.endBusy()
+				self.refresh(fetch: false)
+			}
+		}
+	}
 
 	@objc private func doInstall() { Bier.runInTerminal(["install"]) }
 
 	@objc private func doPrune() { Bier.runInTerminal(["prune"]) }
-
-	@objc private func doTake() { Bier.runInTerminal(["take"]) }
 
 	@objc private func doAccess() {
 		if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
@@ -640,26 +508,6 @@ class Controller: NSObject, NSMenuDelegate {
 	@objc private func doReveal() {
 		guard !state.repo.isEmpty else { return }
 		NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: state.repo)
-	}
-
-	/// Short, harmless runs without a terminal. Failures are shown,
-	/// success is visible only as the glass filling up again.
-	private func runQuietly(_ args: [String], _ what: String) {
-		beginBusy()
-		DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-			let r = Bier.run(args)
-			DispatchQueue.main.async {
-				self?.endBusy()
-				if !r.ok {
-					let alert = NSAlert()
-					alert.messageText = "\(what) failed"
-					alert.informativeText = r.err.trimmed.isEmpty ? r.out.trimmed : r.err.trimmed
-					alert.alertStyle = .warning
-					alert.runModal()
-				}
-				self?.refresh(fetch: false)
-			}
-		}
 	}
 
 	@objc private func toggleLogin() {

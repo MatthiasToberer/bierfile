@@ -536,7 +536,6 @@ cat >"$AGENT_PLIST.new" <<EOF
     <string>$xml_barrel/agent/bin/bier-agent</string>
     <string>serve</string>
     <string>--agent</string><string>$xml_host</string>
-    <string>--allowed-signers</string><string>$xml_barrel/allowed_signers</string>
     <string>--peer-signers</string><string>$xml_barrel/agent/peer_signers</string>
     <string>--peer-key</string><string>$xml_barrel/agent/identity.pub</string>
     <string>--peers-file</string><string>$xml_barrel/peers</string>

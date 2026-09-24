@@ -2,55 +2,48 @@
 
 # BierMenu
 
-BierMenu shows the state of this Mac in the menu bar without you having
-to ask.
+A beer glass in the menu bar. It speaks up only when there is something
+for you, and syncs without a terminal.
 
 | Glass | Meaning |
 | --- | --- |
-| full, with a head of foam | system and lists agree |
-| empty | something differs here |
-| level rising and falling | bier is checking or working |
+| full, with a head of foam | nothing to do |
+| empty | something arrived from another Mac, or something is wrong |
+| level rising and falling | bier is checking or syncing |
 
-It checks every 15 minutes and whenever you open the menu. The app
-computes nothing itself — it calls `bier state` and shows the result.
+It checks every 15 minutes and whenever you open the menu, by calling
+`bier state`. That check reads nobody's app settings, so BierMenu needs
+no special permission for it.
 
 ## The menu
 
-A click lists what differs, grouped by what it costs:
+| Section | Means | Action |
+| --- | --- | --- |
+| *Something needs you* | the last sync failed, a vault file changed on both Macs, or bier may not read an app's settings | read the line; *Allow access …* opens Full Disk Access where that is the cause |
+| *settings from another Mac* | vault files a peer delivered | **Sync now** puts them in place |
+| *to install* | on this Mac's lists, not installed | **Install … (in Terminal)** — `bier install` |
+| *removed on another Mac* | still installed here | **Remove … (in Terminal)** — `bier prune` |
 
-| Section | Action |
-| --- | --- |
-| installed but not recorded | **Pour a round: record and push** — runs `bier sync` in the background |
-| installed, not in your Brewfiles (manual inventory) | **Record them and sync** — runs `bier sync --record`; until then the glass stays full |
-| removed elsewhere, still here | **Remove … (in Terminal)** — runs `bier prune` |
-| no longer in main, still here | **Remove … (in Terminal)** — runs `bier prune`; **Keep on this Mac … (in Terminal)** — runs `bier take` |
-| recorded but not installed | **Install missing … (in Terminal)** — runs `bier install` |
-| waiting for a sync | **Pour a round: record and push** — lists what `bier sync` would carry: commits a peer has not had, vault files changed here or delivered by a peer |
+**Sync now** is always there: it runs `bier sync` in the background —
+records, exchanges with the paired Macs, puts arrived settings in place.
+Installing and removing software open a terminal, because they take
+long, may ask for your password and are worth watching.
 
-A vault file a peer delivered, with nothing changed here, is put in
-place by BierMenu on its own at the next check. Changed on both sides,
-it waits for you.
+Further entries: **Upgrade … (in Terminal)** when a newer release is
+out, **Start at login**, **Info** (version, device, the guide) and
+**Quit**.
 
-Recording is quick and safe, so it happens in the background. Removing
-and installing take time, may ask for your password and can fail — they
-open a terminal so you can watch.
+## Full Disk Access
 
-Further entries:
-
-- **Upgrade … (in Terminal)** — appears when a newer bier release is
-  out, or when the app itself is older than the installed `bier`.
-- **Check now**, **Start at login**, **Quit**.
-- **Info** — version, commit, device name, *Open the guide* and *Show
-  folder in Finder*.
+Only when *Sync now* has to read or write an app's settings inside its
+sandbox (`~/Library/Containers/…`, HandBrake for example) does BierMenu
+need Full Disk Access — macOS counts what bier does as BierMenu's doing.
+The menu then says so and offers *Allow access …*; see
+[`bier access`](../reference/commands/access.md). Without it, those
+settings are simply left alone.
 
 ## What it deliberately does not show
 
-What **other** Macs have more or less of. It says nothing about whether
-there is anything to do on *this* Mac, and it would turn into a wall of
-noise past two or three Macs. That is what `bier list` is for.
-
-## When it reports an error
-
-"The inventory server could not be reached" or "The code server could
-not be reached" means a fetch failed — usually no network, or a paired
-Mac asleep. See [Troubleshooting](../reference/troubleshooting.md).
+What waits to go out, what is installed here but on no list, and what
+other Macs have. None of it needs you: the next sync carries it, or it
+is your choice. `bier status` and `bier list` show it all.

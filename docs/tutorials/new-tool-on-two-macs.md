@@ -9,25 +9,19 @@ decide it belongs on both.
 ## On mini
 
 ```sh
-brew install ripgrep
+bier add ripgrep
 ```
 
-The glass in the menu bar empties. A click shows why:
-
-```
-1 installed but not recorded
-    ripgrep  (formula)
-Pour a round: record and push
-```
-
-Click **Pour a round** — or type:
+bier installs it and asks where it goes: `h` for only this Mac. Or
+install it with plain `brew install ripgrep` — then **Sync now** in the
+menu bar, or
 
 ```sh
 bier sync
 ```
 
-bier records ripgrep in `Brewfiles/mini`, commits and exchanges the
-history with macbook. The glass is full again.
+records ripgrep in `Brewfiles/mini` (in automatic mode), commits and
+exchanges the history with macbook.
 
 ## On macbook
 

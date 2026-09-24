@@ -35,8 +35,6 @@ git -C "$work/data" config user.email test@example.com
 git -C "$work/data" config user.name Test
 git -C "$work/data" add Brewfiles Safe
 git -C "$work/data" commit -qm 'initial data'
-printf '%s\n' '{"version":1,"id":"probe-1","target":"mini","type":"agent.probe","expires_at":"2099-01-01T00:00:00Z","issuer":"controller-test","payload":{}}' >"$work/recipe.json"
-ssh-keygen -q -Y sign -f "$work/controller" -n bier-recipe "$work/recipe.json"
 
 "$agent" serve --agent mini --allowed-signers "$work/allowed_signers" --peer-signers "$work/peer_signers" --peer-key "$work/controller.pub" --peers-file "$work/peers" --data-dir "$work/data" --state-dir "$work/state" --port 53992 --bonjour false >"$work/agent.log" 2>&1 &
 pid=$!
@@ -155,14 +153,9 @@ grep -q '"status":"snapshot-committed"' "$work/response"
 test "$(cat "$work/data/Brewfiles/received")" = 'brew "tree"'
 test ! -e "$work/data/Brewfiles/main"
 test ! -e "$work/.bier-staging/$snapshot_id"
-recipe=$(base64 <"$work/recipe.json" | tr -d '\n')
-signature=$(base64 <"$work/recipe.json.sig" | tr -d '\n')
-body=$(printf '{"recipe":"%s","signature":"%s"}' "$recipe" "$signature")
-status=$(curl -sS --max-time 2 -o "$work/response" -w '%{http_code}' -H 'Content-Type: application/json' --data "$body" http://127.0.0.1:53992/v1/probe)
-[ "$status" = 200 ]
-grep -q '"status":"accepted"' "$work/response"
-status=$(curl -sS --max-time 2 -o "$work/response" -w '%{http_code}' -H 'Content-Type: application/json' --data "$body" http://127.0.0.1:53992/v1/probe)
-[ "$status" = 409 ]
+# Signed recipes are gone; the agent answers nothing else.
+status=$(curl -sS --max-time 2 -o "$work/response" -w '%{http_code}' -H 'Content-Type: application/json' --data '{}' http://127.0.0.1:53992/v1/probe)
+[ "$status" = 404 ]
 
 kill "$pid"
 wait "$pid" 2>/dev/null || true

@@ -19,7 +19,7 @@ In order, it:
    Mac.
 
 It asks nothing and resolves conflicts on its own. BierMenu's
-*Pour a round* runs the same command.
+BierMenu's *Sync now* runs the same command.
 
 A commit message of your own is optional: `bier sync "set up the
 studio"`.
