@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.47.0
+BIER_VERSION=0.47.1
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -2888,10 +2888,20 @@ sync_peers() {
 	[ -n "$peers" ] || die "no Bier peers are configured"
 	# First collect every peer's history. A second pass distributes the
 	# resulting common head to peers visited before the final merge.
-	for peer in $peers; do cmd_peer_sync "$peer"; done
-	for peer in $peers; do cmd_peer_sync "$peer"; done
-	info "In sync with Bier peers."
+	# A Mac that is away (asleep, off Tailscale) must not keep the others
+	# from syncing: it is named at the end and caught up next time.
+	local away=""
+	for peer in $peers; do (cmd_peer_sync "$peer") || away="$away $peer"; done
+	for peer in $peers; do
+		case " $away " in *" $peer "*) continue ;; esac
+		(cmd_peer_sync "$peer") || away="$away $peer"
+	done
 	peer_introduce_all
+	if [ -n "$away" ]; then
+		info "Not reached this time:$away -- they catch up on the next sync."
+		return 1
+	fi
+	info "In sync with Bier peers."
 }
 
 # The newest release published on the code server, without the leading
@@ -4809,12 +4819,16 @@ cmd_sync() {
 		info "Inventory is manual; keeping the Brewfiles as written."
 	fi
 	vault_seal
+	local status=0
 	if [ -x "$PEER_CLIENT" ] && [ -n "$(peer_list)" ]; then
-		sync_peers "${1:-$HOST: inventory updated}"
+		# What arrived from the Macs reached goes into place even when
+		# one was away.
+		sync_peers "${1:-$HOST: inventory updated}" || status=1
 	else
 		sync_data "${1:-$HOST: inventory updated}"
 	fi
 	vault_open
+	return "$status"
 }
 
 # Until 0.12.0 "update" did both jobs under one word, and nobody could say

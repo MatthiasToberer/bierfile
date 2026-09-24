@@ -57,3 +57,14 @@ assert_contains "$OUT" "new.ts.net"
 assert_ok bier mini peer pending
 assert_contains "$OUT" "No Macs are waiting."
 assert_fails bier mini peer accept nobody
+
+# A Mac that is away does not stop the sync with the others.
+cat >"$WORK/peer-client" <<EOF2
+#!/bin/sh
+case \$1 in
+sync) [ "\$2" != one.ts.net ] || exit 1 ;;
+esac
+EOF2
+assert_fails bier mini sync
+assert_contains "$OUT" "Not reached this time: one.ts.net"
+assert_contains "$OUT" "Synchronising Bier data with two.ts.net"
