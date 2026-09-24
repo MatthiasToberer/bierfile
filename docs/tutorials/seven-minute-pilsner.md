@@ -86,21 +86,18 @@ Pick the Mac whose software should serve as the **template**. With two
 machines that is usually the one you work on most.
 
 ```sh
-git clone https://github.com/MatthiasToberer/bierfile.git ~/bierfile
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MatthiasToberer/bierfile/main/bootstrap.sh)"
 ```
 
-`clone` fetches the program and puts it in a folder `bierfile` in your
-home directory. The tilde `~` is shorthand for that: `~/bierfile` is
-`/Users/yourname/bierfile`. That is only the program — your lists go
-somewhere else in a moment.
+The same line Homebrew uses for itself. It fetches the newest release
+of bier, checks that it is signed with the key published for it —
+compare the fingerprint it prints with one you got some other way — and
+sets everything up in a hidden folder, `~/.barrel`. The tilde `~` is
+shorthand for your home folder: `~/.barrel` is `/Users/yourname/.barrel`.
 
-```sh
-~/bierfile/install.sh
-```
-
-The setup script says what it is doing at every step: it checks the
-requirements, makes `bier` callable from anywhere, creates `~/bierdata`
-for your lists, builds the menu bar app, installs the local agent and
+The setup says what it is doing at every step: it checks the
+requirements, makes `bier` callable from anywhere, creates your lists in
+`~/.barrel/data`, builds the menu bar app, installs the local agent and
 records this Mac's inventory. (The full list is in
 [Installation](../start/installation.md).)
 
@@ -145,8 +142,7 @@ it — naturally, `main` just came from it.
 On the second Mac, exactly as before:
 
 ```sh
-git clone https://github.com/MatthiasToberer/bierfile.git ~/bierfile
-~/bierfile/install.sh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MatthiasToberer/bierfile/main/bootstrap.sh)"
 ```
 
 The second installation starts with empty scaffolding. Open pairing
@@ -293,16 +289,12 @@ vault.
 
 ```sh
 bier vault add ~/.zshrc
-ls -l ~/.zshrc
 ```
 
-```
-~/.zshrc -> ~/.bierfilevault/dot_zshrc
-```
-
-The file moved and a link stayed behind. zsh follows it and notices
-nothing; you edit `~/.zshrc` as before. `bier sync` encrypts it and
-shares it.
+The file stays where it is; the vault keeps a copy. `bier sync` encrypts
+it and shares it. A whole folder works too — an app's settings, say:
+files put in it later come along, files deleted from it go to the Trash
+on the other Macs.
 
 The second Mac needs the **same** passphrase — type it when its
 installer asks, or later with `bier vault --init`. Its next `bier sync`
@@ -310,11 +302,12 @@ then puts `~/.zshrc` in place. That Mac's own copy is not thrown away:
 
 ```
 kept: ~/.zshrc.backup
-linked: ~/.zshrc
+added: ~/.zshrc
 ```
 
-Change it on either Mac, sync, and the other has the change — it is the
-same file, not a copy. Groups, recovery and the rest:
+Change it on either Mac, sync, and the other has the change; `bier
+status` shows it waiting until then, and BierMenu puts it in place on
+its own. Groups, conflicts, recovery and the rest:
 [Vault](../vault/dotfiles.md).
 
 ## Step 6: Getting rid of something
@@ -326,7 +319,8 @@ and the next `bier install` would bring it back. Instead:
 bier uninstall ghidra
 ```
 
-That uninstalls it and drops it from **every** list; the next
+bier asks what to take it off: every list, only `main` (with the Macs
+that keep it), or only this Mac's. Answer `a` for everywhere; the next
 `bier sync` passes that on. On the other Mac it is still installed, and
 bier says so:
 
@@ -352,6 +346,15 @@ bier help        # every command
 ```
 
 More in [Troubleshooting](../reference/troubleshooting.md).
+
+## Had enough?
+
+```sh
+bier knockout
+```
+
+signs off at your other Macs and takes bier off this one. Your files
+stay where they are. [Uninstalling](../start/installation.md#uninstalling)
 
 ---
 

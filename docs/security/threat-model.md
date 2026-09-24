@@ -12,7 +12,7 @@ are. Report vulnerabilities as described in
 | Asset | Protection |
 | --- | --- |
 | your package lists | never in the public repository; shared only with paired Macs |
-| your dotfiles | encrypted with gpg (AES-256) before they leave `~/.bierfilevault` |
+| your dotfiles | encrypted with gpg (AES-256) before they leave this Mac |
 | your Mac | the agent never executes commands; Brewfiles are checked before `brew` sees them |
 | the program itself | optionally, releases are verified against a signing key you pinned |
 

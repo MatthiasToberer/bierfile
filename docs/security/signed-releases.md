@@ -13,7 +13,7 @@ bier trust https://bier.uber.space/bier/allowed_signers
 ```
 
 bier fetches the file once, prints the fingerprints and remembers them in
-`~/.config/bier/`. From then on `bier upgrade` installs a release only if
+`~/.barrel/`. From then on `bier upgrade` installs a release only if
 its tag is signed with one of those keys, and refuses one signed by
 somebody else — or by nobody.
 
@@ -40,10 +40,13 @@ exactly what the key is meant to protect against.
 
 ## Default
 
-Nothing is pinned by default, and then nothing is verified — `bier
-upgrade` says so each time. An earlier version insisted on a key and
-stranded every installation that had never fetched one; verification is
-therefore opt-in.
+An installation made with `bootstrap.sh` checks the release it installs
+against the published key and pins that key in `~/.barrel`, so every
+later `bier upgrade` is verified too. An installation made by hand, or
+from before `bootstrap.sh`, has nothing pinned until `bier trust <url>` —
+then nothing is verified, and `bier upgrade` says so each time. An
+earlier version insisted on a key and stranded every installation that
+had never fetched one; for those, verification stays opt-in.
 
 Signatures are SSH signatures (`git tag -s` with `gpg.format=ssh`), so
 verifying needs no keyring — only the one-line `allowed_signers` file.

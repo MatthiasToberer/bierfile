@@ -20,8 +20,7 @@ Tailscale names — see
 The one whose software should serve as the template:
 
 ```sh
-git clone https://github.com/MatthiasToberer/bierfile.git ~/bierfile
-~/bierfile/install.sh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MatthiasToberer/bierfile/main/bootstrap.sh)"
 bier main
 ```
 
@@ -30,8 +29,7 @@ bier main
 ## Every further Mac
 
 ```sh
-git clone https://github.com/MatthiasToberer/bierfile.git ~/bierfile
-~/bierfile/install.sh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MatthiasToberer/bierfile/main/bootstrap.sh)"
 bier peer offer               # shows a one-time code
 ```
 
@@ -58,6 +56,7 @@ bier take                   # adopt some of it
 bier uninstall htop         # asks: everywhere, only out of main, or only here
 bier prune                  # remove here what was deleted elsewhere
 bier vault add ~/.zshrc     # a file, not only packages
+bier knockout               # sign off and take bier off this Mac
 ```
 
 That is all. Everything else is detail — see the

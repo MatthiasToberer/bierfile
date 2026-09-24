@@ -19,7 +19,7 @@
 | --- | --- |
 | [`bier install`](install.md) | install `main` and this Mac's own list |
 | [`bier take [--from-main]`](take.md) | move entries between `main` and device lists |
-| [`bier uninstall <pkg>…`](uninstall.md) | uninstall and remove from every list |
+| [`bier uninstall <pkg>…`](uninstall.md) | uninstall; asks which lists lose it |
 | [`bier prune`](prune.md) | remove what was deleted on another Mac |
 | [`bier dump [--adopt]`](dump.md) | record this Mac's extras |
 | [`bier push [message]`](push.md) | commit the lists without recording |
@@ -32,6 +32,7 @@
 | [`bier vault …`](vault.md) | encrypted dotfiles |
 | [`bier peer …`](peer.md) | pairing and peer exchange |
 | [`bier retire <name>`](retire.md) | take a Mac out of the fleet |
+| [`bier knockout`](knockout.md) | take bier off this Mac, signing off at the others |
 
 ## The program
 

@@ -52,6 +52,17 @@ copies its snapshot and complete Git history. Existing user data is never
 overwritten by this first-use step. Pairing ends with a sync, so a peer that
 already had data of its own shares one history with this Mac afterwards.
 
+## Signing off
+
+`POST /v1/peer/leave`, signed like every peer request, takes the sender
+out: the agent removes the sender's line from `peer_signers` and every
+address in its peers file that belongs to the sender — the one it gave
+when pairing (kept in the state directory as `paired-addresses`), its
+name and `<name>.local`, and, for pairings from before those were kept,
+any that resolves to the address the request came from. Only the signer
+itself can be removed this way; afterwards every request from it is
+refused. `bier knockout` sends it to every paired Mac.
+
 ## Snapshot lifecycle
 
 A data sync uses a fresh snapshot identifier and four constrained operations:

@@ -31,39 +31,78 @@ between them. You then pair with Tailscale names; see
 
 ## Install
 
+One line, like Homebrew:
+
 ```sh
-git clone https://github.com/MatthiasToberer/bierfile.git ~/bierfile
-~/bierfile/install.sh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MatthiasToberer/bierfile/main/bootstrap.sh)"
 ```
 
-`install.sh` reports every step:
+`bootstrap.sh` finds the newest release, fetches it into
+`~/.barrel/bier`, and checks its signature against the key published on
+a separate host — it prints the fingerprint; compare it with one you got
+some other way. A release that is not signed with that key installs
+nothing. Then it hands over to `install.sh`, which reports every step:
 
 1. **Checks the requirements** and stops with a clear message if
    something is missing.
-2. **Links `bier` into `~/.local/bin`.** If that folder is not on your
-   `PATH`, it prints the line to add to `~/.zshrc`.
-3. **Installs a git hook** in the program repository that runs the tests
-   before code is pushed. Users never notice it.
-4. **Creates `~/bierdata`**, the private local repository for your lists.
-5. **Writes `~/.config/bier/config`** with `root`, `data` and `host` —
+2. **Puts the `bier` command in `~/.barrel/bin`** and offers to add that
+   folder to your `PATH` in `~/.zshrc`.
+3. **Creates `~/.barrel/data`**, the private local repository for your
+   lists.
+4. **Writes `~/.barrel/config`** with `root`, `data` and `host` —
    see [Configuration](../reference/configuration.md).
-6. **Builds BierMenu** and puts it in `/Applications`.
+5. **Creates the vault** in `~/.barrel/vault` and asks for its
+   passphrase.
+6. **Builds BierMenu** into `~/.barrel` and starts it.
 7. **Installs the local Bier agent** with a private Ed25519 peer identity
    for this Mac, and records this Mac's inventory.
 
 If `bier` answers `command not found` afterwards, the current shell does
 not know the new `PATH` yet. Open a new terminal or type `exec zsh`.
 
-Running `install.sh` again is harmless: it replaces what is there.
+Running the line again is harmless: it runs the installed installer
+again, which replaces what is there.
+
+### Everything in one folder
+
+```
+~/.barrel/
+  bier/          the program
+  bin/bier       the command
+  BierMenu.app   the menu bar app
+  config, peers  settings, paired Macs
+  data/          your lists and the encrypted safe
+  vault/         plain copies of the files you share
+  state/         what this Mac last agreed on, backups
+  agent/         the agent and this Mac's identity
+```
+
+Only a LaunchAgent (to start the agent at login), a `PATH` line in
+`~/.zshrc` and the vault passphrase in the keychain live outside it.
+
+### An installation from before
+
+An installation from before `~/.barrel` — with `~/bierfile`,
+`~/bierdata`, `~/.bierfilevault` and `~/.config/bier` — is moved in by
+the next `bier upgrade` or `install.sh`: settings, agent, data and vault
+go into `~/.barrel`, vault links in your home folder become plain files,
+and the old command and app are removed. A data folder or vault you set
+up somewhere else stays where it is.
 
 ## Options
 
+Handed on to `install.sh`. With the one line, put them after a `_`:
+
+```sh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MatthiasToberer/bierfile/main/bootstrap.sh)" _ --manual-inventory
+```
+
 | Option | Effect |
 | --- | --- |
-| `--data <folder>` | keep the lists somewhere other than `~/bierdata` |
+| `--data <folder>` | keep the lists somewhere other than `~/.barrel/data` |
 | `--manual-inventory` | manual mode: record only what you write into the Brewfiles yourself. The default is automatic — see [Automatic and manual](../concepts/lists.md#automatic-and-manual) |
 | `--dry-run` | say what would happen, change nothing |
-| `--uninstall` | take bier off this Mac |
+| `--uninstall` | take bier off this Mac — the same as `bier knockout` |
 | `--yes` | answer every question with yes (used by `bier upgrade`) |
 
 ## After installing
@@ -82,29 +121,33 @@ through both.
 bier upgrade
 ```
 
-Looks for a newer release, checks it out, verifies its signature if you
-asked for that with [`bier trust`](../security/signed-releases.md), and
-runs `install.sh` again. It never touches your lists. BierMenu offers the
+Looks for a newer release, checks it out, verifies its signature against
+the key the installation pinned (see
+[Signed releases](../security/signed-releases.md)), and runs `install.sh`
+again. It never touches your lists. BierMenu offers the
 same when a release is waiting.
 
 ## Uninstalling
 
 ```sh
-~/bierfile/install.sh --dry-run --uninstall    # look first
-~/bierfile/install.sh --uninstall
+bier knockout --dry-run    # look first
+bier knockout
 ```
 
-In this order it:
+After you type `knockout` to confirm, it:
 
-1. turns every vault link back into a plain file, so no dotfile goes
-   missing,
-2. takes this Mac out of the lists and out of every vault group
-   (`bier retire --self`) and commits that — other Macs only see it if
-   they sync with this one before it is gone; otherwise run
-   `bier retire <name>` on one of them,
-3. stops and removes BierMenu and the agent, the `bier` link and the
-   vault passphrase in the keychain,
-4. asks whether to delete `~/.config/bier/config`.
+1. syncs one last time, so nothing made on this Mac is lost,
+2. takes this Mac out of the lists and every vault group and hands that
+   to the paired Macs,
+3. signs off at every paired Mac — each forgets this Mac's key and
+   address; one that cannot be reached is named, with what to run there,
+4. takes bier off this Mac: the agent, BierMenu, the `bier` command, the
+   `PATH` line and the passphrase in the keychain,
+5. asks whether to delete `~/.barrel` as well.
 
-It does **not** touch the data repository or the vault files themselves.
-Installed Homebrew packages stay installed.
+Files from the vault stay where they are, as plain files. Installed
+Homebrew packages stay installed.
+
+The blunt way out is `rm -rf ~/.barrel`: your files stay, the agent
+removes its LaunchAgent the next time it would start, and the other
+Macs are not told — `bier peer remove <name>` on each of them does that.

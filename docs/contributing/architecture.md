@@ -21,7 +21,7 @@ The inventory deliberately does **not** live here but in a private
 repository belonging to the user. It reveals which software runs on their
 machines, and whoever clones this repository has no write access here
 anyway. Both paths are recorded as `root` and `data` in
-`~/.config/bier/config`; `install.sh` writes them.
+`~/.barrel/config`; `install.sh` writes them.
 
 Every git command that `bier` issues on its own goes to `data`. Only
 `bier upgrade` also touches `root`, to fetch and build a newer version of

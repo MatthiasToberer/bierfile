@@ -1,19 +1,20 @@
 [Docs](../README.md) › Vault
 
-# Dotfiles in the vault
+# Dotfiles and app settings in the vault
 
 Packages are half of what makes a Mac yours. The vault carries the other
-half: `.zshrc`, an editor's configuration, notes you want everywhere.
+half: `.zshrc`, an editor's configuration, an app's settings and
+profiles.
 
 ```sh
 bier vault add ~/.zshrc
+bier vault add ~/Library/Application\ Support/HandBrake
 ```
 
-The file moves into `~/.bierfilevault` and a symlink stays behind, so it
-goes on living where the program that reads it expects it. `bier sync`
-encrypts it and shares it; the next `bier sync` on another Mac decrypts
-it and puts the link there — or BierMenu does, on its own. Change it on
-either Mac and sync, and the others get the change.
+The file stays where it is; the vault keeps a copy. `bier sync` encrypts
+it and shares it; the next `bier sync` on another Mac decrypts it and
+puts it in place — or BierMenu does, on its own. Change it on any Mac
+and sync, and the others get the change.
 
 A walk-through with two Macs:
 [Your dotfiles on a new Mac](../tutorials/dotfiles-on-a-new-mac.md).
@@ -22,14 +23,15 @@ A walk-through with two Macs:
 
 | Where | What |
 | --- | --- |
-| `~/.bierfilevault` | the plain files, outside every repository |
-| `~/bierdata/Safe/` | the encrypted copies — the only part that travels |
+| the file's own place | the real file, as always |
+| `~/.barrel/vault` | a plain copy, outside every repository |
+| `~/.barrel/data/Safe/` | the encrypted copies — the only part that travels |
 | the keychain | this Mac's working copy of the passphrase |
 
 Encryption is gpg, symmetric, AES-256, under **one passphrase all your
 Macs share**. A new Mac needs nothing but that passphrase. Because the
-plain files live in a different directory, nothing can commit them by
-accident.
+plain copies live outside the data repository, nothing can commit them
+by accident.
 
 Names in the vault mirror the path below your home folder, with `dot_`
 for a leading dot: `~/.config/nvim/init.lua` is
@@ -42,52 +44,80 @@ for a leading dot: `~/.config/nvim/init.lua` is
 | `bier vault` | what is in it, and whether this Mac knows the passphrase |
 | `bier vault add <path>…` | take files or folders in |
 | `bier vault add --for <group> <path>` | only for some Macs — see [Groups](groups.md) |
-| `bier vault forget <path>` | take it back out; the real file returns, **on this Mac only** |
-| `bier vault drop <path>` | remove it from the vault **everywhere**, after asking |
-| `bier vault --restore` | put missing or broken links back |
+| `bier vault forget <path>` | stop syncing it; the file stays **on every Mac** |
+| `bier vault drop <path>` | remove it **everywhere**, into the Trash, after asking |
+| `bier vault --restore` | put back a file deleted here by mistake, from the vault's copy |
 | `bier vault --init` | enter the passphrase on this Mac |
 | `bier vault --passphrase` | change the passphrase everywhere |
 
-`forget` and `drop` are easy to mix up; the difference is the same as
-between `dump` and `prune` — here only, or everywhere.
-
 ## Folders
 
-A folder is taken in **file by file**. Each file gets its own link and
-the folder stays a real folder, so nothing written into it later can
-silently land outside the vault — but a new file there is also not in the
-vault until you add it.
+A folder is tracked as a whole: files put in it later come along with
+the next sync, and files deleted from it go to the Trash on the other
+Macs — Finder's *Put Back* brings them back.
 
-## When a file already exists
+Folders are meant for **settings and profiles**, not for documents. Every
+version of every file stays in the history on every Mac, and encrypted
+files do not compress against each other. So:
 
-On the receiving Mac, four cases:
+- files larger than `vault_max_file` (10 MB unless set in the
+  [config](../reference/configuration.md)) are not taken in, and `bier
+  status` names them;
+- `.DS_Store`, `*.lock`, `*.log` and folders called `Cache`, `Caches`,
+  `Logs` or `.git` are left out.
 
-| At the destination | bier does |
-| --- | --- |
-| nothing | links it |
-| its own link | nothing, already done |
-| a plain file | keeps it as `<name>.backup`, then links — no backup if the two are identical |
-| someone else's link | leaves it alone and says so |
+## Apps that are running
+
+An app writes its settings back when it quits — over whatever bier put
+there in the meantime. So bier does not write into the settings of a
+running app, under `~/Library/Containers/<app>`,
+`~/Library/Application Support/<App>` or
+`~/Library/Preferences/<app>.plist`. `bier status` shows
+
+```
+  .  vault            ~/Library/Application Support/HandBrake/presets.json waiting: HandBrake is running
+```
+
+and the first sync after quitting the app applies it. Preference files
+are written through `defaults import`, so the system's preferences cache
+picks them up.
 
 ## When it changes
 
-Each Mac keeps its own plain copy in `~/.bierfilevault` and remembers
-what it and the safe last agreed on. A sync then knows which side
-changed:
+Each Mac remembers what it and the safe last agreed on, so a sync knows
+which side changed:
 
 | Changed | bier sync does |
 | --- | --- |
 | only here | encrypts it and hands it to the other Macs |
-| only elsewhere | puts the new version in place here |
+| only elsewhere | puts the new version in place here, after a backup |
 | on both sides | keeps yours and puts the other next to it as `<name>.from-safe` |
+| deleted here | takes it out of the safe; the other Macs move it to the Trash |
+| deleted elsewhere | moves it to the Trash here — unless it changed here, then it stays |
 
 After a conflict, merge what you need, delete the `.from-safe` copy and
 sync again; your version then goes everywhere. `bier status` lists what
 is waiting, see [Everyday use](../using/everyday.md#what-differs-here).
 
-## Why a link
+## When a file already exists
 
-The program reading the file finds it where it always did, and every
-edit lands in the vault without an extra step. Editors and tools write
-through the link and keep it — checked with vim, `>>`, `sed -i`, Python
-and `cp`.
+The first time a file arrives on a Mac that already has one of its own
+— every Mac has a `.zshrc` — the shared one wins and the own one is kept
+as `<name>.backup`. Letting the new Mac's file win would send its
+default to every other Mac. An identical file needs no backup. A link
+at that place pointing somewhere else is left alone, and bier says so.
+
+## Backups
+
+Before bier overwrites a file with a version from another Mac, it keeps
+a copy under `~/.barrel/state/backups/<date>/`. `vault_backup = no` in
+the [config](../reference/configuration.md) turns that off.
+
+## Why copies and not links
+
+bier used to leave a link in place of each file. Sandboxed apps may not
+follow a link out of their container, apps that save by writing a new
+file replace the link, and removing bier would have taken the files
+along. With copies, every file stays a real file — and `rm -rf ~/.barrel`
+leaves them all where they are. An installation from the time of links
+turns them back into files on its first sync.

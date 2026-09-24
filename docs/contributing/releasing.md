@@ -11,7 +11,7 @@
       Code    /Users/yourname/bierfile
       Data    /Users/yourname/bierdata
       Device  mini
-      App     0.11.0 (/Applications/BierMenu.app)
+      App     0.11.0 (/Users/yourname/.barrel/BierMenu.app)
 
 `BIER_VERSION` appears in exactly one place, in `Sources/bier-core/bier`.
 `Sources/bier-trayapp/build.sh` reads it from there into the app bundle, `bier state`

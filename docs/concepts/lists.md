@@ -77,6 +77,6 @@ nothing about whether there is anything to do here. `bier list` shows it.
 ## Where the lists live
 
 Not in the program repository. The lists reveal which software runs on
-your Macs, so they live in a private local repository — `~/bierdata` by
+your Macs, so they live in a private local repository — `~/.barrel/data` by
 default — and travel only to Macs you have paired. See
 [Configuration and paths](../reference/configuration.md).

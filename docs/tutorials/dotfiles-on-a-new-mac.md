@@ -18,23 +18,13 @@ bier vault add ~/.zshrc
 bier vault add ~/.config/nvim
 ```
 
-Look at what happened:
+Nothing moves: `~/.zshrc` stays a plain file where it was, and you edit
+it exactly as before. The vault keeps a copy in `~/.barrel/vault`.
 
-```sh
-ls -l ~/.zshrc
-```
-
-```
-~/.zshrc -> ~/.bierfilevault/dot_zshrc
-```
-
-The file moved into `~/.bierfilevault` and a link stayed behind. zsh
-follows it and notices nothing; you edit `~/.zshrc` exactly as before.
-
-A folder such as `~/.config/nvim` is taken in **file by file**: each file
-gets its own link, and the folder itself stays a real folder. A file you
-create in it later is not in the vault until you `bier vault add` it too.
-Only files below your home folder can go into the vault.
+A folder such as `~/.config/nvim` is tracked as a whole: a file you
+create in it later comes along with the next sync, and one you delete
+there goes to the Trash on the other Macs. Only files below your home
+folder can go into the vault.
 
 Share it:
 
@@ -42,8 +32,8 @@ Share it:
 bier sync
 ```
 
-bier encrypts both into `Safe/` in your data repository and exchanges
-them with macbook. The plain files never leave `~/.bierfilevault`.
+bier encrypts them into `Safe/` in your data repository and exchanges
+them with macbook. Only the encrypted copies leave this Mac.
 
 ## On macbook: out of the vault
 
@@ -53,14 +43,14 @@ bier sync
 
 ```
 kept: ~/.zshrc.backup
-linked: ~/.zshrc
-linked: ~/.config/nvim/init.lua
+added: ~/.zshrc
+added: ~/.config/nvim/init.lua
 ```
 
 macbook had a `.zshrc` of its own. It is not thrown away but kept as
 `~/.zshrc.backup`. Had the two been identical, there would be nothing to
-save and no backup is made. A `.zshrc` that was already a link to
-somewhere else is left alone, and bier says so.
+save and no backup is made. A `.zshrc` that was a link to somewhere
+else is left alone, and bier says so.
 
 ## Changing it later
 

@@ -26,8 +26,8 @@ Open a new terminal or type `exec zsh`. If it persists, add the line
 `install.sh` printed to `~/.zshrc`.
 
 **`bier: command not found` after moving the program folder**
-The config and the link in `~/.local/bin` still point at the old place.
-Run `install.sh` again from the new location.
+The config and the command in `~/.barrel/bin` still point at the old
+place. Run `install.sh` again from the new location.
 
 **`xcode-select --install` says the software is not available**
 Download the Command Line Tools from
@@ -66,9 +66,14 @@ A Brewfile contains something other than package entries — code that
 remove them from the file. See the
 [threat model](../security/threat-model.md#a-paired-mac-is-trusted).
 
-**A dotfile is missing or not a link any more**
-`bier status` shows `! link points nowhere` or `! no longer a link`.
-Run `bier vault --restore`.
+**A vault file was deleted by mistake**
+`bier status` shows `^ vault … deleted here`. Before the next sync,
+`bier vault --restore` puts it back; after it, look in the Trash of the
+other Macs or in `~/.barrel/state/backups/`.
+
+**A vault file stays `waiting: … is running`**
+bier does not write into the settings of a running app. Quit the app,
+then `bier sync` — or let BierMenu do it.
 
 **The vault passphrase is not accepted**
 Every Mac needs the same passphrase. If it was changed elsewhere, enter

@@ -11,19 +11,29 @@ show up in `bier list` and `bier take`.
 On that Mac:
 
 ```sh
-~/bierfile/install.sh --uninstall
+bier knockout
 ```
 
-This turns the vault links back into plain files, takes the Mac out of
-the lists and every vault group, and removes bier. See
+This syncs one last time, takes the Mac out of the lists and every vault
+group, hands that to the other Macs, signs off at each of them — they
+forget its key and address — and removes bier. The files from the vault
+stay where they are. See
 [Installation › Uninstalling](../start/installation.md#uninstalling).
 
-The removal is committed on the leaving Mac. If it is gone before another
-Mac has synced with it, run `bier retire <name>` on one of the others.
+A Mac that could not be reached at that moment is named, with what to
+run there: `bier peer remove <name>`, and `bier retire <name>` if the
+removal has not reached it through the others.
 
 ## The Mac is gone
 
-On any other Mac:
+On every other Mac, so they stop trusting it and stop trying to reach it:
+
+```sh
+bier peer remove studio          # its key
+bier peer remove studio.local    # the address it was paired with (bier peer list)
+```
+
+And on any one of them:
 
 ```sh
 bier retire studio
@@ -40,7 +50,7 @@ and commits that; `bier sync` passes it on to the other Macs. Vault files meant 
 vault. The git history still has everything, should you need it.
 
 You cannot retire the Mac you are sitting at by name — that is what
-`install.sh --uninstall` is for.
+`bier knockout` is for.
 
 ## Afterwards
 

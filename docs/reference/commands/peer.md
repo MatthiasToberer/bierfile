@@ -15,7 +15,7 @@ Manages the Macs this one exchanges data with.
 | `offer [--address <own-host>]` | open pairing for ten minutes and show a one-time code |
 | `pair <host> [--address <own-host>]` | pair with a Mac that shows a code, then sync; copies data to it if it is untouched |
 | `list` | Macs this one exchanges with |
-| `remove <host>` | forget a Mac |
+| `remove <host>` | forget a Mac: its address, or its key when given the name it signs with |
 | `hello <host>` | check that the other agent accepts this Mac |
 | `compare <host>` | compare verified data with a peer, change nothing |
 | `sync <host>` | exchange data and history with one peer |

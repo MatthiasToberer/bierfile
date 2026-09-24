@@ -10,8 +10,7 @@ mode — the last step switches to it.
 ## On both Macs
 
 ```sh
-git clone https://github.com/MatthiasToberer/bierfile.git ~/bierfile
-~/bierfile/install.sh --manual-inventory
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MatthiasToberer/bierfile/main/bootstrap.sh)" _ --manual-inventory
 ```
 
 ## On the first Mac
@@ -19,7 +18,7 @@ git clone https://github.com/MatthiasToberer/bierfile.git ~/bierfile
 Put a single entry into the shared list:
 
 ```sh
-echo 'cask "firefox"' > ~/bierdata/Brewfiles/main
+echo 'cask "firefox"' > ~/.barrel/data/Brewfiles/main
 ```
 
 Add a test file to the vault — a made-up one, not your real `.zshrc`:
@@ -47,13 +46,17 @@ bier peer pair second-mac.local
 ```
 
 The second installation is still untouched, so the first Mac's data and
-history are copied over. On the second Mac:
+history are copied over, and the two are synced. On the second Mac:
 
 ```sh
 bier status          # firefox is recorded but not installed here
 bier sync            # opens the vault with the shared passphrase
-ls -l ~/.fakezshrc   # a link into ~/.bierfilevault
+cat ~/.fakezshrc     # the file from the first Mac, a plain file
 ```
+
+Change `~/.fakezshrc` on one Mac and `bier sync` there; `bier status` on
+the other shows it as *newer in the safe*, and its next `bier sync` (or
+BierMenu, on its own) puts it in place.
 
 ## Going live
 
@@ -67,4 +70,5 @@ The next `bier sync` records everything that is installed. Then, on the
 Mac whose software should be the template, run `bier main` once — see
 [main and device lists](../concepts/lists.md).
 
-To remove the test file again everywhere: `bier vault drop ~/.fakezshrc`.
+To remove the test file again everywhere: `bier vault drop ~/.fakezshrc`
+— it goes to the Trash on every Mac.

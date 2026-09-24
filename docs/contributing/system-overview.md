@@ -27,7 +27,7 @@ flowchart TB
         peerA["bier-peer (Swift client)"]
         agentA["bier-agent<br/>TCP 53991"]
         menuA["BierMenu"]
-        dataA[("~/bierdata<br/>Brewfiles/ · Safe/ · .git")]
+        dataA[("~/.barrel/data<br/>Brewfiles/ · Safe/ · .git")]
         cliA --> peerA
         menuA -->|"bier state"| cliA
         cliA --> dataA
@@ -35,7 +35,7 @@ flowchart TB
     end
     subgraph macB["Mac B"]
         agentB["bier-agent<br/>TCP 53991"]
-        dataB[("~/bierdata")]
+        dataB[("~/.barrel/data")]
         agentB --> dataB
     end
     peerA -->|"signed HTTP requests"| agentB
@@ -80,12 +80,12 @@ runs it as the LaunchAgent `com.bier.agent` (`RunAtLoad`, `KeepAlive`):
 ```
 bier-agent serve
   --agent <hostname -s>
-  --allowed-signers ~/.config/bier/allowed_signers
-  --peer-signers    ~/.local/share/bier/agent/peer_signers
-  --peer-key        ~/.local/share/bier/agent/identity.pub
-  --peers-file      ~/.config/bier/peers
+  --allowed-signers ~/.barrel/allowed_signers
+  --peer-signers    ~/.barrel/agent/peer_signers
+  --peer-key        ~/.barrel/agent/identity.pub
+  --peers-file      ~/.barrel/peers
   --data-dir        <data repository>
-  --state-dir       ~/.local/share/bier/agent/state
+  --state-dir       ~/.barrel/agent/state
   --port 53991
 ```
 
@@ -126,11 +126,11 @@ namespace:
 
 | File | Holds | Used for | Namespace |
 | --- | --- | --- | --- |
-| `~/.local/share/bier/agent/identity` (+ `.pub`) | this Mac's private Ed25519 key, created by `install.sh` | signing peer requests | `bier-peer` |
-| `~/.local/share/bier/agent/peer_signers` | public keys of paired Macs, written by pairing | verifying incoming peer requests | `bier-peer` |
-| `~/.config/bier/allowed_signers` | release key(s) pinned with `bier trust` | verifying release tags; verifying recipes | git SSH signature / `bier-recipe` |
+| `~/.barrel/agent/identity` (+ `.pub`) | this Mac's private Ed25519 key, created by `install.sh` | signing peer requests | `bier-peer` |
+| `~/.barrel/agent/peer_signers` | public keys of paired Macs, written by pairing | verifying incoming peer requests | `bier-peer` |
+| `~/.barrel/allowed_signers` | release key(s) pinned with `bier trust` | verifying release tags; verifying recipes | git SSH signature / `bier-recipe` |
 
-`~/.config/bier/peers` lists the addresses this Mac contacts on
+`~/.barrel/peers` lists the addresses this Mac contacts on
 `bier sync`. The peer identity is **not** an SSH login key; it signs
 bier requests and nothing else. None of these keys leaves the Mac.
 
@@ -141,6 +141,7 @@ bier requests and nothing else. None of these keys leaves the Mac.
 | `GET /v1/health` | none | status and agent version only |
 | `POST /v1/pair` | one-time code (HMAC) | exchange public keys while an offer is open |
 | `GET /v1/peer/hello` | peer signature | prove that this Mac is accepted |
+| `POST /v1/peer/leave` | peer signature | sign off: the agent forgets the sender's key and addresses (`bier knockout`) |
 | `GET /v1/peer/manifest` | peer signature | paths, sizes and SHA-256 of the data |
 | `POST /v1/peer/data/read` | peer signature | read a data file in chunks |
 | `POST /v1/peer/snapshot/begin` · `put` · `commit` | peer signature | stage and atomically replace data (seeding) |

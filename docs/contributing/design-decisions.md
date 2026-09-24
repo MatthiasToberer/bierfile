@@ -98,7 +98,7 @@ A transparent clean/smudge filter does not help: git works on what is
 stored, not on what the working tree shows.
 
 **The plain files live outside every repository**, in
-`~/.bierfilevault`. A `.gitignore` is a rule somebody can get wrong; a
+`~/.barrel/vault`. A `.gitignore` is a rule somebody can get wrong; a
 different directory is a fact. Only `Safe/` in the data repository
 travels.
 

@@ -16,12 +16,12 @@ bier vault --passphrase
 | Command | Effect |
 | --- | --- |
 | `bier vault` | where the vault is, how many files it holds, whether the passphrase is known here |
-| `add` | move files or folders (file by file) into the vault, leave links behind |
+| `add` | take files or folders in; they stay where they are, the vault keeps a copy. A folder is tracked as a whole |
 | `add --for` | only for a group or one Mac |
-| `forget` | the real file returns; out of the vault, stays on this Mac |
-| `drop` | out of the vault and off every Mac, after asking |
+| `forget` | stop syncing it; the file stays on every Mac |
+| `drop` | out of the vault and off every Mac, into the Trash, after asking |
 | `group` | list, define or drop groups |
-| `--restore` | put missing or broken links back |
+| `--restore` | put back a file deleted here, from the vault's copy |
 | `--init` | enter the passphrase on this Mac (the installer does this) |
 | `--passphrase` | change the passphrase and re-encrypt everything |
 

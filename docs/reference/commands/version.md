@@ -12,7 +12,7 @@ bier 0.37.0
   Code    /Users/yourname/bierfile
   Data    /Users/yourname/bierdata
   Device  mini
-  App     0.37.0 (/Applications/BierMenu.app)
+  App     0.37.0 (/Users/yourname/.barrel/BierMenu.app)
 ```
 
 Also `bier --version`, `bier -V`. `bier help` prints an overview of every

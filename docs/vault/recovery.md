@@ -23,19 +23,24 @@ unreadable. Every other Mac asks for the new one on its next sync.
 
 Change it whenever a Mac that knew it is lost or leaves your hands.
 
-## A link points nowhere
+## A file was deleted by mistake
 
-You deleted `~/.bierfilevault`, or a program replaced a link with a
-plain file. `bier status` reports it:
+A vault file deleted here counts as deleted everywhere: the next sync
+takes it out of the safe, and the other Macs move theirs to the Trash.
+`bier status` shows it first:
 
 ```
-  ! link points nowhere: ~/.zshrc
-    bier vault --restore puts the links back.
+  ^  vault            ~/.zshrc deleted here
 ```
+
+Before syncing, put it back from the vault's copy:
 
 ```sh
 bier vault --restore
 ```
+
+After a sync, it is in the Trash on the other Macs, and in
+`~/.barrel/state/backups/` wherever bier replaced it.
 
 ## Without bier
 
@@ -51,6 +56,7 @@ repository.
 
 ## Taking bier off a Mac
 
-`install.sh --uninstall` turns every vault link back into a plain file
-*before* it removes anything, so no dotfile goes missing. See
+The files from the vault are real files where they belong, so nothing
+goes missing when bier leaves — neither with `bier knockout` nor with
+`rm -rf ~/.barrel`. See
 [Installation › Uninstalling](../start/installation.md#uninstalling).
