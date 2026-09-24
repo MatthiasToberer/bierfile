@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.44.1
+BIER_VERSION=0.45.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -4157,6 +4157,152 @@ EOF
 	rm -rf "$staging"
 }
 
+# Looks this Mac over the way brew doctor does: installation, agent,
+# peers, data repository, vault, lists. Changes nothing; each finding
+# says how to put it right. Exits 1 when it found something.
+#
+# Findings go to a file, not a counter: some are found inside pipes,
+# which run in subshells.
+BREWMASTER_LOG=/dev/null
+brewmaster_warn() {
+	local line
+	{
+		printf '\nWarning: %s\n' "$1"
+		shift
+		for line in "$@"; do printf '  %s\n' "$line"; done
+	} >>"$BREWMASTER_LOG"
+}
+
+cmd_brewmaster() {
+	local peer app version release target copy f found
+	BREWMASTER_LOG=$(tmpfile)
+	info "Checking this Mac, its peers and the vault …"
+
+	# Installation
+	[ "$CONFIG_FILE" != "$LEGACY_CONFIG" ] ||
+		brewmaster_warn "this installation has not moved into $BARREL yet." "$ROOT/install.sh"
+	case ":$PATH:" in
+	*":$BARREL/bin:"*) ;;
+	*) brewmaster_warn "$BARREL/bin is not on your PATH." \
+		"Add to ~/.zshrc:  export PATH=\"$BARREL/bin:\$PATH\"" ;;
+	esac
+	release=$(latest_release)
+	if [ -n "$release" ] && newer_version "$BIER_VERSION" "$release"; then
+		brewmaster_warn "bier $release is out; this is $BIER_VERSION." "bier upgrade"
+	fi
+	app=$BARREL/BierMenu.app
+	version=$(plutil -extract CFBundleShortVersionString raw -o - "$app/Contents/Info.plist" 2>/dev/null || true)
+	[ -z "$version" ] || [ "$version" = "$BIER_VERSION" ] ||
+		brewmaster_warn "BierMenu is $version, bier is $BIER_VERSION." "bier upgrade --force"
+
+	# Agent
+	if [ ! -f "$HOME/Library/LaunchAgents/com.bier.agent.plist" ]; then
+		brewmaster_warn "the Bier agent is not installed; other Macs cannot reach this one." "$ROOT/install.sh"
+	elif ! curl -fsS --max-time 3 "http://127.0.0.1:$PEER_PORT/v1/health" 2>/dev/null | grep -q '"status":"ok"'; then
+		brewmaster_warn "the Bier agent does not answer on port $PEER_PORT." \
+			"launchctl kickstart -k gui/$(id -u)/com.bier.agent"
+	fi
+
+	# Peers
+	if [ -n "$(peer_list)" ] && [ ! -x "$PEER_CLIENT" ]; then
+		brewmaster_warn "the peer client is not built." "$ROOT/install.sh"
+	elif [ -x "$PEER_CLIENT" ]; then
+		for peer in $(peer_list); do
+			if ! peer_call hello "$peer" --identity "$PEER_IDENTITY" >/dev/null 2>&1; then
+				case $peer in
+				*@*) brewmaster_warn "$peer does not answer over SSH." \
+					"ssh $peer true   has to work without a password (ssh-copy-id $peer)" ;;
+				*) brewmaster_warn "$peer does not answer." \
+					"Is it awake, on this network or on Tailscale, and running bier?" ;;
+				esac
+			elif [ -z "$(peer_sent_get "$peer")" ]; then
+				brewmaster_warn "$peer has never been synced with." "bier sync"
+			fi
+		done
+	fi
+
+	# Data repository and lists
+	if [ -z "$DATA" ] || [ ! -d "$DATA/.git" ]; then
+		brewmaster_warn "there is no data repository at ${DATA:-(not set)}." "$ROOT/install.sh"
+	else
+		# A repository on no branch needs no finding: every bier command
+		# puts it back on main before it starts (repair_repo).
+		if [ -d "$DATA/.git/rebase-merge" ] || [ -d "$DATA/.git/rebase-apply" ]; then
+			brewmaster_warn "a git rebase in $DATA was left half-done." "git -C $DATA rebase --abort"
+		fi
+		[ -z "$(git -C "$DATA" status --porcelain -- Brewfiles Safe 2>/dev/null)" ] ||
+			brewmaster_warn "Brewfiles or the safe have changes not committed." "bier sync"
+		[ -n "$(git -C "$DATA" config user.name 2>/dev/null)" ] ||
+			brewmaster_warn "git has no name to commit with." "git config --global user.name \"Your Name\""
+		for f in "$MAIN_FILE" "$BREW_DIR/$HOST"; do
+			[ -z "$(foreign_lines "$f")" ] ||
+				brewmaster_warn "$f holds lines that are not entries; brew would run them." "bier status   shows them"
+		done
+	fi
+
+	# Vault
+	if [ -n "$(find "$SAFE_DIR" -name '*.gpg' -type f -print -quit 2>/dev/null)" ]; then
+		case $(vault_pass_state) in
+		missing) brewmaster_warn "the safe holds files, but this Mac has no passphrase." "bier vault --init" ;;
+		locked) brewmaster_warn "the keychain is locked; the vault stays closed." \
+			"security unlock-keychain ~/Library/Keychains/login.keychain-db" ;;
+		esac
+	fi
+	vault_duplicates | while IFS= read -r target; do
+		[ -n "$target" ] || continue
+		brewmaster_warn "$target is shared twice; the two entries work against each other." \
+			"bier list   shows both; take one back with: bier vault forget"
+	done || true
+	vault_arrived | sed -n 's/^VAULT_LEFT'$'\t''//p' | while IFS= read -r copy; do
+		brewmaster_warn "$copy is left from a conflict." \
+			"Merge what you need into ${copy%.from-safe*}, delete it, then: bier sync"
+	done || true
+	if { vault_report || true; } | grep -q '^VAULT_DENIED'; then
+		brewmaster_warn "macOS does not let bier read some app settings." "bier access"
+	fi
+	vault_known | while IFS= read -r f; do
+		vault_is_meta "$f" && continue
+		case ${f##*/} in
+		*.hbqueue | *.sqlite-wal | *.sqlite-shm | *-journal) printf '%s\n' "${f##*.}" ;;
+		esac
+	done | sort -u | while IFS= read -r f; do
+		brewmaster_warn "files ending in .$f are shared, and change all the time." \
+			"Add to $CONFIG_FILE:  vault_exclude = *.$f"
+	done || true
+
+	found=$(grep -c '^Warning:' "$BREWMASTER_LOG" || true)
+	cat "$BREWMASTER_LOG"
+	info ""
+	if [ "$found" = 0 ]; then
+		info "Your bier is ready to pour."
+		return 0
+	fi
+	info "Your bier is ready to pour, apart from $found thing(s) above."
+	return 1
+}
+
+# Paths two vault entries lay claim to.
+vault_duplicates() {
+	local map entry target folder rel
+	{
+		for map in "$VAULT"/apps/*/.bier-map "$VAULT"/@*/apps/*/.bier-map; do
+			[ -f "$map" ] || continue
+			while IFS=$'\t' read -r entry target; do
+				[ "$entry" = .package ] || [ -z "$target" ] || printf '%s\n' "$HOME/$target"
+			done <"$map"
+		done
+		[ ! -d "$VAULT" ] || find "$VAULT" -name .bier-folder -print | sed -e "s#^$VAULT/##" -e 's#/\.bier-folder$##' |
+			while IFS= read -r folder; do
+				[[ $(vault_strip_scope "$folder") == apps/* ]] && continue
+				printf '%s\n' "$(vault_target "$folder")"
+			done
+		vault_own_files | while IFS= read -r rel; do
+			[[ $(vault_strip_scope "$rel") == apps/* ]] && continue
+			printf '%s\n' "$(vault_target "$rel")"
+		done
+	} | sort | uniq -d || true
+}
+
 # Reading an app's settings in its container needs Full Disk Access, for
 # the terminal bier runs in and for BierMenu, which runs it on its own.
 # macOS lets nobody grant that but the person at the Mac, in System
@@ -4737,6 +4883,8 @@ bier — keeps Brewfiles in sync across Macs
   bier upgrade [--force]  install a newer release of bier itself
   bier retire <name>      take a Mac out of the fleet — the one that
                           broke, or was wiped without uninstalling
+  bier brewmaster         check this Mac, its peers and the vault, and say
+                          how to fix what is wrong (like brew doctor)
   bier access             how to let bier read app settings in their
                           sandbox (Full Disk Access)
   bier knockout           take bier off this Mac: sign off at the others,
@@ -4823,6 +4971,7 @@ vault) cmd_vault "$@" ;;
 retire) cmd_retire "$@" ;;
 knockout) cmd_knockout "$@" ;;
 access) cmd_access ;;
+brewmaster | doctor) cmd_brewmaster ;;
 version | --version | -V) cmd_version ;;
 help | -h | --help) cmd_help ;;
 *) die "unknown command: $cmd (bier help)" ;;

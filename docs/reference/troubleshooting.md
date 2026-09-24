@@ -18,6 +18,16 @@ program can take its settings and data with it, and a wrong entry in
 have a working backup (Time Machine or equivalent) and check that it
 restores. This is a hobby project provided without warranty.
 
+## First: ask the brewmaster
+
+```sh
+bier brewmaster
+```
+
+checks the installation, the agent, every paired Mac, the data and the
+vault, and says for each problem how to fix it. See
+[`bier brewmaster`](commands/brewmaster.md).
+
 ## Symptoms
 
 **`bier: command not found` right after installing**

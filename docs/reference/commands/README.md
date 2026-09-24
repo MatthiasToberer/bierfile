@@ -35,6 +35,7 @@
 | [`bier retire <name>`](retire.md) | take a Mac out of the fleet |
 | [`bier knockout`](knockout.md) | take bier off this Mac, signing off at the others |
 | [`bier access`](access.md) | let bier read app settings in their sandbox (Full Disk Access) |
+| [`bier brewmaster`](brewmaster.md) | check this Mac, its peers and the vault, like `brew doctor` |
 
 ## The program
 
