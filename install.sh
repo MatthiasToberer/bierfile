@@ -527,10 +527,11 @@ cat >"$AGENT_PLIST.new" <<EOF
   <key>ProgramArguments</key><array>
     <!-- Starts the agent while the barrel is there. After "rm -rf ~/.barrel"
          it removes this file and unloads itself instead of failing on
-         every restart. -->
+         every restart. The dollars are escaped: this heredoc is expanded
+         when the file is written, and they are meant for launch time. -->
     <string>/bin/sh</string>
     <string>-c</string>
-    <string>if [ -x "$1" ]; then exec "$@"; fi; rm -f "$HOME/Library/LaunchAgents/com.bier.agent.plist"; exec launchctl bootout "gui/$(id -u)/com.bier.agent"</string>
+    <string>if [ -x "\$1" ]; then exec "\$@"; fi; rm -f "\$HOME/Library/LaunchAgents/com.bier.agent.plist"; exec launchctl bootout "gui/\$(id -u)/com.bier.agent"</string>
     <string>bier-agent</string>
     <string>$xml_barrel/agent/bin/bier-agent</string>
     <string>serve</string>
