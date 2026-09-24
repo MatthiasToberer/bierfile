@@ -128,14 +128,14 @@ bier list
 ```
 
 ```
-Brewfiles/main: 138 entries, applies to every device
-
-Device               on top
-  mini                     0   (this Mac)
+Every Mac (main)
+  1password-cli                    formula
+  alt-tab                          app
+  …
 ```
 
-138 programs in the shared inventory, and this Mac has nothing on top of
-it — naturally, `main` just came from it.
+Everything is in the shared inventory, and this Mac has nothing on top
+of it — naturally, `main` just came from it.
 
 ## Step 2: Every further Mac
 

@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.43.0
+BIER_VERSION=0.44.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -2118,7 +2118,7 @@ EOF
 	for i in $picks; do
 		path=$(printf '%s\n' "$found" | sed -n "${i}p")
 		[ -n "$path" ] || die "no settings location with number $i"
-		vault_add_app "$label" "$path" "$ADD_SCOPE"
+		vault_add_app "$label" "$path" "$ADD_SCOPE" "$(printf '%s "%s"' "$kind" "$name")"
 	done
 	info "bier sync shares them."
 }
@@ -2383,41 +2383,127 @@ cmd_prune() {
 # with ten Macs it would be a wall up there.
 cmd_list() {
 	need_repo
-	local h count all entry hosts text
+	local apps h text=""
 
-	# Collect everything first, then print it in one go. Writing line by
-	# line takes a while here (one comparison per entry per device) — and
-	# whoever pipes the output into "head" would see a broken pipe as
-	# soon as head bows out.
-	text="Brewfiles/main: $(entries "$MAIN_FILE" | wc -l | tr -d ' ') entries, applies to every device"$'\n'
-	text=$text$'\n'"Device               on top"$'\n'
+	# Collect first, print in one go: whoever pipes this into head must
+	# not see a broken pipe halfway through.
+	local -a parts=()
+	apps=$(list_app_settings)
+	parts+=("$(list_section "Every Mac (main)" "$MAIN_FILE" "$apps")")
+	parts+=("$(list_section "Only on $HOST (this Mac)" "$BREW_DIR/$HOST" "$apps")")
 	for h in $(host_list); do
-		count=$(entries "$BREW_DIR/$h" | wc -l | tr -d ' ')
-		if [ "$h" = "$HOST" ]; then
-			text=$text$(printf '  %-20s %5s   (this Mac)' "$h" "$count")$'\n'
+		[ "$h" != "$HOST" ] || continue
+		parts+=("$(list_section "Only on $h" "$BREW_DIR/$h" "$apps")")
+	done
+	parts+=("$(list_files)" "$(list_loose_settings "$apps")")
+	for h in "${parts[@]}"; do
+		[ -z "$h" ] || text=${text:+$text$'\n\n'}$h
+	done
+	printf '%s\n' "${text:-Nothing is listed yet.}"
+}
+
+# An app's shared settings, one line each: package|app|what|scope.
+# The package is what bier add wrote into the app's map; older maps
+# have none.
+list_app_settings() {
+	local map app scope package what
+	for map in "$VAULT"/apps/*/.bier-map "$VAULT"/@*/apps/*/.bier-map; do
+		[ -f "$map" ] || continue
+		app=$(basename "$(dirname "$map")")
+		scope=${map#"$VAULT"/}
+		case $scope in
+		@*) scope=${scope%%/*} ;;
+		*) scope="" ;;
+		esac
+		package=$(awk -F '\t' '$1 == ".package" { print $2; exit }' "$map")
+		what=$(awk -F '\t' '$1 != ".package" && NF == 2 { print $1 }' "$map" | paste -sd ',' - | sed 's/,/, /g')
+		[ -z "$what" ] || printf '%s|%s|%s|%s\n' "$package" "$app" "$what" "${scope#@}"
+	done
+}
+
+# The settings shared for one Brewfile entry: by the package the map
+# names, or else by name -- handbrake-app belongs to HandBrake.
+list_settings_for() {
+	local key=$1 name=$2 apps=$3
+	printf '%s\n' "$apps" | awk -F '|' -v key="$key" -v name="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')" '
+		NF < 3 { next }
+		{ app = tolower($2) }
+		$1 == key || ($1 == "" && (app == name || index(name, app "-") == 1)) {
+			print $3 ($4 != "" ? " (only " $4 ")" : ""); exit
+		}'
+}
+
+list_section() {
+	local title=$1 file=$2 apps=$3 entry kind name what label
+	[ -n "$(entries "$file")" ] || return 0
+	printf '%s\n' "$title"
+	entries "$file" | while IFS= read -r entry; do
+		kind=${entry%% *}
+		name=$(printf '%s' "$entry" | sed -E 's/^[a-z]+ "([^"]+)"$/\1/')
+		case $kind in
+		brew) label=formula ;;
+		cask) label=app ;;
+		mas) label="App Store" ;;
+		vscode) label="VS Code" ;;
+		*) label=$kind ;;
+		esac
+		what=$(list_settings_for "$entry" "$name" "$apps")
+		if [ -n "$what" ]; then
+			printf '  %-32s %-10s settings: %s\n' "$name" "$label" "$what"
 		else
-			text=$text$(printf '  %-20s %5s' "$h" "$count")$'\n'
+			printf '  %-32s %s\n' "$name" "$label"
 		fi
 	done
+}
 
-	all=$(for h in $(host_list); do entries "$BREW_DIR/$h"; done | sort -u)
-	if [ -z "$all" ]; then
-		printf '%s\nNo device has anything on top of main.\n' "$text"
-		return 0
-	fi
+# Dotfiles and folders shared by path, outside any app.
+list_files() {
+	local rel folder scope out
+	out=$(
+		{
+			[ ! -d "$VAULT" ] || find "$VAULT" -name .bier-folder -print |
+				sed -e "s#^$VAULT/##" -e 's#/\.bier-folder$##' | while IFS= read -r folder; do
+				[[ $(vault_strip_scope "$folder") != apps/* ]] || continue
+				printf '%s/\n' "$(vault_target "$folder")"
+			done
+			vault_own_files | while IFS= read -r rel; do
+				[[ $(vault_strip_scope "$rel") != apps/* ]] || continue
+				folder=$rel
+				while [ "$folder" != "${folder%/*}" ]; do
+					folder=${folder%/*}
+					[ ! -f "$VAULT/$folder/.bier-folder" ] || continue 2
+				done
+				scope=$(vault_scope "$rel")
+				printf '%s%s\n' "$(vault_target "$rel")" "${scope:+ (only $scope)}"
+			done
+		} | sed "s#^$HOME/#~/#" | sort -u
+	)
+	[ -n "$out" ] || return 0
+	printf 'Files\n'
+	printf '%s\n' "$out" | sed 's/^/  /'
+}
 
-	text=$text$'\n'"On top of main, and where:"$'\n'
-	while IFS= read -r entry; do
-		hosts=""
-		for h in $(host_list); do
-			if entries "$BREW_DIR/$h" | grep -qxF "$entry"; then
-				hosts="$hosts $h"
-			fi
-		done
-		text=$text$(printf '  %-44s %s' "$entry" "${hosts# }")$'\n'
-	done <<<"$all"
-
-	printf '%s' "$text"
+# Settings of an app that is on no list: added by hand, or the app left.
+list_loose_settings() {
+	local apps=$1 line package app what scope listed out=""
+	listed=$(all_entries)
+	while IFS='|' read -r package app what scope; do
+		[ -n "$app" ] || continue
+		if [ -n "$package" ] && printf '%s\n' "$listed" | grep -qxF "$package"; then
+			continue
+		fi
+		if [ -z "$package" ] && printf '%s\n' "$listed" | awk -v app="$(printf '%s' "$app" | tr '[:upper:]' '[:lower:]')" '
+			{ n = tolower($0); sub(/^[a-z]+ "/, "", n); sub(/"$/, "", n) }
+			n == app || index(n, app "-") == 1 { f = 1 } END { exit !f }'; then
+			continue
+		fi
+		out="$out$(printf '  %-32s settings: %s%s' "$app" "$what" "${scope:+ (only $scope)}")
+"
+	done <<EOF
+$apps
+EOF
+	[ -n "$out" ] || return 0
+	printf 'Settings of apps on no list\n%s' "$out"
 }
 
 # What the next "bier sync" would carry, as tab-separated lines. Only
@@ -3242,7 +3328,7 @@ vault_app_label() {
 
 # Takes an app's settings in, under apps/<App>/ in the vault.
 vault_add_app() {
-	local app=$1 src=${2%/} scope=${3:-} label base map n=2 current
+	local app=$1 src=${2%/} scope=${3:-} package=${4:-} label base map n=2 current
 	case $src in
 	"$HOME"/*) ;;
 	*) die "only files below $HOME can go into the vault: $src" ;;
@@ -3255,14 +3341,17 @@ vault_add_app() {
 	base=apps/$app
 	[ -z "$scope" ] || base=@$scope/$base
 	map=$VAULT/$base/.bier-map
-	current=$(awk -F '\t' -v p="${src#"$HOME"/}" '$2 == p { print $1; exit }' "$map" 2>/dev/null || true)
-	[ -z "$current" ] || die "$src is already in the vault, as $base/$current"
+	vault_shared_already "$src"
 	label=$(vault_app_label "$src")
 	while awk -F '\t' -v e="$label" '$1 == e { f = 1 } END { exit !f }' "$map" 2>/dev/null; do
 		label="$(vault_app_label "$src") $n"
 		n=$((n + 1))
 	done
 	mkdir -p "$VAULT/$base"
+	# Which Brewfile entry the settings belong to, for bier list.
+	if [ -n "$package" ] && ! grep -q '^\.package'$'\t' "$map" 2>/dev/null; then
+		printf '.package\t%s\n' "$package" >>"$map"
+	fi
 	printf '%s\t%s\n' "$label" "${src#"$HOME"/}" >>"$map"
 	if [ -d "$src" ]; then
 		mkdir -p "$VAULT/$base/$label"
@@ -3292,6 +3381,7 @@ vault_add() {
 	[ -e "$src" ] || die "$src does not exist"
 	[ ! -L "$src" ] || die "$src is a link -- add what it points to"
 
+	vault_shared_already "$src"
 	name=$(vault_name "$src")
 	[ -z "$scope" ] || name=@$scope/$name
 	if [ -d "$src" ]; then
@@ -3327,6 +3417,40 @@ EOF
 	cp -p "$src" "$dest"
 	rm -f "$SAFE_DIR/$name.forgotten"
 	info "$name   <-  $src"
+}
+
+# Two entries for one file would each take and put it, against each
+# other. A path is shared once: by itself, inside a shared folder, or as
+# an app's settings -- for all Macs or for some.
+vault_shared_already() {
+	local path=${1%/} map rel entry target
+	for map in "$VAULT"/apps/*/.bier-map "$VAULT"/@*/apps/*/.bier-map; do
+		[ -f "$map" ] || continue
+		while IFS=$'\t' read -r entry target; do
+			[ "$entry" != .package ] && [ -n "$target" ] || continue
+			case $path/ in
+			"$HOME/$target"/* | "$HOME/$target"/)
+				die "$path is shared already, as $(dirname "${map#"$VAULT"/}")/$entry" ;;
+			esac
+			case $HOME/$target/ in
+			"$path"/*) die "$path holds $HOME/$target, shared already as $(dirname "${map#"$VAULT"/}")/$entry" ;;
+			esac
+		done <"$map"
+	done
+	while IFS= read -r rel; do
+		[ -n "$rel" ] || continue
+		vault_is_meta "$rel" && continue
+		target=$(vault_target "$rel")
+		case $path/ in
+		"$target"/*) die "$path is shared already, as $rel" ;;
+		esac
+		case $target/ in
+		"$path"/*) die "$path holds $target, shared already as $rel" ;;
+		esac
+	done <<EOF
+$(find "$VAULT" -name .bier-folder -print 2>/dev/null | sed -e "s#^$VAULT/##" -e 's#/\.bier-folder$##'; vault_own_files)
+EOF
+	return 0
 }
 
 # The entries a path names: the file itself, or everything in a folder
@@ -4602,7 +4726,7 @@ bier — keeps Brewfiles in sync across Macs
   bier uninstall <pkg>    uninstall here; asks: off every list, only out of
                           main (some Macs keep it), or only off this Mac's
   bier prune              remove what was deleted elsewhere or left main
-  bier list               overview of all devices
+  bier list | ls          everything bier keeps: packages, their settings, files
   bier take               pull entries from other devices into main or here
   bier take --from-main   hand an entry from main to a single device
   bier push [message]     commit the Brewfiles and push them
@@ -4680,7 +4804,7 @@ main) cmd_main "$@" ;;
 uninstall | rm) cmd_uninstall "$@" ;;
 add) cmd_add "$@" ;;
 prune) cmd_prune ;;
-list) cmd_list ;;
+list | ls) cmd_list ;;
 status) cmd_status "$@" ;;
 diff) cmd_diff "$@" ;;
 install) cmd_install "$@" ;;

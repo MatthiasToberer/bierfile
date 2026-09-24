@@ -30,8 +30,14 @@ stays full: ripgrep is something *mini* has on top, and nothing macbook
 is supposed to have. `bier list` shows it:
 
 ```
-On top of main, and where:
-  brew "ripgrep"                               mini
+Every Mac (main)
+  …
+
+Only on macbook (this Mac)
+  …
+
+Only on mini
+  ripgrep                          formula
 ```
 
 To have it everywhere, move it into the shared list:

@@ -23,17 +23,15 @@ bier list
 ```
 
 ```
-Brewfiles/main: 138 entries, applies to every device
+Every Mac (main)
+  …
 
-Device               on top
-  macbook                  2
-  mini                     0
-  studio                   3   (this Mac)
+Only on studio (this Mac)
+  davinci-resolve                  app
 
-On top of main, and where:
-  cask "davinci-resolve"                       studio
-  cask "font-meslo-lg-nerd-font"               macbook
-  mas "WireGuard"                              macbook
+Only on macbook
+  font-meslo-lg-nerd-font          app
+  WireGuard                        App Store
 ```
 
 The other two Macs do **not** nag about Resolve — it is not in the shared
