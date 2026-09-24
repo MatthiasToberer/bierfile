@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.41.0
+BIER_VERSION=0.41.1
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -2355,6 +2355,9 @@ vault_report() {
 		if [ "$out" = denied ]; then
 			printf 'VAULT_DENIED\t%s\n' "$label"
 			continue
+		elif [ "$out" = busy ]; then
+			printf 'VAULT_WAIT\t%s\t%s\n' "$label" "$(vault_busy "$label")"
+			continue
 		elif [ "$out" = both ] || { [ -n "$out" ] && [ "$out" != large ] && [ -n "$in" ]; }; then
 			printf 'VAULT_BOTH\t%s\n' "$label"
 		elif [ "$out" = large ]; then
@@ -3356,6 +3359,12 @@ vault_outgoing() {
 		echo denied
 		return 0
 	fi
+	# A running app may be writing its settings right now, and writes
+	# them again when it quits: taken now, half a state could travel.
+	if vault_busy "$target" >/dev/null; then
+		echo busy
+		return 0
+	fi
 	if [ -f "$target" ]; then
 		if [ ! -f "$enc" ]; then
 			# Deleted on another Mac: that is for opening to sort out.
@@ -3428,6 +3437,13 @@ vault_seal() {
 		what=$(vault_outgoing "$rel")
 		[ -z "$what" ] || printf '%s\t%s\n' "$what" "$rel"
 	done >"$work"
+	# Said once per app, not once per file.
+	{ grep "^busy$(printf '\t')" "$work" || true; } | cut -f2 | while IFS= read -r rel; do
+		vault_busy "$(vault_target "$rel")"
+		echo
+	done | sort -u | while IFS= read -r app; do
+		[ -z "$app" ] || info "waiting: $app is running; its settings are shared once it has quit"
+	done
 	grep -qE '^(new|changed|deleted)'$'\t' "$work" || return 0
 
 	pass=$(vault_pass)

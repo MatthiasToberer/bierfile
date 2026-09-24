@@ -79,9 +79,9 @@ files do not compress against each other. So:
 
 ## Apps that are running
 
-An app writes its settings back when it quits — over whatever bier put
-there in the meantime. So bier does not write into the settings of a
-running app, under `~/Library/Containers/<app>`,
+A running app may be writing its settings at any moment, and writes
+them back when it quits — over whatever bier put there in the meantime.
+So bier neither takes nor writes the settings of a running app, under `~/Library/Containers/<app>`,
 `~/Library/Application Support/<App>` or
 `~/Library/Preferences/<app>.plist`. `bier status` shows
 
@@ -89,7 +89,8 @@ running app, under `~/Library/Containers/<app>`,
   .  vault            ~/Library/Application Support/HandBrake/presets.json waiting: HandBrake is running
 ```
 
-and the first sync after quitting the app applies it. A sandboxed app
+and the first sync after quitting the app shares or applies it. Quit an
+app before syncing its settings. A sandboxed app
 that has never run on this Mac has no container yet; bier starts it
 once, hidden, so that macOS sets one up, quits it, and then puts the
 settings in. Preference files

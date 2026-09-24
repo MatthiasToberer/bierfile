@@ -78,6 +78,20 @@ assert_contains "$OUT" "moved to the Trash: $WORK/home-macbook/$app/Presets/fast
 [ ! -e "$WORK/home-macbook/$app/Presets/fast.json" ] || fail "the deleted file must be gone"
 assert_eq '{"preset":"fast"}' "$(cat "$WORK/trash-macbook/fast.json")" "and be in the Trash"
 
+# While the app runs here, its settings are not taken: it may be writing
+# them, and writes them again when it quits.
+printf 'window=running\n' >"$WORK/home-mini/$app/settings.ini"
+BIER_TEST_RUNNING=TestApp
+export BIER_TEST_RUNNING
+bier mini status
+assert_contains "$OUT" "settings.ini waiting: TestApp is running"
+assert_ok bier mini sync
+assert_contains "$OUT" "waiting: TestApp is running; its settings are shared once it has quit"
+unset BIER_TEST_RUNNING
+assert_ok bier macbook sync
+assert_eq 'window=1' "$(cat "$WORK/home-macbook/$app/settings.ini")" "nothing taken while the app ran"
+printf 'window=1\n' >"$WORK/home-mini/$app/settings.ini"
+
 # While the app runs, nothing is written into its folder.
 printf 'window=2\n' >"$WORK/home-mini/$app/settings.ini"
 assert_ok bier mini sync
