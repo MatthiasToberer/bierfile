@@ -12,10 +12,13 @@ it on a list and commits:
 - `m` / `--main` — into `main`, for every Mac;
 - `h` / `--here` — only onto this Mac's list.
 
-For an app, bier then looks where it keeps its settings — its sandbox
-container, `~/Library/Application Support`, `~/Library/Preferences` —
-and for a command-line tool in `~/.config/<name>`, and offers to share
-what it finds:
+For an app, bier then looks where it keeps its settings: in the places
+Homebrew's *zap* list names for the cask — everything the app leaves
+outside `/Applications`, kept by hand for thousands of apps —, in its
+sandbox container, `~/Library/Application Support` and
+`~/Library/Preferences`; for a command-line tool in `~/.config/<name>`.
+Caches, logs, web data, window state and recent-file lists are left out.
+It offers what exists on this Mac, with its size:
 
 ```
 HandBrake keeps its settings here:

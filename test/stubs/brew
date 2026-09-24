@@ -146,7 +146,9 @@ info)
 	name=${1:?}
 	if [ "$kind" != brew ] && line=$(grep "^$name " "${WORK:?}/brew-casks" 2>/dev/null); then
 		if [ "$json" = yes ]; then
-			printf '{"casks":[{"token":"%s","artifacts":[{"app":["%s"]}]}]}\n' "$name" "${line#* }"
+			# $WORK/brew-zap: "token path" per line, the cask's zap list.
+			zap=$(awk -v t="$name" '$1 == t { sub(/^[^ ]+ /, ""); printf "%s\"%s\"", (n++ ? "," : ""), $0 }' "$WORK/brew-zap" 2>/dev/null || true)
+			printf '{"casks":[{"token":"%s","artifacts":[{"app":["%s"]},{"zap":[{"trash":[%s]}]}]}]}\n' "$name" "${line#* }" "$zap"
 		else
 			echo "==> $name"
 		fi

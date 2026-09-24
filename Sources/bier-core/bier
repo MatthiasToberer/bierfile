@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.41.1
+BIER_VERSION=0.42.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -1909,6 +1909,30 @@ add_app_path() {
 	return 1
 }
 
+# Homebrew's zap list names what a cask leaves outside /Applications --
+# kept by hand for thousands of apps. What of it is not a setting (caches,
+# logs, web data, window state, recent files) is left out; a sandbox
+# container is looked into for its preferences and Application Support.
+add_zap_settings() {
+	local path dir
+	brew info --cask --json=v2 "$1" 2>/dev/null | grep -oE '"~/[^"*]+"' | tr -d '"' |
+		sed "s#^~#$HOME#" | sort -u | while IFS= read -r path; do
+		case $path in
+		*/Caches | */Caches/* | */Logs | */Logs/* | */HTTPStorages* | */WebKit | */WebKit/* | \
+			*"/Saved Application State"* | */Cookies* | *com.apple.sharedfilelist* | \
+			*"/Application Scripts"* | */LaunchAgents/* | *.savedState) continue ;;
+		"$HOME"/Library/Containers/*/*) printf '%s\n' "$path" ;;
+		"$HOME"/Library/Containers/*)
+			printf '%s\n' "$path/Data/Library/Preferences/${path##*/}.plist"
+			for dir in "$path/Data/Library/Application Support"/*; do
+				[ ! -d "$dir" ] || printf '%s\n' "$dir"
+			done
+			;;
+		*) printf '%s\n' "$path" ;;
+		esac
+	done
+}
+
 # Where an app keeps its settings, as far as the usual places go: its
 # container, Application Support, Preferences -- or ~/.config/<name> for
 # a command-line tool. Only what exists here is offered.
@@ -1932,12 +1956,18 @@ add_settings() {
 			[ -e "$path" ] && found="$found$path
 "
 		done
+		while IFS= read -r path; do
+			[ -n "$path" ] && [ -e "$path" ] && found="$found$path
+"
+		done <<EOF
+$(add_zap_settings "$name")
+EOF
 	else
 		label=$name
 		[ ! -d "$HOME/.config/$name" ] || found="$HOME/.config/$name
 "
 	fi
-	found=$(printf '%s' "$found" | grep -v '^$' || true)
+	found=$(printf '%s' "$found" | grep -v '^$' | awk '!seen[$0]++' || true)
 	[ -n "$found" ] || return 0
 	# What is shared already is not offered again.
 	local shared="" fresh=""
@@ -2939,7 +2969,7 @@ vault_excluded() {
 	.DS_Store | *.lock | *.log | *[Ll]og.txt | .bier-folder) return 0 ;;
 	esac
 	case "/$1" in
-	*/Cache/* | */Caches/* | */Logs/* | */.git/*) return 0 ;;
+	*/*[Cc]ache*/* | */*CACHE*/* | */[Ll]ogs/* | */.git/*) return 0 ;;
 	esac
 	# More of an app's own noise, from the config: vault_exclude =
 	# *.hbqueue Recent*

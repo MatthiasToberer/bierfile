@@ -72,8 +72,9 @@ files do not compress against each other. So:
 - files larger than `vault_max_file` (10 MB unless set in the
   [config](../reference/configuration.md)) are not taken in, and `bier
   status` names them;
-- `.DS_Store`, `*.lock`, `*.log`, `*log.txt` and folders called `Cache`,
-  `Caches`, `Logs` or `.git` are left out, and whatever `vault_exclude`
+- `.DS_Store`, `*.lock`, `*.log`, `*log.txt`, folders whose name
+  contains `cache` in any spelling, and folders called `Logs`, `logs` or
+  `.git` are left out, and whatever `vault_exclude`
   in the config names — an app's own noise, such as HandBrake's queue:
   `vault_exclude = *.hbqueue`.
 

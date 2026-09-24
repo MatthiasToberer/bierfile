@@ -23,6 +23,9 @@ printf '{"preset":"fast"}\n' >"$WORK/home-mini/$app/Presets/fast.json"
 printf 'window=1\n' >"$WORK/home-mini/$app/settings.ini"
 printf 'noise\n' >"$WORK/home-mini/$app/Caches/blob"
 printf 'noise\n' >"$WORK/home-mini/$app/.DS_Store"
+mkdir -p "$WORK/home-mini/$app/GPUCache" "$WORK/home-mini/$app/logs"
+printf 'noise\n' >"$WORK/home-mini/$app/GPUCache/data"
+printf 'noise\n' >"$WORK/home-mini/$app/logs/today"
 printf 'noise\n' >"$WORK/home-mini/$app/TestApp-activitylog.txt"
 printf 'noise\n' >"$WORK/home-mini/$app/Queue.hbqueue"
 printf 'vault_exclude = *.hbqueue\n' >>"$WORK/home-mini/.barrel/config"
@@ -39,7 +42,7 @@ assert_contains "$OUT" "huge.bin not taken: larger than vault_max_file"
 assert_ok bier macbook sync
 assert_eq '{"preset":"fast"}' "$(cat "$WORK/home-macbook/$app/Presets/fast.json")"
 assert_eq 'window=1' "$(cat "$WORK/home-macbook/$app/settings.ini")"
-for left_out in Caches/blob .DS_Store huge.bin TestApp-activitylog.txt Queue.hbqueue; do
+for left_out in Caches/blob .DS_Store huge.bin TestApp-activitylog.txt Queue.hbqueue GPUCache/data logs/today; do
 	[ ! -e "$WORK/home-macbook/$app/$left_out" ] || fail "$left_out must stay out"
 done
 
