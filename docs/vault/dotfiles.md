@@ -79,8 +79,15 @@ running app, under `~/Library/Containers/<app>`,
 ```
 
 and the first sync after quitting the app applies it. Preference files
-are written through `defaults import`, so the system's preferences cache
-picks them up.
+— in `~/Library/Preferences` or in an app's container — are written
+through `defaults import`, so the system's preferences cache picks them
+up.
+
+Settings inside `~/Library/Containers` are protected by macOS: a program
+needs permission to read another app's data. Allow it when macOS asks
+for your terminal, or give it — and `~/.barrel/BierMenu.app`, which
+applies changes on its own — access under System Settings › Privacy &
+Security › Full Disk Access.
 
 ## When it changes
 

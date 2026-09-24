@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.38.1
+BIER_VERSION=0.38.2
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -2748,9 +2748,11 @@ vault_put() {
 	local plain=$1 target=$2 mode=""
 	mkdir -p "$(dirname "$target")"
 	case $target in
-	"$HOME"/Library/Preferences/*.plist)
+	"$HOME"/Library/Preferences/*.plist | "$HOME"/Library/Containers/*/Data/Library/Preferences/*.plist)
+		# Given as a path, defaults reaches a sandboxed app's own
+		# preferences in its container too.
 		if [ -z "${BIER_TEST_RUNNING+set}" ]; then
-			defaults import "$(basename "$target" .plist)" "$plain" && return 0
+			defaults import "${target%.plist}" "$plain" && return 0
 		fi
 		;;
 	esac
