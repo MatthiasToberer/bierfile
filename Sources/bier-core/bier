@@ -2021,9 +2021,12 @@ cmd_list() {
 #
 #   SEND        <peer> <n|never>  own commits that peer has not had yet
 #   UNCOMMITTED <path>            a Brewfile changed and not committed
-#   VAULT_OUT   <file>            changed here, goes out with the sync
-#   VAULT_IN    <file>            a peer delivered it, the sync opens it
+#   VAULT_OUT   <file> <how>      new, changed or deleted here; goes out
+#   VAULT_IN    <file> <how>      new, changed, deleted or forgotten
+#                                 elsewhere; the sync applies it
+#   VAULT_WAIT  <file> <app>      incoming, but the app is running
 #   VAULT_BOTH  <file>            changed here and in the safe
+#   VAULT_LARGE <file>            larger than vault_max_file, not taken
 #   VAULT_LEFT  <path>            a .from-safe copy from a conflict
 sync_report() {
 	local peer sent n
@@ -2047,63 +2050,42 @@ sync_report() {
 }
 
 vault_report() {
-	local rel f enc cur base out in label target copy
-	{
-		[ ! -d "$VAULT" ] || find "$VAULT" -type f -print 2>/dev/null | sed "s#^$VAULT/##"
-		[ ! -d "$SAFE_DIR" ] || find "$SAFE_DIR" -name '*.gpg' -type f -print 2>/dev/null |
-			sed -e "s#^$SAFE_DIR/##" -e 's#\.gpg$##'
-	} | sort -u | while IFS= read -r rel; do
-		[ -n "$rel" ] && [ "$rel" != README.txt ] || continue
+	local rel out in label target copy app
+	vault_known | while IFS= read -r rel; do
 		vault_wanted "$rel" || continue
-		f=$VAULT/$rel
-		enc=$SAFE_DIR/$rel.gpg
-		out=no
-		in=no
-		if [ -f "$f" ]; then
-			cur=$(vault_hash "$f")
-			base=$(vault_base_get "$rel")
-			if [ ! -f "$enc" ] || { [ -n "$base" ] && [ "$cur" != "$base" ]; }; then
-				out=yes
-			fi
+		out=$(vault_outgoing "$rel")
+		in=$(vault_incoming "$rel")
+		if vault_is_meta "$rel"; then
+			# A folder's marker says nothing a person needs to read.
+			case $rel in */.bier-folder) continue ;; esac
+			label=$rel
+		else
+			label=$(vault_target "$rel")
 		fi
-		if [ -f "$enc" ]; then
-			if [ ! -f "$f" ]; then
-				in=yes
-			else
-				base=$(vault_base_get_safe "$rel")
-				[ -z "$base" ] || [ "$(shasum -a 256 "$enc" | cut -d' ' -f1)" = "$base" ] || in=yes
-			fi
-		fi
-		if vault_is_meta "$rel"; then label=$rel; else label=$(vault_target "$rel"); fi
-		if [ "$out" = yes ] && [ "$in" = yes ]; then
+		if [ "$out" = both ] || { [ -n "$out" ] && [ "$out" != large ] && [ -n "$in" ]; }; then
 			printf 'VAULT_BOTH\t%s\n' "$label"
-		elif [ "$out" = yes ]; then
-			printf 'VAULT_OUT\t%s\n' "$label"
-		elif [ "$in" = yes ]; then
-			printf 'VAULT_IN\t%s\n' "$label"
+		elif [ "$out" = large ]; then
+			printf 'VAULT_LARGE\t%s\n' "$label"
+		elif [ -n "$out" ]; then
+			printf 'VAULT_OUT\t%s\t%s\n' "$label" "$out"
+		elif [ -n "$in" ]; then
+			if [ "$in" != forgotten ] && ! vault_is_meta "$rel" && app=$(vault_busy "$label"); then
+				printf 'VAULT_WAIT\t%s\t%s\n' "$label" "$app"
+			else
+				printf 'VAULT_IN\t%s\t%s\n' "$label" "$in"
+			fi
 		fi
 		vault_is_meta "$rel" && continue
 		target=$(vault_target "$rel")
 		for copy in "$target.from-safe" "$target.from-safe."*; do
 			[ ! -e "$copy" ] || printf 'VAULT_LEFT\t%s\n' "$copy"
 		done
-	done
+	done | awk '!seen[$0]++'
 }
 
 cmd_status() {
 	need_brew
 	need_repo
-
-	local trouble
-	trouble=$(vault_trouble)
-	if [ -n "$trouble" ]; then
-		printf '%s\n' "$trouble" | sed -n 's/^DEAD\t/  ! link points nowhere: /p'
-		printf '%s\n' "$trouble" | sed -n 's/^MISSING\t/  ! link points nowhere, the file is gone: /p'
-		printf '%s\n' "$trouble" | sed -n 's/^GONE\t/  ! link is missing: /p'
-		printf '%s\n' "$trouble" | sed -n 's/^LOOSE\t/  ! no longer a link: /p'
-		info "    bier vault --restore puts the links back."
-		info ""
-	fi
 
 	local pending
 	pending=$(sync_report)
@@ -2113,8 +2095,16 @@ cmd_status() {
 			$1 == "SEND" && $3 == "never" { printf "  -> to %-14s never synced\n", $2; next }
 			$1 == "SEND"        { printf "  -> to %-14s %s commit(s) from here not sent yet\n", $2, $3; next }
 			$1 == "UNCOMMITTED" { printf "  ^  Brewfiles        %s changed, not committed\n", $2; next }
+			$1 == "VAULT_OUT" && $3 == "new"     { printf "  ^  vault            %s new here\n", $2; next }
+			$1 == "VAULT_OUT" && $3 == "deleted" { printf "  ^  vault            %s deleted here\n", $2; next }
 			$1 == "VAULT_OUT"   { printf "  ^  vault            %s changed here\n", $2; next }
+			$1 == "VAULT_IN" && $3 == "new"       { printf "  v  vault            %s new from another Mac\n", $2; next }
+			$1 == "VAULT_IN" && $3 == "deleted"   { printf "  v  vault            %s deleted on another Mac, goes to the Trash\n", $2; next }
+			$1 == "VAULT_IN" && $3 == "check"     { printf "  v  vault            %s to be compared with the safe\n", $2; next }
+			$1 == "VAULT_IN" && $3 == "forgotten" { printf "  v  vault            %s no longer synced, stays here\n", $2; next }
 			$1 == "VAULT_IN"    { printf "  v  vault            %s newer in the safe\n", $2; next }
+			$1 == "VAULT_WAIT"  { printf "  .  vault            %s waiting: %s is running\n", $2, $3; next }
+			$1 == "VAULT_LARGE" { printf "  !  vault            %s not taken: larger than vault_max_file\n", $2; next }
 			$1 == "VAULT_BOTH"  { printf "  !  vault            %s changed here and in the safe\n", $2; next }
 			$1 == "VAULT_LEFT"  { printf "  !  vault            %s left from a conflict: merge it, then delete it\n", $2; next }'
 		info ""
@@ -2611,66 +2601,222 @@ cmd_group() {
 	info "$name = $*"
 }
 
-# Moves the file into the vault and leaves a link behind, so it goes on
-# living where the program that reads it expects it.
+# --- Copy mode --------------------------------------------------------------
+#
+# Every file stays a real file where it belongs. The vault holds a copy,
+# the safe the encrypted version, and $STATE_DIR/vault-base what this Mac
+# and the safe last agreed on. Links used to stand in for the files;
+# sandboxed apps would not follow them, apps that save atomically replaced
+# them, and removing bier's folder would have taken the files along.
+#
+# A tracked folder is marked by <folder>/.bier-folder in the vault and in
+# the safe. Files put in it later come along with the next sync, files
+# deleted from it go to the Trash on the other Macs.
+
+# Left out of a tracked folder: noise that changes all the time and is
+# no setting of anybody's. $1 is the path inside the folder.
+vault_excluded() {
+	case ${1##*/} in
+	.DS_Store | *.lock | *.log | .bier-folder) return 0 ;;
+	esac
+	case "/$1" in
+	*/Cache/* | */Caches/* | */Logs/* | */.git/*) return 0 ;;
+	esac
+	return 1
+}
+
+vault_max_bytes() {
+	local v=${BIER_VAULT_MAX_FILE:-$(config_get vault_max_file)}
+	v=${v:-10M}
+	case $v in
+	*[0-9][Kk]) printf '%s' $((${v%?} * 1024)) ;;
+	*[0-9][Mm]) printf '%s' $((${v%?} * 1048576)) ;;
+	*[0-9][Gg]) printf '%s' $((${v%?} * 1073741824)) ;;
+	*[!0-9]* | "") die "vault_max_file must be a size such as 10M, not '$v'" ;;
+	*) printf '%s' "$v" ;;
+	esac
+}
+
+# Every version of every file stays in the history on every Mac, and
+# encrypted files do not compress against each other. The vault is for
+# settings, not for documents.
+vault_too_large() {
+	[ "$(stat -f %z "$1")" -gt "$(vault_max_bytes)" ]
+}
+
+# A copy of a file about to be overwritten or taken in, unless the config
+# says vault_backup = no.
+vault_backup() {
+	local src=$1 rel dest
+	[ -f "$src" ] || return 0
+	case $(config_get vault_backup) in
+	no | off | false) return 0 ;;
+	esac
+	case $src in
+	"$HOME"/*) rel=${src#"$HOME"/} ;;
+	*) rel=${src#/} ;;
+	esac
+	dest=$STATE_DIR/backups/$(date +%Y-%m-%d)/$rel
+	[ ! -e "$dest" ] || dest=$dest.$(date +%H%M%S)
+	mkdir -p "$(dirname "$dest")"
+	cp -p "$src" "$dest"
+}
+
+# Into the Trash, where Finder's "Put Back" can undo it.
+vault_trash() {
+	local src=$1 dest n=2
+	if [ -n "${BIER_TRASH_DIR:-}" ]; then
+		mkdir -p "$BIER_TRASH_DIR"
+		dest=$BIER_TRASH_DIR/$(basename "$src")
+	elif [ -x /usr/bin/trash ] && /usr/bin/trash "$src" >/dev/null 2>&1; then
+		return 0
+	else
+		mkdir -p "$HOME/.Trash"
+		dest=$HOME/.Trash/$(basename "$src")
+	fi
+	while [ -e "$dest" ]; do
+		dest=${dest%.[0-9]*}.$n
+		n=$((n + 1))
+	done
+	mv "$src" "$dest"
+}
+
+# The app a path belongs to, printed when that app is running. An app
+# writes its settings back when it quits, over whatever bier put there.
+vault_busy() {
+	local p=$1 id="" name=""
+	case $p in
+	"$HOME"/Library/Containers/*)
+		id=${p#"$HOME"/Library/Containers/}
+		id=${id%%/*}
+		;;
+	"$HOME"/Library/Preferences/*.plist) id=$(basename "$p" .plist) ;;
+	"$HOME/Library/Application Support/"*)
+		name=${p#"$HOME/Library/Application Support/"}
+		name=${name%%/*}
+		;;
+	*) return 1 ;;
+	esac
+	if [ -n "${BIER_TEST_RUNNING+set}" ]; then
+		[ -n "$BIER_TEST_RUNNING" ] || return 1
+		[ "$BIER_TEST_RUNNING" = "$id" ] || [ "$BIER_TEST_RUNNING" = "$name" ] || return 1
+	elif [ -n "$id" ]; then
+		[ -n "$(lsappinfo find bundleid="$id" 2>/dev/null)" ] || return 1
+	else
+		pgrep -x "$name" >/dev/null 2>&1 || return 1
+	fi
+	printf '%s' "$id$name"
+}
+
+# A file from the safe into its place. Written next to it and moved over,
+# so nothing reads half a file; preference files go through cfprefsd,
+# which would otherwise keep serving what it has cached.
+vault_put() {
+	local plain=$1 target=$2 mode=""
+	mkdir -p "$(dirname "$target")"
+	case $target in
+	"$HOME"/Library/Preferences/*.plist)
+		if [ -z "${BIER_TEST_RUNNING+set}" ]; then
+			defaults import "$(basename "$target" .plist)" "$plain" && return 0
+		fi
+		;;
+	esac
+	[ ! -f "$target" ] || mode=$(stat -f %Lp "$target")
+	cp "$plain" "$target.bier-new"
+	[ -z "$mode" ] || chmod "$mode" "$target.bier-new"
+	mv "$target.bier-new" "$target"
+}
+
+# Takes a file or a folder in. The original stays where it is; the vault
+# gets a copy.
 vault_add() {
-	local src=$1 scope=${2:-} name dest
+	local src=${1%/} scope=${2:-} name dest f inner taken=0 large=""
 	case $src in
 	"$HOME"/*) ;;
 	*) die "only files below $HOME can go into the vault: $src" ;;
 	esac
+	case $src/ in
+	"$VAULT"/* | "$DATA"/* | "$STATE_DIR"/*) die "$src is bier's own" ;;
+	esac
 	[ -e "$src" ] || die "$src does not exist"
-	[ ! -L "$src" ] || die "$src is already a link -- in the vault already?"
-	if [ -d "$src" ]; then
-		local f
-		# A directory is taken in file by file. Moving it whole would
-		# leave the link on the folder, and anything written into it
-		# later would silently stay outside the vault.
-		find "$src" -type f -print | while IFS= read -r f; do
-			vault_add "$f" "$scope"
-		done
-		return 0
-	fi
-	[ -f "$src" ] || die "$src is neither a file nor a directory"
+	[ ! -L "$src" ] || die "$src is a link -- add what it points to"
 
 	name=$(vault_name "$src")
 	[ -z "$scope" ] || name=@$scope/$name
+	if [ -d "$src" ]; then
+		[ ! -e "$VAULT/$name/.bier-folder" ] || die "$name is already in the vault"
+		mkdir -p "$VAULT/$name"
+		: >"$VAULT/$name/.bier-folder"
+		rm -f "$SAFE_DIR/$name/.bier-folder.forgotten"
+		while IFS= read -r f; do
+			inner=${f#"$src"/}
+			vault_excluded "$inner" && continue
+			if vault_too_large "$f"; then
+				large="$large
+  $f"
+				continue
+			fi
+			taken=$((taken + 1))
+		done <<EOF
+$(find "$src" -type f -print)
+EOF
+		info "$name/   <-  $src"
+		info "  $(count_word "$taken") now, and whatever is put in it later"
+		[ -z "$large" ] || info "  not taken, larger than vault_max_file:$large"
+		return 0
+	fi
+	[ -f "$src" ] || die "$src is neither a file nor a folder"
 	dest=$VAULT/$name
 	[ ! -e "$dest" ] || die "$name is already in the vault"
-
+	! vault_too_large "$src" ||
+		die "$src is larger than vault_max_file. The vault is for settings,
+     not for documents: every version stays in the history on every Mac."
+	vault_backup "$src"
 	mkdir -p "$(dirname "$dest")"
-	mv "$src" "$dest"
-	ln -s "$dest" "$src"
+	cp -p "$src" "$dest"
+	rm -f "$SAFE_DIR/$name.forgotten"
 	info "$name   <-  $src"
 }
 
-# Takes it back out: the real file returns to its place, and the
-# encrypted copy goes. The file stays on this Mac -- that is the whole
-# difference to drop.
-vault_forget() {
-	local src=$1 name dest
-	name=$(vault_name "$src")
-	dest=$VAULT/$name
-	[ -e "$dest" ] || die "$name is not in the vault"
-	rm -f "$src"
-	mv "$dest" "$src"
-	rm -f "$SAFE_DIR/$name.gpg"
-	info "$src is a plain file again"
+# The entries a path names: the file itself, or everything in a folder
+# and its marker. Scoped entries (@group/...) are found as well.
+vault_entries_for() {
+	local name
+	name=$(vault_name "${1%/}")
+	vault_known | while IFS= read -r rel; do
+		case $(vault_strip_scope "$rel") in
+		"$name" | "$name"/*) printf '%s\n' "$rel" ;;
+		esac
+	done
 }
 
-# Gone everywhere: out of the vault, out of the safe, and the link at
-# the destination goes too. Unlike forget, this does not leave a file
-# behind -- so it asks first.
-vault_drop() {
-	local src=$1 name dest answer
-	name=$(vault_name "$src")
-	dest=$VAULT/$name
-	[ -e "$dest" ] || die "$name is not in the vault"
+# Stops syncing it; the file stays on every Mac. The .forgotten marker
+# tells the other Macs to stop too instead of moving it to the Trash.
+vault_forget() {
+	local src=$1 rel n=0
+	while IFS= read -r rel; do
+		[ -n "$rel" ] || continue
+		rm -f "$VAULT/$rel" "$SAFE_DIR/$rel.gpg"
+		mkdir -p "$(dirname "$SAFE_DIR/$rel")"
+		: >"$SAFE_DIR/$rel.forgotten"
+		vault_base_del "$rel"
+		n=$((n + 1))
+	done <<EOF
+$(vault_entries_for "$src")
+EOF
+	[ "$n" -gt 0 ] || die "$src is not in the vault"
+	find "$VAULT" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+	info "$src is no longer synced; it stays where it is, here and on the other Macs"
+}
 
-	info "This deletes $name everywhere: here, in the safe, and on every"
-	info "other Mac at its next sync. git history keeps the encrypted"
-	info "copies, but nothing else will."
-	printf 'Delete it? [y/N] '
+# Gone everywhere: here it goes to the Trash, and the other Macs move
+# theirs there at their next sync. Asks first.
+vault_drop() {
+	local src=${1%/} rel answer
+	[ -n "$(vault_entries_for "$src")" ] || die "$src is not in the vault"
+	info "This removes $src everywhere: here and on every other Mac at its"
+	info "next sync, into the Trash. git history keeps the encrypted copies."
+	printf 'Remove it? [y/N] '
 	read -r answer || answer=""
 	case $answer in
 	j | J | y | Y) ;;
@@ -2679,41 +2825,16 @@ vault_drop() {
 		return 0
 		;;
 	esac
-
-	rm -f "$dest" "$SAFE_DIR/$name.gpg"
-	[ ! -L "$src" ] || rm -f "$src"
-	git -C "$DATA" rm -q --ignore-unmatch "Safe/$name.gpg" >/dev/null 2>&1 || true
-	info "$name is gone."
-}
-
-# What is wrong with the links. Both sides have to be walked: a dead
-# link is precisely the case where the vault file is gone, so looking
-# only at the vault would find nothing to complain about. And a dead
-# link is the dangerous one -- zsh falls back to its defaults and you
-# notice in three weeks.
-vault_trouble() {
-	local rel target
-	{
-		[ ! -d "$SAFE_DIR" ] ||
-			find "$SAFE_DIR" -name '*.gpg' -type f -print 2>/dev/null |
-			sed -e "s#^$SAFE_DIR/##" -e 's#\.gpg$##'
-		[ ! -d "$VAULT" ] ||
-			find "$VAULT" -type f -print 2>/dev/null | sed -e "s#^$VAULT/##"
-	} | sort -u | while IFS= read -r rel; do
+	while IFS= read -r rel; do
 		[ -n "$rel" ] || continue
-		vault_is_meta "$rel" && continue
-		vault_wanted "$rel" || continue
-		target=$(vault_target "$rel")
-		if [ ! -f "$VAULT/$rel" ]; then
-			printf 'MISSING\t%s\n' "$target"
-		elif [ -L "$target" ]; then
-			[ -e "$target" ] || printf 'DEAD\t%s\n' "$target"
-		elif [ -e "$target" ]; then
-			printf 'LOOSE\t%s\n' "$target"
-		else
-			printf 'GONE\t%s\n' "$target"
-		fi
-	done
+		rm -f "$VAULT/$rel" "$SAFE_DIR/$rel.gpg"
+		vault_base_del "$rel"
+	done <<EOF
+$(vault_entries_for "$src")
+EOF
+	find "$VAULT" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+	[ ! -e "$src" ] || vault_trash "$src"
+	info "$src is gone, into the Trash."
 }
 
 # Next to the data, not only in a manual that may not be there any more.
@@ -2736,67 +2857,6 @@ files.
 NOTE
 }
 
-# Puts the link at its destination. Four cases, and only one of them
-# used to be handled:
-#
-#   nothing there      link it
-#   our own link       done already
-#   a plain file       keep it as .backup, then link
-#   somebody's link    leave it alone and say so
-#
-# The third is the normal case on the second Mac -- every Mac has a
-# .zshrc -- and it used to mean nothing happened at all: no link, no
-# word, and the file sitting decrypted in the vault where nobody looks.
-vault_link() {
-	local src=$1 target=$2 backup n
-
-	if [ -L "$target" ]; then
-		[ "$(readlink "$target")" != "$src" ] || return 0
-		info "left alone: $target is a link to somewhere else"
-		return 0
-	fi
-
-	mkdir -p "$(dirname "$target")"
-
-	if [ -e "$target" ]; then
-		if cmp -s "$target" "$src"; then
-			# Identical, so there is nothing a backup could save.
-			rm -f "$target"
-			ln -s "$src" "$target"
-			info "linked: $target (was the same file)"
-			return 0
-		fi
-		backup=$target.backup
-		n=2
-		while [ -e "$backup" ]; do
-			backup=$target.backup.$n
-			n=$((n + 1))
-		done
-		mv "$target" "$backup"
-		info "kept: $backup"
-	fi
-
-	ln -s "$src" "$target"
-	info "linked: $target"
-}
-
-# Two different questions, and putting them in one answer cost a whole
-# test to find.
-#
-# What has to be sealed: everything except the README, which explains
-# the folder and is the same on every Mac. .groups does travel -- a
-# group changed on a Mac with no files of its own would otherwise never
-# leave it, and would be overwritten by the old version on the way back.
-vault_sealable() {
-	[ -d "$VAULT" ] || return 0
-	local f rel
-	find "$VAULT" -type f -print 2>/dev/null | while IFS= read -r f; do
-		rel=${f#"$VAULT"/}
-		[ "$rel" != "README.txt" ] || continue
-		printf '%s\n' "$rel"
-	done
-}
-
 # What belongs to the user, for counting out loud. bier's own files are
 # none of their business.
 vault_own_files() {
@@ -2809,17 +2869,130 @@ vault_own_files() {
 	done
 }
 
-# vault -> Safe, encrypting only what really changed. gpg writes
-# different bytes every time, so re-encrypting everything would make a
-# commit out of every single run.
-vault_seal() {
-	local pass f rel enc old cur safe base
+# Every entry this Mac knows of: in the safe, in the vault, agreed on
+# before, or found in a tracked folder. Sorted, once each.
+vault_known() {
+	local f marker folder target inner
+	{
+		[ ! -d "$SAFE_DIR" ] || find "$SAFE_DIR" -name '*.gpg' -type f -print 2>/dev/null |
+			sed -e "s#^$SAFE_DIR/##" -e 's#\.gpg$##'
+		[ ! -d "$VAULT" ] || find "$VAULT" -type f -print 2>/dev/null | sed "s#^$VAULT/##"
+		[ ! -f "$STATE_DIR/vault-base" ] || cut -f2 "$STATE_DIR/vault-base"
+		{
+			[ ! -d "$SAFE_DIR" ] || find "$SAFE_DIR" -name '.bier-folder.gpg' -print 2>/dev/null |
+				sed -e "s#^$SAFE_DIR/##" -e 's#/\.bier-folder\.gpg$##'
+			[ ! -d "$VAULT" ] || find "$VAULT" -name '.bier-folder' -print 2>/dev/null |
+				sed -e "s#^$VAULT/##" -e 's#/\.bier-folder$##'
+		} | sort -u | while IFS= read -r folder; do
+			[ -n "$folder" ] || continue
+			vault_wanted "$folder" || continue
+			target=$(vault_target "$folder")
+			[ -d "$target" ] || continue
+			find "$target" -type f -print 2>/dev/null | while IFS= read -r f; do
+				inner=${f#"$target"/}
+				vault_excluded "$inner" && continue
+				printf '%s/%s\n' "$folder" "$(printf '%s' "$inner" | sed -e 's#^\.#dot_#' -e 's#/\.#/dot_#g')"
+			done
+		done
+	} | grep -v '^README.txt$' | grep -v '^$' | sort -u || true
+}
+
+sha_of() { shasum -a 256 "$1" | cut -d' ' -f1; }
+
+# What sealing would do with one entry, without the passphrase:
+# new, changed, deleted, both (changed here and in the safe), large,
+# or nothing.
+vault_outgoing() {
+	local rel=$1 target src enc base encb
+	enc=$SAFE_DIR/$rel.gpg
+	base=$(vault_base_get "$rel")
+	encb=$(vault_base_get_safe "$rel")
+	if vault_is_meta "$rel"; then
+		src=$VAULT/$rel
+		[ -f "$src" ] || return 0
+		if [ ! -f "$enc" ]; then
+			echo new
+		elif [ -n "$base" ] && [ "$(vault_hash "$src")" != "$base" ]; then
+			if [ "$(sha_of "$enc")" = "$encb" ]; then echo changed; else echo both; fi
+		fi
+		return 0
+	fi
+	target=$(vault_target "$rel")
+	[ ! -L "$target" ] || return 0
+	if [ -f "$target" ]; then
+		if [ ! -f "$enc" ]; then
+			# Deleted on another Mac: that is for opening to sort out.
+			[ -z "$base" ] || return 0
+			if vault_too_large "$target"; then echo large; else echo new; fi
+		elif [ -n "$base" ] && [ "$(vault_hash "$target")" != "$base" ]; then
+			if [ "$(sha_of "$enc")" != "$encb" ]; then
+				echo both
+			elif vault_too_large "$target"; then
+				echo large
+			else
+				echo changed
+			fi
+		fi
+	elif [ -f "$enc" ] && [ -n "$base" ] && [ "$(sha_of "$enc")" = "$encb" ]; then
+		echo deleted
+	fi
+}
+
+# What opening would do with one entry, without the passphrase: new,
+# changed, deleted, forgotten, or nothing.
+vault_incoming() {
+	local rel=$1 enc base encb target
+	enc=$SAFE_DIR/$rel.gpg
+	base=$(vault_base_get "$rel")
+	encb=$(vault_base_get_safe "$rel")
+	if [ -f "$enc" ]; then
+		if [ -z "$base" ]; then
+			if vault_is_meta "$rel"; then
+				if [ -f "$VAULT/$rel" ]; then echo check; else echo new; fi
+			else
+				target=$(vault_target "$rel")
+				if [ -f "$target" ]; then echo check; else echo new; fi
+			fi
+		elif [ "$(sha_of "$enc")" != "$encb" ]; then
+			echo changed
+		fi
+	elif [ -n "$base" ]; then
+		if [ -e "$SAFE_DIR/$rel.forgotten" ]; then echo forgotten; else echo deleted; fi
+	fi
+}
+
+# Links from the time before copy mode become the files they pointed at.
+vault_unlink() {
+	local rel target n=0
 	[ -d "$VAULT" ] || return 0
-	# An empty vault asks for nothing. Demanding a passphrase from
-	# somebody who never put a file in would be absurd -- and since
-	# install.sh leaves a README in there, "empty" has to mean "nothing
-	# of yours", not "no files at all".
-	[ -n "$(vault_sealable)" ] || return 0
+	while IFS= read -r rel; do
+		[ -n "$rel" ] || continue
+		vault_is_meta "$rel" && continue
+		target=$(vault_target "$rel")
+		[ -L "$target" ] || continue
+		[ "$(readlink "$target")" = "$VAULT/$rel" ] || continue
+		rm -f "$target"
+		cp -p "$VAULT/$rel" "$target"
+		n=$((n + 1))
+	done <<EOF
+$(find "$VAULT" -type f -print | sed -e "s#^$VAULT/##")
+EOF
+	[ "$n" = 0 ] || info "$(count_word "$n") turned from links back into plain files."
+}
+
+# This Mac -> safe: what changed here is copied into the vault, sealed,
+# and handed on with the sync. A file deleted here leaves the safe.
+vault_seal() {
+	local pass rel what work target
+	vault_unlink
+	work=$(tmpfile)
+	vault_known | while IFS= read -r rel; do
+		vault_wanted "$rel" || continue
+		what=$(vault_outgoing "$rel")
+		[ -z "$what" ] || printf '%s\t%s\n' "$what" "$rel"
+	done >"$work"
+	grep -qE '^(new|changed|deleted)'$'\t' "$work" || return 0
+
 	pass=$(vault_pass)
 	[ -n "$pass" ] || die "the vault holds files but no passphrase is set.
      bier vault --init"
@@ -2833,132 +3006,215 @@ vault_seal() {
 
 	mkdir -p "$SAFE_DIR"
 	vault_recovery_note
-
-	find "$VAULT" -type f -print | while IFS= read -r f; do
-		rel=${f#"$VAULT"/}
-		# The README explains the folder to whoever opens it. It is the
-		# same on every Mac and has no business travelling.
-		[ "$rel" != "README.txt" ] || continue
-		enc=$SAFE_DIR/$rel.gpg
-		cur=$(vault_hash "$f")
-		if [ -f "$enc" ]; then
-			old=$(tmpfile)
-			vault_decrypt "$enc" "$pass" "$old" ||
-				die "Safe/$rel.gpg will not open with the remembered passphrase"
-			safe=$(vault_hash "$old")
-			rm -f "$old"
-			if [ "$cur" = "$safe" ]; then
-				vault_base_set "$rel" "$cur" "$enc"
-				continue
+	while IFS="$(printf '\t')" read -r what rel; do
+		case $what in
+		new | changed)
+			if ! vault_is_meta "$rel"; then
+				target=$(vault_target "$rel")
+				mkdir -p "$(dirname "$VAULT/$rel")"
+				cp -p "$target" "$VAULT/$rel"
 			fi
-			# Only a change made here is sealed. A paired Mac can put a
-			# newer safe in place at any time, and sealing whatever
-			# differs from it wrote the old version back over the new
-			# one. Changed in the safe, or on both sides: vault_open
-			# sorts that out once the exchange is done.
-			base=$(vault_base_get "$rel")
-			[ -n "$base" ] && [ "$safe" = "$base" ] || continue
-		fi
-		mkdir -p "$(dirname "$enc")"
-		vault_encrypt "$f" "$pass" "$enc"
-		vault_base_set "$rel" "$cur" "$enc"
-	done
+			mkdir -p "$(dirname "$SAFE_DIR/$rel")"
+			vault_encrypt "$VAULT/$rel" "$pass" "$SAFE_DIR/$rel.gpg"
+			rm -f "$SAFE_DIR/$rel.forgotten"
+			vault_base_set "$rel" "$(vault_hash "$VAULT/$rel")" "$SAFE_DIR/$rel.gpg"
+			;;
+		deleted)
+			rm -f "$SAFE_DIR/$rel.gpg" "$VAULT/$rel"
+			vault_base_del "$rel"
+			info "deleted from the safe: $(vault_target "$rel")"
+			;;
+		esac
+	done <"$work"
+	find "$VAULT" -mindepth 1 -type d -empty -delete 2>/dev/null || true
 }
 
-# Safe -> vault, and a link at the destination for anything that has
-# none yet.
+# Safe -> this Mac: what changed elsewhere is put in place, what was
+# deleted elsewhere goes to the Trash.
 vault_open() {
-	local pass f rel
-	[ -d "$SAFE_DIR" ] || return 0
-	[ -n "$(find "$SAFE_DIR" -name '*.gpg' -type f -print -quit 2>/dev/null)" ] || return 0
-	case $(vault_pass_state) in
-	missing)
-		info "The safe holds files, but this Mac has no passphrase yet."
-		info "  bier vault --init"
-		return 0
-		;;
-	locked)
-		if ! keychain_unlock; then
-			info "The safe holds files, but the keychain is locked; they stay closed."
-			info "  security unlock-keychain ~/Library/Keychains/login.keychain-db"
-			return 0
-		fi
-		;;
-	esac
-	pass=$(vault_pass)
-	need_gpg
-
-	# The groups first, and on their own: everything after this asks
-	# them whether it belongs here, and find gives no order worth
-	# relying on.
-	[ ! -f "$SAFE_DIR/.groups.gpg" ] || vault_take .groups "$pass"
-
-	find "$SAFE_DIR" -name '*.gpg' -type f -print | while IFS= read -r f; do
-		rel=${f#"$SAFE_DIR"/}
-		rel=${rel%.gpg}
+	local pass rel what work
+	vault_unlink
+	[ ! -f "$SAFE_DIR/.groups.gpg" ] && [ ! -f "$STATE_DIR/vault-base" ] &&
+		[ -z "$(find "$SAFE_DIR" -name '*.gpg' -type f -print -quit 2>/dev/null)" ] && return 0
+	work=$(tmpfile)
+	# The groups first: everything after this asks them whether it
+	# belongs here.
+	[ -z "$(vault_incoming .groups)" ] || printf 'groups\t.groups\n' >"$work"
+	vault_known | while IFS= read -r rel; do
 		[ "$rel" != .groups ] || continue
-		# Not ours: another group's file. It stays in the safe, it just
-		# never gets decrypted here.
 		vault_wanted "$rel" || continue
-		vault_take "$rel" "$pass"
-		# bier's own files have no home to be linked into.
-		vault_is_meta "$rel" && continue
-		vault_link "$VAULT/$rel" "$(vault_target "$rel")"
-	done
+		what=$(vault_incoming "$rel")
+		[ -z "$what" ] || printf '%s\t%s\n' "$what" "$rel"
+	done >>"$work"
+	[ -s "$work" ] || return 0
+
+	if grep -qE '^(groups|new|changed|check)'$'\t' "$work"; then
+		case $(vault_pass_state) in
+		missing)
+			info "The safe holds files, but this Mac has no passphrase yet."
+			info "  bier vault --init"
+			return 0
+			;;
+		locked)
+			if ! keychain_unlock; then
+				info "The safe holds files, but the keychain is locked; they stay closed."
+				info "  security unlock-keychain ~/Library/Keychains/login.keychain-db"
+				return 0
+			fi
+			;;
+		esac
+		pass=$(vault_pass)
+		need_gpg
+	fi
+	while IFS="$(printf '\t')" read -r what rel; do
+		case $what in
+		groups | new | changed | check) vault_take "$rel" "$pass" ;;
+		deleted | forgotten) vault_gone "$rel" "$what" ;;
+		esac
+	done <"$work"
+	find "$VAULT" -mindepth 1 -type d -empty -delete 2>/dev/null || true
 }
 
-# One file from the safe into the vault, by what changed since this Mac
-# and the safe last agreed:
+# One entry from the safe, by what changed since this Mac and the safe
+# last agreed:
 #
-#   only the safe      take it
-#   only the vault     keep it; the next sync seals it
-#   both, or unknown   keep it, and put the safe's version next to the
-#                      file as .from-safe; the next sync seals this
-#                      Mac's version, so merge by hand before that
+#   only the safe      put it in place, after a backup
+#   only here          keep it; the next sync seals it
+#   both, or unknown   keep it, and put the safe's version next to it as
+#                      .from-safe; the next sync shares this Mac's file
 #
 # bier's own files take the safe's version when both changed: there is
-# nobody's home to put a second copy in.
+# no place in anybody's home for a second copy.
 vault_take() {
-	local rel=$1 pass=$2 out plain safe cur base target copy n
-	out=$VAULT/$rel
+	local rel=$1 pass=$2 plain safe cur base target copy n app
 	plain=$(tmpfile)
 	vault_decrypt "$SAFE_DIR/$rel.gpg" "$pass" "$plain" ||
 		die "the safe will not open with the remembered passphrase.
      Changed on another Mac?  bier vault --init"
 	safe=$(vault_hash "$plain")
-	if [ ! -f "$out" ]; then
-		mkdir -p "$(dirname "$out")"
-		cp "$plain" "$out"
+	base=$(vault_base_get "$rel")
+	mkdir -p "$(dirname "$VAULT/$rel")"
+
+	if vault_is_meta "$rel"; then
+		if [ -f "$VAULT/$rel" ]; then
+			cur=$(vault_hash "$VAULT/$rel")
+			if [ "$cur" != "$safe" ] && [ -n "$base" ] && [ "$safe" = "$base" ]; then
+				rm -f "$plain"
+				vault_base_set "$rel" "$base" "$SAFE_DIR/$rel.gpg"
+				return 0
+			fi
+			if [ "$cur" != "$safe" ] && { [ -z "$base" ] || [ "$cur" != "$base" ]; }; then
+				info "$rel changed here and on another Mac; the other version was taken"
+			fi
+		fi
+		cp "$plain" "$VAULT/$rel"
+		rm -f "$plain"
+		vault_base_set "$rel" "$safe" "$SAFE_DIR/$rel.gpg"
+		return 0
+	fi
+
+	target=$(vault_target "$rel")
+	if [ -L "$target" ]; then
+		info "left alone: $target is a link to somewhere else"
+		rm -f "$plain"
+		return 0
+	fi
+	if [ -f "$target" ]; then
+		cur=$(vault_hash "$target")
 	else
-		cur=$(vault_hash "$out")
-		base=$(vault_base_get "$rel")
-		if [ "$cur" = "$safe" ]; then
-			:
-		elif [ -n "$base" ] && [ "$cur" = "$base" ]; then
-			cat "$plain" >"$out"
-			vault_is_meta "$rel" || info "updated: $(vault_target "$rel")"
-		elif [ -n "$base" ] && [ "$safe" = "$base" ]; then
+		cur=""
+	fi
+	if [ "$cur" = "$safe" ]; then
+		:
+	elif [ -n "$base" ] && [ -n "$cur" ] && [ "$safe" = "$base" ]; then
+		# Only re-encrypted elsewhere; the change here goes out next time.
+		rm -f "$plain"
+		vault_base_set "$rel" "$base" "$SAFE_DIR/$rel.gpg"
+		return 0
+	elif [ -z "$cur" ] || { [ -n "$base" ] && [ "$cur" = "$base" ]; }; then
+		if app=$(vault_busy "$target"); then
+			info "waiting: $app is running, $target stays as it is for now"
 			rm -f "$plain"
 			return 0
-		elif vault_is_meta "$rel"; then
-			cat "$plain" >"$out"
-			info "$rel changed here and on another Mac; the other version was taken"
-		else
-			target=$(vault_target "$rel")
-			copy=$target.from-safe
-			n=2
-			while [ -e "$copy" ]; do
-				copy=$target.from-safe.$n
-				n=$((n + 1))
-			done
-			cp "$plain" "$copy"
-			info "changed here and on another Mac: $target"
-			info "  the other version is in $copy"
-			info "  merge what you need into $target; the next sync keeps it as it is then"
 		fi
+		vault_backup "$target"
+		vault_put "$plain" "$target"
+		if [ -z "$cur" ] && [ -n "$base" ]; then
+			info "restored: $target (deleted here, changed on another Mac)"
+		elif [ -z "$cur" ]; then
+			info "added: $target"
+		else
+			info "updated: $target"
+		fi
+	elif [ -z "$base" ]; then
+		# First arrival over a file this Mac had of its own -- every Mac
+		# has a .zshrc. The shared one wins; letting this one win would
+		# send a fresh Mac's default to every other Mac. It is kept.
+		if app=$(vault_busy "$target"); then
+			info "waiting: $app is running, $target stays as it is for now"
+			rm -f "$plain"
+			return 0
+		fi
+		copy=$target.backup
+		n=2
+		while [ -e "$copy" ]; do
+			copy=$target.backup.$n
+			n=$((n + 1))
+		done
+		cp -p "$target" "$copy"
+		vault_put "$plain" "$target"
+		info "kept: $copy"
+		info "added: $target"
+	else
+		copy=$target.from-safe
+		n=2
+		while [ -e "$copy" ]; do
+			copy=$target.from-safe.$n
+			n=$((n + 1))
+		done
+		cp "$plain" "$copy"
+		info "changed here and on another Mac: $target"
+		info "  the other version is in $copy"
+		info "  merge what you need into $target; the next sync keeps it as it is then"
 	fi
+	cp "$plain" "$VAULT/$rel"
 	rm -f "$plain"
 	vault_base_set "$rel" "$safe" "$SAFE_DIR/$rel.gpg"
+}
+
+# An entry that left the safe on another Mac.
+vault_gone() {
+	local rel=$1 why=$2 target app
+	if vault_is_meta "$rel"; then
+		rm -f "$VAULT/$rel"
+		vault_base_del "$rel"
+		return 0
+	fi
+	target=$(vault_target "$rel")
+	if [ "$why" = forgotten ]; then
+		rm -f "$VAULT/$rel"
+		vault_base_del "$rel"
+		[ ! -f "$target" ] || info "no longer synced: $target (kept here)"
+		return 0
+	fi
+	if [ ! -f "$target" ]; then
+		rm -f "$VAULT/$rel"
+		vault_base_del "$rel"
+	elif [ "$(vault_hash "$target")" = "$(vault_base_get "$rel")" ]; then
+		if app=$(vault_busy "$target"); then
+			info "waiting: $app is running, $target stays as it is for now"
+			return 0
+		fi
+		vault_trash "$target"
+		rm -f "$VAULT/$rel"
+		vault_base_del "$rel"
+		info "moved to the Trash: $target (deleted on another Mac)"
+	else
+		# Changed here: kept, and shared again by the next sync.
+		cp -p "$target" "$VAULT/$rel"
+		vault_base_del "$rel"
+		info "deleted on another Mac, changed here: $target stays and is shared again"
+	fi
 }
 
 # What this Mac and the safe last agreed on, per vault file, lives in
@@ -2991,11 +3247,19 @@ vault_base_get_safe() {
 # vault_base_set <rel> <plain hash> [<encrypted file>]
 vault_base_set() {
 	local list=$STATE_DIR/vault-base next enc=""
-	[ -z "${3:-}" ] || [ ! -f "$3" ] || enc=$(shasum -a 256 "$3" | cut -d' ' -f1)
+	[ -z "${3:-}" ] || [ ! -f "$3" ] || enc=$(sha_of "$3")
 	mkdir -p "$STATE_DIR"
 	next=$(mktemp "$STATE_DIR/vault-base.XXXXXX")
 	[ ! -f "$list" ] || awk -F '\t' -v rel="$1" '$2 != rel' "$list" >"$next"
 	printf '%s\t%s\t%s\n' "$2" "$1" "$enc" >>"$next"
+	mv "$next" "$list"
+}
+
+vault_base_del() {
+	local list=$STATE_DIR/vault-base next
+	[ -f "$list" ] || return 0
+	next=$(mktemp "$STATE_DIR/vault-base.XXXXXX")
+	awk -F '\t' -v rel="$1" '$2 != rel' "$list" >"$next"
 	mv "$next" "$list"
 }
 
@@ -3064,30 +3328,35 @@ cmd_vault() {
 		return 0
 		;;
 	--unlink)
-		# Every link becomes the file it points at. The vault and the
-		# safe are left alone: the other Macs still need them, and this
-		# is what uninstalling does before it tidies up.
+		# Links from the time before copy mode become plain files. The
+		# vault and the safe are left alone.
+		vault_unlink
+		return 0
+		;;
+	--restore)
+		# Put back what is missing here from the vault's copy. A missing
+		# file otherwise counts as deleted here, and the next sync would
+		# take it out everywhere.
 		local rel target n=0
-		[ -d "$VAULT" ] || return 0
 		while IFS= read -r rel; do
 			[ -n "$rel" ] || continue
 			vault_is_meta "$rel" && continue
 			target=$(vault_target "$rel")
-			[ -L "$target" ] || continue
-			rm -f "$target"
-			cp "$VAULT/$rel" "$target"
+			[ ! -e "$target" ] && [ -f "$VAULT/$rel" ] || continue
+			vault_put "$VAULT/$rel" "$target"
+			info "restored: $target"
 			n=$((n + 1))
 		done <<EOF
-$([ ! -d "$VAULT" ] || find "$VAULT" -type f -print | sed -e "s#^$VAULT/##")
+$(vault_known)
 EOF
-		info "$(count_word "$n") turned back into plain files."
+		info "$(count_word "$n") restored."
 		return 0
 		;;
 	seal)
 		vault_seal
 		return 0
 		;;
-	open | --restore)
+	open)
 		vault_open
 		return 0
 		;;
@@ -3120,26 +3389,30 @@ EOF
 # temporary place first: a passphrase change that dies halfway through
 # would otherwise leave half the safe unreadable with either of them.
 vault_reseal() {
-	local old=$1 new=$2 f plain staging
+	local old=$1 new=$2 rel plain staging plain_hash
 	[ -d "$SAFE_DIR" ] || return 0
-	ls "$SAFE_DIR"/*.gpg >/dev/null 2>&1 || return 0
+	[ -n "$(find "$SAFE_DIR" -name '*.gpg' -type f -print -quit)" ] || return 0
 
 	staging=$(mktemp -d "${TMPDIR:-/tmp}/bier-reseal.XXXXXX")
-	for f in "$SAFE_DIR"/*.gpg; do
+	while IFS= read -r rel; do
 		plain=$(tmpfile)
-		vault_decrypt "$f" "$old" "$plain" ||
-			die "the remembered passphrase does not open $(basename "$f") -- nothing changed"
-		vault_encrypt "$plain" "$new" "$staging/$(basename "$f")"
-	done
-	local rel plain_hash
-	for f in "$staging"/*.gpg; do
-		mv "$f" "$SAFE_DIR/$(basename "$f")"
+		vault_decrypt "$SAFE_DIR/$rel" "$old" "$plain" ||
+			die "the remembered passphrase does not open $rel -- nothing changed"
+		mkdir -p "$(dirname "$staging/$rel")"
+		vault_encrypt "$plain" "$new" "$staging/$rel"
+	done <<EOF
+$(find "$SAFE_DIR" -name '*.gpg' -type f -print | sed "s#^$SAFE_DIR/##")
+EOF
+	while IFS= read -r rel; do
+		mv "$staging/$rel" "$SAFE_DIR/$rel"
 		# Same content under a new key: not news for status.
-		rel=$(basename "$f" .gpg)
+		rel=${rel%.gpg}
 		plain_hash=$(vault_base_get "$rel")
 		[ -z "$plain_hash" ] || vault_base_set "$rel" "$plain_hash" "$SAFE_DIR/$rel.gpg"
-	done
-	rmdir "$staging" 2>/dev/null || true
+	done <<EOF
+$(cd "$staging" && find . -name '*.gpg' -type f -print | sed 's#^\./##')
+EOF
+	rm -rf "$staging"
 }
 
 # Takes a Mac out of the fleet: the one that broke, was lost, or was

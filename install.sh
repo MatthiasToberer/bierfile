@@ -508,20 +508,21 @@ esac
 mkdir -p "$VAULTDIR"
 if [ ! -f "$VAULTDIR/README.txt" ]; then
 	cat >"$VAULTDIR/README.txt" <<NOTE
-This is the vault of "bier". Everything in here travels to your other
-Macs encrypted; the server never sees it in the clear.
+This is the vault of "bier": plain copies of the files you share
+between your Macs. Only encrypted copies ever leave this Mac.
 
-Do not put files here by hand. Use:
+Do not put files here by hand, and do not edit them here. Use:
 
     bier vault add ~/.zshrc
-    bier vault add ~/.config/nvim
+    bier vault add ~/Library/Application\ Support/SomeApp
 
-That moves the file in here and leaves a link where it was, so the
-program that reads it still finds it.
+Your files stay where they are; this folder only keeps a copy. A folder
+is tracked as a whole: files put in it later come along, and files
+deleted from it go to the Trash on the other Macs.
 
     bier vault              what is in it
-    bier vault forget PATH  take it back out, the real file returns
-    bier vault --restore    links and files back after an accident
+    bier vault forget PATH  stop syncing it; the file stays everywhere
+    bier vault drop PATH    remove it everywhere, into the Trash
 
 The encrypted copies live in Safe/ in your data repository, next to a
 note explaining how to open them with gpg alone, without bier.

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # a file already at the destination is kept, not overwritten
 #
-# The second Mac always has a .zshrc of its own. Linking over it would
-# throw it away, and the old behaviour -- link only when nothing is
-# there -- was worse: no link, no word, and the file sitting decrypted
-# in the vault where nobody looks.
+# The second Mac always has a .zshrc of its own. Replacing it would
+# throw it away, and letting it win would send a fresh Mac's default to
+# every other Mac. The shared file wins, and the own one is kept next to
+# it as .backup.
 
 system mini <<'SYS'
 brew "wget"
@@ -22,16 +22,19 @@ assert_ok bier mini sync
 # The other Mac has one of its own, and it must survive.
 printf 'von macbook\n' >"$WORK/home-macbook/.zshrc"
 assert_ok bier macbook sync
-assert_contains "$OUT" "kept" "the existing file has to be kept"
-assert_eq "yes" "$(is_link "$WORK/home-macbook/.zshrc")" "and the link put there"
-assert_eq "von mini" "$(cat "$WORK/home-macbook/.zshrc")" "showing the shared file"
+assert_contains "$OUT" "kept: $WORK/home-macbook/.zshrc.backup" "the existing file has to be kept"
+assert_eq "no" "$(is_link "$WORK/home-macbook/.zshrc")" "no link is put there"
+assert_eq "von mini" "$(cat "$WORK/home-macbook/.zshrc")" "the shared file is in place"
 assert_eq "von macbook" "$(cat "$WORK/home-macbook/.zshrc.backup")" \
 	"while the old one waits in .backup"
 
-# A second run must not make a second backup out of its own link.
+# A second run must not make a second backup.
 assert_ok bier macbook sync
 assert_eq "no" "$([ -e "$WORK/home-macbook/.zshrc.backup.2" ] && echo yes || echo no)" \
-	"an existing link is left alone"
+	"a file already in place is left alone"
+# And mini's file was not overwritten by macbook's own.
+assert_ok bier mini sync
+assert_eq "von mini" "$(cat "$WORK/home-mini/.zshrc")"
 
 # An identical file needs no backup — there would be nothing to save.
 printf 'gleich\n' >"$WORK/home-mini/.identisch"
@@ -39,7 +42,6 @@ assert_ok bier mini vault add "$WORK/home-mini/.identisch"
 assert_ok bier mini sync
 printf 'gleich\n' >"$WORK/home-macbook/.identisch"
 assert_ok bier macbook sync
-assert_contains "$OUT" "was the same file" "an identical file needs no backup"
 assert_eq "no" "$([ -e "$WORK/home-macbook/.identisch.backup" ] && echo yes || echo no)" \
 	"so none is made"
 

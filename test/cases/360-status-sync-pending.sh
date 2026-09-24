@@ -20,7 +20,7 @@ assert_ok bier mini vault add "$WORK/home-mini/.fakezshrc"
 # Taken in, not sealed yet.
 bier mini status
 assert_contains "$OUT" "Sync (bier sync):"
-assert_contains "$OUT" "$WORK/home-mini/.fakezshrc changed here"
+assert_contains "$OUT" "$WORK/home-mini/.fakezshrc new here"
 assert_ok bier mini sync
 assert_ok bier macbook sync
 bier mini status

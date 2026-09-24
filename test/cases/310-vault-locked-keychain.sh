@@ -38,7 +38,11 @@ assert_ok bier mini vault
 assert_contains "$OUT" "the keychain is locked"
 assert_not_contains "$OUT" "no passphrase yet"
 
-# Sealing needs the passphrase, so this Mac stops and says how to go on.
+# Nothing changed here: nothing to seal, and the sync needs no passphrase.
+assert_ok bier mini sync
+
+# Sealing a change needs it, so this Mac stops and says how to go on.
+printf 'geaendert\n' >"$WORK/home-mini/.probe"
 assert_fails bier mini sync
 assert_contains "$OUT" "would not hand it out"
 assert_contains "$OUT" "security unlock-keychain"
@@ -72,5 +76,5 @@ rm -f "$WORK/keychain-unlocked"
 assert_ok bier macbook sync
 assert_contains "$OUT" "Unlock it with your macOS login password"
 assert_not_contains "$OUT" "they stay closed"
-test -L "$WORK/home-macbook/.probe" || fail "the vault file has to arrive on the other Mac"
+assert_eq inhalt "$(cat "$WORK/home-macbook/.probe" 2>/dev/null)" "the vault file has to arrive on the other Mac"
 unset BIER_TEST_KEYCHAIN BIER_TEST_TTY BIER_TEST_UNLOCK

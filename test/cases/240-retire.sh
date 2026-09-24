@@ -3,8 +3,9 @@
 #
 # A Mac that broke or was wiped without uninstalling would otherwise
 # stay in Brewfiles/ and in every group for ever. And removing bier from
-# a Mac has to put the vault files back first -- every link points into
-# the vault, so tidying up without that leaves a home full of dead links.
+# a Mac has to put the vault files back first -- an installation from
+# before copy mode has links into the vault, and tidying up without that
+# leaves a home full of dead links.
 
 system mini <<'SYS'
 brew "wget"
@@ -36,12 +37,15 @@ assert_eq "no" "$([ -f "$(bf mini macbook)" ] && echo yes || echo no)" \
 assert_ok bier mini vault group
 assert_not_contains "$OUT" "macbook" "and its group membership with it"
 
-# --unlink puts the real files back without touching what travels.
+# --unlink turns links from before copy mode into the files they
+# pointed at, without touching what travels.
 printf 'inhalt\n' >"$WORK/home-mini/.probe"
 assert_ok bier mini vault add "$WORK/home-mini/.probe"
 assert_ok bier mini sync
-assert_eq "yes" "$([ -L "$WORK/home-mini/.probe" ] && echo yes || echo no)" \
-	"it is a link while bier manages it"
+assert_eq "no" "$([ -L "$WORK/home-mini/.probe" ] && echo yes || echo no)" \
+	"bier leaves a plain file where it was"
+rm -f "$WORK/home-mini/.probe"
+ln -s "$WORK/home-mini/.bierfilevault/dot_probe" "$WORK/home-mini/.probe"
 
 assert_ok bier mini vault --unlink
 assert_eq "no" "$([ -L "$WORK/home-mini/.probe" ] && echo yes || echo no)" \

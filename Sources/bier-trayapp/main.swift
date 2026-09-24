@@ -163,12 +163,25 @@ enum Bier {
 						: "\(f[1]): \(f[2]) commit(s) not sent yet")
 				}
 			case "UNCOMMITTED": if f.count > 1 { s.pending.append("\(f[1]) changed") }
-			case "VAULT_OUT": if f.count > 1 { s.pending.append("\(f[1]) changed here") }
+			case "VAULT_OUT":
+				if f.count > 1 {
+					let how = f.count > 2 ? f[2] : "changed"
+					s.pending.append("\(f[1]) \(how == "new" ? "new here" : how == "deleted" ? "deleted here" : "changed here")")
+				}
 			case "VAULT_IN":
 				if f.count > 1 {
+					let how = f.count > 2 ? f[2] : "changed"
 					s.vaultIn.append(f[1])
-					s.pending.append("\(f[1]) newer in the safe")
+					switch how {
+					case "new": s.pending.append("\(f[1]) new from another Mac")
+					case "deleted": s.pending.append("\(f[1]) deleted elsewhere, goes to the Trash")
+					case "forgotten": s.pending.append("\(f[1]) no longer synced")
+					case "check": s.pending.append("\(f[1]) to be compared")
+					default: s.pending.append("\(f[1]) newer in the safe")
+					}
 				}
+			case "VAULT_WAIT": if f.count > 2 { s.pending.append("\(f[1]) waits: \(f[2]) is running") }
+			case "VAULT_LARGE": if f.count > 1 { s.pending.append("\(f[1]) too large for the vault") }
 			case "VAULT_BOTH":
 				if f.count > 1 {
 					s.vaultBoth.append(f[1])

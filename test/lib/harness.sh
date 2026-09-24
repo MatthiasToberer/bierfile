@@ -200,6 +200,8 @@ bier() {
 		GNUPGHOME=$GPGHOME \
 		BIER_VAULT=$WORK/home-$host/.bierfilevault \
 		BIER_TEST_SYSTEM=$WORK/sys-$host \
+		BIER_TRASH_DIR=$WORK/trash-$host \
+		BIER_TEST_RUNNING=${BIER_TEST_RUNNING:-} \
 		XDG_CONFIG_HOME=$WORK/config-$host \
 		"$WORK/code-$host/Sources/bier-core/bier" "$@" <"$WORK/.in" >"$WORK/.out" 2>&1 || rc=$?
 	OUT=$(cat "$WORK/.out")

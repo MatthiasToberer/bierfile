@@ -48,14 +48,17 @@ assert_ok bier macbook sync
 assert_ok bier mini sync
 assert_eq drei-beide "$(cat "$WORK/home-mini/.fakezshrc")" "the merged version has to travel"
 
-# A Mac that has never recorded what it agreed on: a difference is not
-# guessed at, it is treated as changed on both sides.
+# A Mac that has never recorded what it agreed on -- after moving from
+# links, or with its state lost -- is not guessed at: the shared version
+# wins, and its own is kept next to it.
 rm -rf "$WORK/home-mini/.local/state/bier"
 printf 'vier\n' >"$WORK/home-mini/.fakezshrc"
 assert_ok bier mini sync
-assert_contains "$OUT" "changed here and on another Mac"
-assert_eq vier "$(cat "$WORK/home-mini/.fakezshrc")"
-assert_eq drei-beide "$(cat "$WORK/home-mini/.fakezshrc.from-safe")"
+assert_contains "$OUT" "kept: $WORK/home-mini/.fakezshrc.backup"
+assert_eq drei-beide "$(cat "$WORK/home-mini/.fakezshrc")"
+assert_eq vier "$(cat "$WORK/home-mini/.fakezshrc.backup")"
+# From then on it knows, and a change travels as usual.
+cp "$WORK/home-mini/.fakezshrc.backup" "$WORK/home-mini/.fakezshrc"
 assert_ok bier mini sync
 assert_ok bier macbook sync
 assert_eq vier "$(cat "$WORK/home-macbook/.fakezshrc")" "after that, the own version travels"

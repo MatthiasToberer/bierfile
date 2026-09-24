@@ -12,6 +12,8 @@ its design — please read the reasons before changing one.
 - **[Tests](docs/contributing/testing.md)** — `test/run`, green before
   every push
 - **[Versions and releases](docs/contributing/releasing.md)**
+- **[The barrel](docs/contributing/barrel.md)** — one folder, copies
+  instead of links: the design behind `~/.barrel` and `bier knockout`
 
 Pull requests are read before they are merged. Code, comments, output and
 documentation are in English.
