@@ -21,6 +21,7 @@ struct BierState {
 	var remove: [String] = [] // arrived: removed elsewhere or out of main
 	var settings: [String] = [] // arrived: settings from another Mac
 	var conflicts: [String] = [] // wrong: .from-safe copies to merge
+	var pending: [String] = [] // Macs introduced by a peer, to accept
 	var version = "" // the script's version, for the out-of-date hint
 	var release = "" // a newer release on the code server, empty if none
 	var repo = "" // path to the repository, for the info menu
@@ -144,6 +145,7 @@ enum Bier {
 			case "STALE", "DROPPED": s.remove.append(f[1])
 			case "VAULT_IN": s.settings.append(f[1])
 			case "VAULT_LEFT": s.conflicts.append(f[1])
+			case "PENDING": s.pending.append(f[1])
 			default: break
 			}
 		}
@@ -339,9 +341,10 @@ class Controller: NSObject, NSMenuDelegate {
 		}
 
 		// Something is wrong: what the last sync ran into, and conflicts.
-		if !syncTrouble.isEmpty || !state.conflicts.isEmpty {
+		if !syncTrouble.isEmpty || !state.conflicts.isEmpty || !state.pending.isEmpty {
 			menu.addItem(header("Something needs you"))
-			for line in (syncTrouble + state.conflicts.map { "merge, then delete: \($0)" }).prefix(6) {
+			let waiting = state.pending.map { "\($0) waits: bier peer accept \($0)" }
+			for line in (syncTrouble + state.conflicts.map { "merge, then delete: \($0)" } + waiting).prefix(6) {
 				menu.addItem(detail(short(line)))
 			}
 			if syncTrouble.contains(where: { $0.contains("no access") }) {

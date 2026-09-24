@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.45.1
+BIER_VERSION=0.46.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -169,6 +169,9 @@ PEER_PORT=${BIER_PEER_PORT:-53991}
 PEER_CLIENT=${BIER_PEER_CLIENT:-$ROOT/Sources/bier-peer/build/bier-peer}
 PAIRING_OFFER=$AGENT_HOME/state/pairing-offer.json
 LOCAL_PEER_SIGNERS=$AGENT_HOME/peer_signers
+# Macs another peer vouched for, waiting for bier peer accept; the agent
+# writes it: "name address introduced-by key-type key".
+PENDING_FILE=$AGENT_HOME/state/pending
 
 DATA=${BIER_DATA:-$(config_get data)}
 if [ -z "$DATA" ] && [ -d "$ROOT/Brewfiles" ]; then
@@ -1621,6 +1624,94 @@ EOF
 	fi
 }
 
+# Every peer learns of every other one, once: this Mac vouches for each
+# to the rest, and each keeps it as pending until accepted there. A new
+# Mac paired with one Mac so reaches all, and nobody is trusted without
+# being accepted. Best effort: a Mac out of reach is asked next time.
+peer_introduce_all() {
+	local done_file=$AGENT_HOME/state/introduced peer other name key body
+	local -a names=() addresses=()
+	for peer in $(peer_list); do
+		name=$(peer_call name "$peer" --identity "$PEER_IDENTITY" 2>/dev/null) || continue
+		peer_name_ok "$name" || continue
+		names+=("$name")
+		addresses+=("$peer")
+	done
+	[ "${#names[@]}" -ge 2 ] || return 0
+	mkdir -p "$(dirname "$done_file")"
+	for peer in "${!names[@]}"; do
+		for other in "${!names[@]}"; do
+			[ "$peer" != "$other" ] || continue
+			key=$(awk -v n="${names[$other]}" '$1 == n { print $2, $3; exit }' "$LOCAL_PEER_SIGNERS" 2>/dev/null)
+			[ -n "$key" ] || continue
+			! grep -qxF "${names[$peer]} ${names[$other]} $key" "$done_file" 2>/dev/null || continue
+			body=$(tmpfile)
+			printf '{"peer":"%s","address":"%s","publicKey":"%s"}' "${names[$other]}" "${addresses[$other]}" "$key" >"$body"
+			if peer_call introduce "${addresses[$peer]}" --identity "$PEER_IDENTITY" --body "$body" >/dev/null 2>&1; then
+				printf '%s %s %s\n' "${names[$peer]}" "${names[$other]}" "$key" >>"$done_file"
+				info "Introduced ${names[$other]} to ${names[$peer]}; accept it there with: bier peer accept ${names[$other]}"
+			fi
+		done
+	done
+}
+
+pending_list() {
+	[ -f "$PENDING_FILE" ] || return 0
+	awk 'NF >= 5' "$PENDING_FILE"
+}
+
+cmd_peer_pending() {
+	[ $# -eq 0 ] || die 'usage: bier peer pending'
+	if [ -z "$(pending_list)" ]; then
+		info "No Macs are waiting."
+		return 0
+	fi
+	pending_list | while read -r name address by type key; do
+		printf '%-16s %-32s introduced by %-12s %s\n' "$name" "$address" "$by" \
+			"$(printf '%s %s\n' "$type" "$key" | ssh-keygen -lf - 2>/dev/null | awk '{ print $2 }')"
+	done
+	info ""
+	info "Trust one with: bier peer accept <mac>   (or: accept all)"
+}
+
+# Takes the named pending Macs (or all) out of the list; prints their lines.
+pending_take() {
+	local which=$1 tmp lines
+	lines=$(pending_list | awk -v w="$which" 'w == "all" || $1 == w')
+	[ -n "$lines" ] || die "$which is not waiting; see: bier peer pending"
+	tmp=$(mktemp "$(dirname "$PENDING_FILE")/pending.XXXXXX")
+	pending_list | awk -v w="$which" '!(w == "all" || $1 == w)' >"$tmp"
+	mv "$tmp" "$PENDING_FILE"
+	printf '%s\n' "$lines"
+}
+
+cmd_peer_accept() {
+	[ $# -eq 1 ] || die 'usage: bier peer accept <mac>|all'
+	local lines name address by type key tmp
+	lines=$(pending_take "$1")
+	while read -r name address by type key; do
+		tmp=$(mktemp "$AGENT_HOME/peer_signers.XXXXXX")
+		{
+			[ ! -f "$LOCAL_PEER_SIGNERS" ] || awk -v n="$name" '$1 != n' "$LOCAL_PEER_SIGNERS"
+			printf '%s %s %s\n' "$name" "$type" "$key"
+		} >"$tmp"
+		chmod 600 "$tmp"
+		mv "$tmp" "$LOCAL_PEER_SIGNERS"
+		peer_remember "$address"
+		info "Accepted $name ($address), introduced by $by."
+	done <<EOF
+$lines
+EOF
+	info "It syncs with this Mac once it has accepted $HOST too; then: bier sync"
+}
+
+cmd_peer_reject() {
+	[ $# -eq 1 ] || die 'usage: bier peer reject <mac>|all'
+	pending_take "$1" | while read -r name address by _; do
+		info "Rejected $name ($address), introduced by $by."
+	done
+}
+
 cmd_peer_help() {
 	cat <<'EOF'
 bier peer — manage Macs Bier may contact
@@ -1641,6 +1732,9 @@ bier peer — manage Macs Bier may contact
   bier peer upgrade <host> replace an agent with the latest signed release
   bier peer uninstall <host> stop and remove a Bier agent via SSH
   bier peer remove <host> forget a remembered Mac, its address or its key
+  bier peer pending       Macs another peer introduced, waiting to be trusted
+  bier peer accept <mac>|all  trust an introduced Mac and sync with it
+  bier peer reject <mac>|all  drop an introduced Mac
 EOF
 }
 
@@ -1667,8 +1761,11 @@ install) cmd_peer_install "$@" ;;
 upgrade | update) cmd_peer_upgrade "$@" ;;
 uninstall) cmd_peer_uninstall "$@" ;;
 discover) cmd_peer_discover "$@" ;;
+pending) cmd_peer_pending "$@" ;;
+accept) cmd_peer_accept "$@" ;;
+reject) cmd_peer_reject "$@" ;;
 help | -h | --help) cmd_peer_help ;;
-*) die 'usage: bier peer <discover|add|list|check|hello|offer|pair|compare|sync|seed|trust|install|upgrade|uninstall|remove> [host]' ;;
+*) die 'usage: bier peer <discover|add|list|check|hello|offer|pair|compare|sync|seed|trust|install|upgrade|uninstall|remove|pending|accept|reject> [host]' ;;
 	esac
 }
 
@@ -2787,6 +2884,7 @@ sync_peers() {
 	for peer in $peers; do cmd_peer_sync "$peer"; done
 	for peer in $peers; do cmd_peer_sync "$peer"; done
 	info "In sync with Bier peers."
+	peer_introduce_all
 }
 
 # The newest release published on the code server, without the leading
@@ -4220,6 +4318,9 @@ cmd_brewmaster() {
 			fi
 		done
 	fi
+	pending_list | while read -r f _ peer _; do
+		brewmaster_warn "$f was introduced by $peer and waits to be trusted." "bier peer accept $f   (or: bier peer reject $f)"
+	done
 
 	# Data repository and lists
 	if [ -z "$DATA" ] || [ ! -d "$DATA/.git" ]; then
@@ -4735,6 +4836,7 @@ cmd_update() {
 #   GONE   brew "wget"     recorded but not installed here
 #   VAULT_IN <file> <how>  settings from another Mac, not in place yet
 #   VAULT_LEFT <path>      a .from-safe copy from a conflict
+#   PENDING <mac> <by>     a Mac introduced by a peer, waiting for accept
 #
 # What other devices have more or less of is deliberately absent: it says
 # nothing about whether there is anything to do on *this* Mac, and in the
@@ -4798,6 +4900,7 @@ cmd_state() {
 	if [ -n "$dropped" ]; then printf '%s\n' "$dropped" | sed 's/^/DROPPED'$'\t''/'; fi
 	if [ -n "$gone" ]; then printf '%s\n' "$gone" | sed 's/^/GONE'$'\t''/'; fi
 	[ -z "$arrived" ] || printf '%s\n' "$arrived"
+	pending_list | awk '{ printf "PENDING\t%s\t%s\n", $1, $3 }'
 	[ -z "$offline" ] || printf 'OFFLINE\t%s\n' "${offline# }"
 }
 
@@ -4895,6 +4998,9 @@ bier — keeps Brewfiles in sync across Macs
   bier peer add <host>    remember a Mac that Bier may contact
   bier peer list          show remembered Macs
   bier peer remove <host> forget a remembered Mac, its address or its key
+  bier peer pending       Macs another peer introduced, waiting to be trusted
+  bier peer accept <mac>|all  trust an introduced Mac and sync with it
+  bier peer reject <mac>|all  drop an introduced Mac
   bier peer check <host>  check safe, non-interactive SSH access
   bier peer hello <host>  prove authenticated Bier Agent access
   bier peer offer [--address <own-host>]  show a one-time code for SSH-free pairing

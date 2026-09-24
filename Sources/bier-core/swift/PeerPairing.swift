@@ -22,6 +22,20 @@ public struct PeerPairingResponse: Codable {
 	public let proof: String
 }
 
+/// A Mac one peer vouches for. It is kept as pending until someone
+/// accepts it here with bier peer accept; until then it is not trusted.
+public struct PeerIntroduction: Codable {
+	public let peer: String
+	public let address: String
+	public let publicKey: String
+
+	public init(peer: String, address: String, publicKey: String) {
+		self.peer = peer
+		self.address = address
+		self.publicKey = publicKey
+	}
+}
+
 private struct PeerPairingOffer: Codable {
 	let version: Int
 	let code: String
@@ -51,6 +65,7 @@ public func peerPairingResponseProof(code: String, request: PeerPairingRequest, 
 public final class PeerPairingStore {
 	private let offerURL: URL
 	private let addressesURL: URL
+	private let pendingURL: URL
 	private let signersURL: URL
 	private let localKeyURL: URL
 	private let peersURL: URL?
@@ -59,6 +74,7 @@ public final class PeerPairingStore {
 	public init(stateDirectory: URL, signersURL: URL, localKeyURL: URL, peersURL: URL? = nil) {
 		offerURL = stateDirectory.appendingPathComponent("pairing-offer.json")
 		addressesURL = stateDirectory.appendingPathComponent("paired-addresses")
+		pendingURL = stateDirectory.appendingPathComponent("pending")
 		self.signersURL = signersURL
 		self.localKeyURL = localKeyURL
 		self.peersURL = peersURL
@@ -91,6 +107,34 @@ public final class PeerPairingStore {
 		try FileManager.default.removeItem(at: offerURL)
 		return PeerPairingResponse(status: "paired", agent: agent, publicKey: localKey,
 			proof: peerPairingResponseProof(code: offer.code, request: request, agent: agent, publicKey: localKey))
+	}
+
+	/// Keeps an introduced Mac as pending: "name address by key", one a
+	/// line, the newest introduction of a name replacing older ones. A
+	/// Mac already trusted with that key, or this Mac itself, is left out.
+	public func introduce(_ introduction: PeerIntroduction, by peer: String, agent: String) throws {
+		lock.lock()
+		defer { lock.unlock() }
+		guard validName(introduction.peer), validAddress(introduction.address), validPublicKey(introduction.publicKey) else {
+			throw PeerPairingError.rejected
+		}
+		let key = introduction.publicKey.split(whereSeparator: \.isWhitespace).prefix(2).joined(separator: " ")
+		let signers = (try? String(contentsOf: signersURL, encoding: .utf8)) ?? ""
+		guard introduction.peer != agent, !signers.contains("\(introduction.peer) \(key)") else { return }
+		let kept = pendingLines().filter { $0.first != introduction.peer }.map { $0.joined(separator: " ") }
+		try write(kept + ["\(introduction.peer) \(introduction.address) \(peer) \(key)"], to: pendingURL)
+	}
+
+	private func pendingLines() -> [[String]] {
+		((try? String(contentsOf: pendingURL, encoding: .utf8)) ?? "").split(whereSeparator: \.isNewline)
+			.map { $0.split(separator: " ").map(String.init) }.filter { $0.count >= 5 }
+	}
+
+	private func write(_ lines: [String], to url: URL) throws {
+		try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
+			attributes: [.posixPermissions: 0o700])
+		try (lines.joined(separator: "\n") + (lines.isEmpty ? "" : "\n")).write(to: url, atomically: true, encoding: .utf8)
+		try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
 	}
 
 	private func remember(address: String) throws {
@@ -137,6 +181,12 @@ public final class PeerPairingStore {
 		try (left.joined(separator: "\n") + (left.isEmpty ? "" : "\n")).write(to: peersURL, atomically: true, encoding: .utf8)
 		let rest = recorded.filter { !($0.count == 2 && $0[0] == peer) }.map { $0.joined(separator: " ") }
 		try (rest.joined(separator: "\n") + (rest.isEmpty ? "" : "\n")).write(to: addressesURL, atomically: true, encoding: .utf8)
+		// Whoever signed off is no longer waiting here, and what it
+		// vouched for is no longer vouched for.
+		let pending = pendingLines()
+		if pending.contains(where: { $0[0] == peer || $0[2] == peer }) {
+			try write(pending.filter { $0[0] != peer && $0[2] != peer }.map { $0.joined(separator: " ") }, to: pendingURL)
+		}
 		return removed
 	}
 

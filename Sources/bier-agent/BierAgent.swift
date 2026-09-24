@@ -251,6 +251,23 @@ final class AgentServer {
 			} catch { respond(connection, status: 403, body: "peer is not authorised") }
 			return
 		}
+		if method == "POST" && path == "/v1/peer/introduce" {
+			guard let peerSigners, let pairingStore, let peer = headers["x-bier-peer"], let time = headers["x-bier-time"],
+				let nonce = headers["x-bier-nonce"], let encoded = headers["x-bier-signature"], let signature = Data(base64Encoded: encoded),
+				let introduction = try? JSONDecoder().decode(PeerIntroduction.self, from: body) else {
+				respond(connection, status: 400, body: "invalid introduction")
+				return
+			}
+			do {
+				// Only a Mac trusted here may vouch for another, and what it
+				// vouches for waits for bier peer accept.
+				try verifyPeer(method: method, path: path, peer: peer, signers: peerSigners, time: time, nonce: nonce, body: body, signature: signature)
+				if try store.record("peer-\(peer)-\(nonce)") { respond(connection, status: 409, body: "peer request was already processed"); return }
+				try pairingStore.introduce(introduction, by: peer, agent: agent)
+				respond(connection, status: 200, body: "{\"status\":\"introduced\"}", contentType: "application/json")
+			} catch { respond(connection, status: 403, body: "peer is not authorised") }
+			return
+		}
 		if method == "GET" && path == "/v1/peer/manifest" {
 			guard let peerSigners, let dataDirectory, let peer = headers["x-bier-peer"], let time = headers["x-bier-time"],
 				let nonce = headers["x-bier-nonce"], let encoded = headers["x-bier-signature"], let signature = Data(base64Encoded: encoded) else {

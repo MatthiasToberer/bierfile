@@ -14,7 +14,7 @@ private enum CLIError: LocalizedError {
 	var errorDescription: String? {
 		switch self {
 		case .usage:
-			return "usage: bier-peer <hello|pair|leave|seed|seed-if-empty|seed-if-pristine|compare|sync> <host> --local <name> --identity <path> [--data <path>] [--address <own-host>] [--code-file <path>] [--peer-signers <path>] [--port <port>] [--via <host>]"
+			return "usage: bier-peer <hello|name|introduce|pair|leave|seed|seed-if-empty|seed-if-pristine|compare|sync> <host> --local <name> --identity <path> [--data <path>] [--address <own-host>] [--code-file <path>] [--peer-signers <path>] [--port <port>] [--via <host>] [--body <path>]"
 		case .invalidHost:
 			return "the peer host or port is invalid"
 		case .missingData:
@@ -38,6 +38,7 @@ private struct Options {
 	let peerSigners: URL?
 	let port: Int
 	let via: String?
+	let body: URL?
 
 	init(arguments: [String]) throws {
 		guard arguments.count >= 2 else { throw CLIError.usage }
@@ -61,6 +62,7 @@ private struct Options {
 		// Where to connect when that is not the peer itself: the local end
 		// of an SSH tunnel to it.
 		via = values["--via"]
+		body = values["--body"].map(URL.init(fileURLWithPath:))
 		guard port > 0 && port <= 65_535 else { throw CLIError.invalidHost }
 	}
 
@@ -76,6 +78,7 @@ private struct Options {
 
 private struct HelloResponse: Decodable {
 	let status: String
+	let agent: String?
 }
 
 @main
@@ -102,6 +105,15 @@ private enum BierPeerCLI {
 			let response = try JSONDecoder().decode(HelloResponse.self, from: try await transport.send(method: "GET", path: "/v1/peer/hello", body: Data()))
 			guard response.status == "peer-ok" else { throw CLIError.invalidResponse }
 			print("Bier Agent on \(options.displayHost) accepted \(options.localHost) as a peer.")
+		case "name":
+			// The name the other Mac signs with, for introducing it.
+			let response = try JSONDecoder().decode(HelloResponse.self, from: try await transport.send(method: "GET", path: "/v1/peer/hello", body: Data()))
+			guard response.status == "peer-ok", let agent = response.agent else { throw CLIError.invalidResponse }
+			print(agent)
+		case "introduce":
+			guard let body = options.body else { throw CLIError.usage }
+			let response = try JSONDecoder().decode(HelloResponse.self, from: try await transport.send(method: "POST", path: "/v1/peer/introduce", body: Data(contentsOf: body)))
+			guard response.status == "introduced" else { throw CLIError.invalidResponse }
 		case "pair":
 			try await pair(options)
 		case "leave":

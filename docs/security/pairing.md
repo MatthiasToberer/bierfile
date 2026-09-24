@@ -61,6 +61,24 @@ From then on, `bier sync` exchanges with every paired Mac.
 The full list, including remote installation over SSH:
 [`bier peer`](../reference/commands/peer.md).
 
+## A third Mac: introduce, then accept
+
+A new Mac pairs with one Mac, not with all of them. On the next
+`bier sync` that Mac introduces it to its other peers, and them to it,
+with a signed request. Nobody trusts it yet: each keeps it as pending,
+the way Salt keeps a new minion's key.
+
+```sh
+bier peer pending          # who waits, introduced by whom, key fingerprint
+bier peer accept febook    # or: bier peer accept all
+bier peer reject febook    # or: bier peer reject all
+```
+
+Accept on both sides: on the old Mac the new one, on the new Mac the
+old one. Then `bier sync`. Only a trusted Mac can introduce, and a Mac
+that signs off (`bier knockout`) takes its introductions with it.
+The menu bar and `bier brewmaster` point out Macs that wait.
+
 ## Network
 
 The agent listens on **TCP port 53991** and announces itself via Bonjour
