@@ -26,6 +26,7 @@ struct BierState {
 	var pending: [String] = [] // what the next sync carries, ready to show
 	var vaultIn: [String] = [] // delivered by a peer, not opened here yet
 	var vaultBoth: [String] = [] // changed here and in the safe
+	var denied: [String] = [] // app settings macOS does not let bier read
 	var gone: [String] = [] // recorded, but not installed here
 	var version = "" // the script's version, for the out-of-date hint
 	var release = "" // a newer release on the code server, empty if none
@@ -38,7 +39,7 @@ struct BierState {
 	var error: String?
 
 	var hasAnything: Bool {
-		!fresh.isEmpty || !stale.isEmpty || !dropped.isEmpty || !gone.isEmpty || !pending.isEmpty
+		!fresh.isEmpty || !stale.isEmpty || !dropped.isEmpty || !gone.isEmpty || !pending.isEmpty || !denied.isEmpty
 			|| ahead > 0 || behind > 0 || dirty
 	}
 }
@@ -187,6 +188,7 @@ enum Bier {
 				}
 			case "VAULT_WAIT": if f.count > 2 { s.pending.append("\(f[1]) waits: \(f[2]) is running") }
 			case "VAULT_LARGE": if f.count > 1 { s.pending.append("\(f[1]) too large for the vault") }
+			case "VAULT_DENIED": if f.count > 1 { s.denied.append(f[1]) }
 			case "VAULT_BOTH":
 				if f.count > 1 {
 					s.vaultBoth.append(f[1])
@@ -471,6 +473,17 @@ class Controller: NSObject, NSMenuDelegate {
 				menu.addItem(.separator())
 			}
 
+			// macOS keeps app containers from anybody not granted Full
+			// Disk Access -- and BierMenu is a program of its own there.
+			if !state.denied.isEmpty {
+				menu.addItem(header("\(state.denied.count) app settings bier may not read"))
+				for line in state.denied.prefix(4) {
+					menu.addItem(detail(line.replacingOccurrences(of: NSHomeDirectory(), with: "~")))
+				}
+				menu.addItem(action("Allow access … (Full Disk Access)", #selector(doAccess)))
+				menu.addItem(.separator())
+			}
+
 			// What the next sync carries: Brewfiles and vault alike.
 			if !state.pending.isEmpty {
 				menu.addItem(header("Waiting for a sync"))
@@ -606,6 +619,13 @@ class Controller: NSObject, NSMenuDelegate {
 	@objc private func doPrune() { Bier.runInTerminal(["prune"]) }
 
 	@objc private func doTake() { Bier.runInTerminal(["take"]) }
+
+	@objc private func doAccess() {
+		if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles") {
+			NSWorkspace.shared.open(url)
+		}
+		NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
+	}
 
 	@objc private func doUpgrade() { Bier.runInTerminal(["upgrade"]) }
 

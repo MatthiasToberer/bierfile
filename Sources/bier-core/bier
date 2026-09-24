@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.39.0
+BIER_VERSION=0.39.1
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -2256,6 +2256,7 @@ cmd_list() {
 #   VAULT_WAIT  <file> <app>      incoming, but the app is running
 #   VAULT_BOTH  <file>            changed here and in the safe
 #   VAULT_LARGE <file>            larger than vault_max_file, not taken
+#   VAULT_DENIED <file>           macOS does not let bier read it
 #   VAULT_LEFT  <path>            a .from-safe copy from a conflict
 sync_report() {
 	local peer sent n
@@ -2291,7 +2292,10 @@ vault_report() {
 		else
 			label=$(vault_target "$rel")
 		fi
-		if [ "$out" = both ] || { [ -n "$out" ] && [ "$out" != large ] && [ -n "$in" ]; }; then
+		if [ "$out" = denied ]; then
+			printf 'VAULT_DENIED\t%s\n' "$label"
+			continue
+		elif [ "$out" = both ] || { [ -n "$out" ] && [ "$out" != large ] && [ -n "$in" ]; }; then
 			printf 'VAULT_BOTH\t%s\n' "$label"
 		elif [ "$out" = large ]; then
 			printf 'VAULT_LARGE\t%s\n' "$label"
@@ -2333,6 +2337,7 @@ cmd_status() {
 			$1 == "VAULT_IN" && $3 == "forgotten" { printf "  v  vault            %s no longer synced, stays here\n", $2; next }
 			$1 == "VAULT_IN"    { printf "  v  vault            %s newer in the safe\n", $2; next }
 			$1 == "VAULT_WAIT"  { printf "  .  vault            %s waiting: %s is running\n", $2, $3; next }
+			$1 == "VAULT_DENIED" { printf "  !  vault            %s no access -- see: bier access\n", $2; next }
 			$1 == "VAULT_LARGE" { printf "  !  vault            %s not taken: larger than vault_max_file\n", $2; next }
 			$1 == "VAULT_BOTH"  { printf "  !  vault            %s changed here and in the safe\n", $2; next }
 			$1 == "VAULT_LEFT"  { printf "  !  vault            %s left from a conflict: merge it, then delete it\n", $2; next }'
@@ -2866,12 +2871,21 @@ cmd_group() {
 # Left out of a tracked folder: noise that changes all the time and is
 # no setting of anybody's. $1 is the path inside the folder.
 vault_excluded() {
+	local pattern
 	case ${1##*/} in
-	.DS_Store | *.lock | *.log | .bier-folder) return 0 ;;
+	.DS_Store | *.lock | *.log | *[Ll]og.txt | .bier-folder) return 0 ;;
 	esac
 	case "/$1" in
 	*/Cache/* | */Caches/* | */Logs/* | */.git/*) return 0 ;;
 	esac
+	# More of an app's own noise, from the config: vault_exclude =
+	# *.hbqueue Recent*
+	for pattern in $(config_get vault_exclude); do
+		# shellcheck disable=SC2254
+		case ${1##*/} in
+		$pattern) return 0 ;;
+		esac
+	done
 	return 1
 }
 
@@ -3232,10 +3246,30 @@ vault_known() {
 				printf '%s/%s\n' "$folder" "$(printf '%s' "$inner" | sed -e 's#^\.#dot_#' -e 's#/\.#/dot_#g')"
 			done
 		done
-	} | grep -v '^README.txt$' | grep -v '^$' | sort -u || true
+	} | grep -v '^README.txt$' | grep -v '^$' | sort -u | while IFS= read -r rel; do
+		# Noise excluded after it was taken in stays where it is, and
+		# is left alone from then on.
+		vault_is_meta "$rel" || ! vault_excluded "$rel" || continue
+		printf '%s\n' "$rel"
+	done || true
 }
 
 sha_of() { shasum -a 256 "$1" | cut -d' ' -f1; }
+
+# macOS guards other apps' containers: a program without permission sees
+# that a file is there, but cannot read it. Taken for a change, that
+# would seal nothing and abort the sync -- so it is told apart.
+vault_denied() {
+	local p=$1
+	if [ -d "$p" ]; then
+		! ls "$p" >/dev/null 2>&1
+	elif [ -e "$p" ]; then
+		! { : <"$p"; } 2>/dev/null
+	else
+		while [ ! -e "$p" ]; do p=$(dirname "$p"); done
+		! ls "$p" >/dev/null 2>&1
+	fi
+}
 
 # What sealing would do with one entry, without the passphrase:
 # new, changed, deleted, both (changed here and in the safe), large,
@@ -3257,6 +3291,10 @@ vault_outgoing() {
 	fi
 	target=$(vault_target "$rel")
 	[ ! -L "$target" ] || return 0
+	if vault_denied "$target"; then
+		echo denied
+		return 0
+	fi
 	if [ -f "$target" ]; then
 		if [ ! -f "$enc" ]; then
 			# Deleted on another Mac: that is for opening to sort out.
@@ -3462,6 +3500,11 @@ vault_take() {
 		rm -f "$plain"
 		return 0
 	fi
+	if vault_denied "$target"; then
+		info "no access: $target -- see: bier access"
+		rm -f "$plain"
+		return 0
+	fi
 	if [ -f "$target" ]; then
 		cur=$(vault_hash "$target")
 	else
@@ -3538,6 +3581,10 @@ vault_gone() {
 		return 0
 	fi
 	target=$(vault_target "$rel")
+	if vault_denied "$target"; then
+		info "no access: $target -- see: bier access"
+		return 0
+	fi
 	if [ "$why" = forgotten ]; then
 		rm -f "$VAULT/$rel"
 		vault_base_del "$rel"
@@ -3770,6 +3817,26 @@ EOF
 $(cd "$staging" && find . -name '*.gpg' -type f -print | sed 's#^\./##')
 EOF
 	rm -rf "$staging"
+}
+
+# Reading an app's settings in its container needs Full Disk Access, for
+# the terminal bier runs in and for BierMenu, which runs it on its own.
+# macOS lets nobody grant that but the person at the Mac, in System
+# Settings; this opens the place and shows the app to drag in.
+cmd_access() {
+	local app=$BARREL/BierMenu.app
+	info "bier reads app settings inside their sandbox containers. macOS"
+	info "allows that only with Full Disk Access, granted by you:"
+	info ""
+	info "  1. System Settings > Privacy & Security > Full Disk Access"
+	info "  2. add your terminal, and BierMenu -- drag it from the Finder"
+	info "     window into the list: $app"
+	info ""
+	info "BierMenu is signed on this Mac only, so after bier upgrade macOS"
+	info "may ask again."
+	[ -z "${BIER_TEST_SYSTEM:-}" ] || return 0
+	open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles" 2>/dev/null || true
+	[ ! -d "$app" ] || open -R "$app" 2>/dev/null || true
 }
 
 # Takes bier off this Mac, and this Mac out of the group -- the tidy way
@@ -4347,6 +4414,8 @@ bier — keeps Brewfiles in sync across Macs
   bier upgrade [--force]  install a newer release of bier itself
   bier retire <name>      take a Mac out of the fleet — the one that
                           broke, or was wiped without uninstalling
+  bier access             how to let bier read app settings in their
+                          sandbox (Full Disk Access)
   bier knockout           take bier off this Mac: sign off at the others,
                           leave the vault's files in place
   bier vault [--init]     files that are not Brewfiles, encrypted
@@ -4430,6 +4499,7 @@ peer) cmd_peer "$@" ;;
 vault) cmd_vault "$@" ;;
 retire) cmd_retire "$@" ;;
 knockout) cmd_knockout "$@" ;;
+access) cmd_access ;;
 version | --version | -V) cmd_version ;;
 help | -h | --help) cmd_help ;;
 *) die "unknown command: $cmd (bier help)" ;;

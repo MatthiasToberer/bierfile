@@ -22,6 +22,7 @@ inventory = automatic                # or manual
 | `vault` | the folder with the plain vault copies | `~/.barrel/vault` |
 | `vault_backup` | keep a copy before overwriting a vault file with another Mac's version | `yes` |
 | `vault_max_file` | largest file the vault takes in, e.g. `500K`, `10M` | `10M` |
+| `vault_exclude` | more file names a tracked folder leaves out, e.g. `*.hbqueue Recent*` | — |
 
 `bier config` shows the values in effect.
 

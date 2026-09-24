@@ -72,8 +72,10 @@ files do not compress against each other. So:
 - files larger than `vault_max_file` (10 MB unless set in the
   [config](../reference/configuration.md)) are not taken in, and `bier
   status` names them;
-- `.DS_Store`, `*.lock`, `*.log` and folders called `Cache`, `Caches`,
-  `Logs` or `.git` are left out.
+- `.DS_Store`, `*.lock`, `*.log`, `*log.txt` and folders called `Cache`,
+  `Caches`, `Logs` or `.git` are left out, and whatever `vault_exclude`
+  in the config names — an app's own noise, such as HandBrake's queue:
+  `vault_exclude = *.hbqueue`.
 
 ## Apps that are running
 
@@ -96,10 +98,11 @@ through `defaults import`, so the system's preferences cache picks them
 up.
 
 Settings inside `~/Library/Containers` are protected by macOS: a program
-needs permission to read another app's data. Allow it when macOS asks
-for your terminal, or give it — and `~/.barrel/BierMenu.app`, which
-applies changes on its own — access under System Settings › Privacy &
-Security › Full Disk Access.
+needs Full Disk Access to read another app's data — your terminal, and
+`~/.barrel/BierMenu.app`, which runs bier on its own.
+[`bier access`](../reference/commands/access.md) opens the place to
+grant it. Until then `bier status` marks those settings `no access`,
+and a sync leaves them alone; they are never taken for deleted.
 
 ## When it changes
 

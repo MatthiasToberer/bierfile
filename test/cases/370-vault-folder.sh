@@ -23,6 +23,9 @@ printf '{"preset":"fast"}\n' >"$WORK/home-mini/$app/Presets/fast.json"
 printf 'window=1\n' >"$WORK/home-mini/$app/settings.ini"
 printf 'noise\n' >"$WORK/home-mini/$app/Caches/blob"
 printf 'noise\n' >"$WORK/home-mini/$app/.DS_Store"
+printf 'noise\n' >"$WORK/home-mini/$app/TestApp-activitylog.txt"
+printf 'noise\n' >"$WORK/home-mini/$app/Queue.hbqueue"
+printf 'vault_exclude = *.hbqueue\n' >>"$WORK/home-mini/.barrel/config"
 head -c 4096 /dev/zero >"$WORK/home-mini/$app/huge.bin"
 
 assert_ok bier mini vault add "$WORK/home-mini/$app"
@@ -36,9 +39,23 @@ assert_contains "$OUT" "huge.bin not taken: larger than vault_max_file"
 assert_ok bier macbook sync
 assert_eq '{"preset":"fast"}' "$(cat "$WORK/home-macbook/$app/Presets/fast.json")"
 assert_eq 'window=1' "$(cat "$WORK/home-macbook/$app/settings.ini")"
-for left_out in Caches/blob .DS_Store huge.bin; do
+for left_out in Caches/blob .DS_Store huge.bin TestApp-activitylog.txt Queue.hbqueue; do
 	[ ! -e "$WORK/home-macbook/$app/$left_out" ] || fail "$left_out must stay out"
 done
+
+# Noise excluded after it was shared is left alone from then on.
+printf 'recent=1\n' >"$WORK/home-mini/$app/recent.state"
+assert_ok bier mini sync
+assert_ok bier macbook sync
+assert_eq 'recent=1' "$(cat "$WORK/home-macbook/$app/recent.state")"
+printf 'vault_exclude = *.hbqueue *.state\n' >>"$WORK/home-mini/.barrel/config"
+printf 'vault_exclude = *.hbqueue *.state\n' >>"$WORK/home-macbook/.barrel/config"
+printf 'recent=2\n' >"$WORK/home-mini/$app/recent.state"
+bier mini status
+assert_not_contains "$OUT" "recent.state"
+assert_ok bier mini sync
+assert_ok bier macbook sync
+assert_eq 'recent=1' "$(cat "$WORK/home-macbook/$app/recent.state")" "an excluded file does not travel any more"
 
 # A file put in the folder later comes along.
 printf '{"preset":"slow"}\n' >"$WORK/home-mini/$app/Presets/slow.json"
