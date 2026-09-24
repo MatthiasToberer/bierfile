@@ -21,6 +21,16 @@ bootstrap)
 	;;
 esac
 
+# A tunnel (-N -L 127.0.0.1:<port>:…): listen on the local end, as ssh
+# would, until bier is done with it.
+if [[ " $* " == *" -N "* ]]; then
+	for arg in "$@"; do
+		case $arg in
+		127.0.0.1:*:*) exec nc -l 127.0.0.1 "$(printf '%s' "$arg" | cut -d: -f2)" >/dev/null 2>&1 ;;
+		esac
+	done
+fi
+
 case "$*" in
 *'uname -m'*) printf '%s\n' "${BIER_TEST_SSH_ARCH:-arm64}" ;;
 *'printf "%s\n" "$HOME"'*) printf '%s\n' "${BIER_TEST_SSH_HOME:-/Users/bier}" ;;

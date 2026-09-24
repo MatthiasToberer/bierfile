@@ -191,9 +191,11 @@ public final class PeerPairingStore {
 		value.range(of: "^[A-Za-z0-9][A-Za-z0-9._-]*$", options: .regularExpression) != nil
 	}
 
+	// A host name, or user@host for a Mac to be reached over SSH.
 	private func validAddress(_ value: String) -> Bool {
-		value.range(of: "^[A-Za-z0-9][A-Za-z0-9.-]*$", options: .regularExpression) != nil
+		value.range(of: "^([A-Za-z0-9._-]+@)?[A-Za-z0-9][A-Za-z0-9.-]*$", options: .regularExpression) != nil
 	}
+
 
 	private func validPublicKey(_ value: String) -> Bool {
 		guard !value.contains("\n") else { return false }

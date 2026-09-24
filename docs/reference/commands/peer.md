@@ -23,8 +23,11 @@ Manages the Macs this one exchanges data with.
 | `discover` | list bier agents announced via Bonjour |
 | `trust [url]` | alias for [`bier trust`](trust.md) |
 
-`--address` advertises this Mac's reachable name or IPv4 address. Use it
-on both commands for [Tailscale pairing](../../security/pairing.md#syncing-beyond-the-local-network-tailscale).
+`--address` advertises this Mac's reachable name or IPv4 address — or
+`user@host` to be reached over SSH. Use it on both commands for
+[Tailscale](../../security/pairing.md#syncing-beyond-the-local-network-tailscale)
+or [SSH](../../security/pairing.md#syncing-over-ssh). A peer written as
+`user@host` is always reached through an SSH tunnel.
 
 ## Remote installation over SSH
 

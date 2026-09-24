@@ -66,7 +66,8 @@ The full list, including remote installation over SSH:
 The agent listens on **TCP port 53991** and announces itself via Bonjour
 as `_bier-agent._tcp`. By default paired Macs find each other by their
 `.local` names, which only works while both are on the same local
-network.
+network. Beyond it: [Tailscale](#syncing-beyond-the-local-network-tailscale)
+or [SSH](#syncing-over-ssh).
 
 ## Syncing beyond the local network: Tailscale
 
@@ -105,6 +106,44 @@ address without pairing again. Re-pairing does not remove old addresses.
 
 Check `bier peer list` on both Macs, then `bier peer hello <other-mac>`
 and `bier sync`. Tailscale must allow TCP port 53991 between the Macs.
+
+## Syncing over SSH
+
+Where SSH reaches a Mac — through a router, a jump host, or just because
+you prefer it — bier can use that instead of a direct connection. A peer
+written as **`user@host`** is always reached through an SSH tunnel to
+its agent: nothing but SSH has to be reachable there, port 53991 stays
+closed, and the traffic is encrypted by SSH.
+
+1. On every Mac: System Settings › General › Sharing › **Remote Login**
+   on, and key-based login in **both** directions — each Mac syncs with
+   the other:
+
+   ```sh
+   ssh-copy-id you@macbook.example.org     # from mini
+   ssh-copy-id you@mini.example.org        # from macbook
+   ```
+
+   `ssh you@macbook.example.org true` must work without a password
+   prompt. Hosts from `~/.ssh/config` work too, written as `user@alias`
+   — the `@` is what tells bier to go through SSH.
+
+2. On the joining Mac, advertise how the other one reaches it:
+
+   ```sh
+   bier peer offer --address you@macbook.example.org
+   ```
+
+3. On the configured Mac, pair through SSH and advertise its own SSH
+   address:
+
+   ```sh
+   bier peer pair you@macbook.example.org --address you@mini.example.org
+   ```
+
+From then on `bier sync`, `peer compare`, `knockout` and the rest open a
+tunnel for each such peer, use it, and close it again. SSH and direct
+peers can be mixed: one Mac over Tailscale, another over SSH.
 
 What the agent does and does not accept:
 [Threat model](threat-model.md).

@@ -73,7 +73,7 @@ assert_eq "no" "$(grep -c mini "$WORK/home-mini/.barrel/vault/.groups" >/dev/nul
 	"mini has to be out of the groups"
 assert_eq "sync macbook.local" "$(grep -E '^(sync|leave) macbook.local' "$WORK/peer-client.log" | tail -2 | head -1 | cut -d' ' -f1-2)" \
 	"the removal travels before the sign-off"
-assert_file_has "$WORK/peer-client.log" "leave macbook.local --local mini"
+assert_file_has "$WORK/peer-client.log" "leave macbook.local --port 53991 --local mini"
 # The one away is named, with what to do there.
 assert_contains "$OUT" "Not reached to sign off: gone.local"
 assert_contains "$OUT" "bier peer remove mini"

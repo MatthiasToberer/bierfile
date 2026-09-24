@@ -187,7 +187,7 @@ grep -q '^mini ssh-ed25519 ' "$work/peer_signers"
 grep -qx 'mini.local' "$work/remote-peers"
 grep -q '^target ssh-ed25519 ' "$work/home/.barrel/agent/peer_signers"
 grep -qx '127.0.0.1' "$work/home/.barrel/peers"
-for advertised in mini.example.ts.net 100.64.0.1; do
+for advertised in mini.example.ts.net 100.64.0.1 ma@mini.example.org; do
 	printf '{"version":1,"code":"%s","expires":%s,"attempts":0}\n' "$pair_code" "$pair_expiry" >"$work/state-client/pairing-offer.json"
 	BIER_ROOT="$root" BIER_DATA="$work/source" BIER_HOST=mini BIER_PEER_PORT=53992 BIER_PEER_CLIENT="$peer_cli" BIER_PEER_IDENTITY="$work/home/.ssh/id_ed25519" BIER_PAIR_CODE="$pair_code" HOME="$work/home" \
 		"$root/Sources/bier-core/bier" peer pair 127.0.0.1 --address "$advertised" >"$work/pair-address.log"
@@ -199,6 +199,9 @@ test -d "$work/target/.git"
 test "$(git -C "$work/target" log -1 --format=%s)" = 'initial data'
 "$peer_cli" hello 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --port 53992 >"$work/hello-swift.log"
 grep -q 'Bier Agent on 127.0.0.1 accepted mini as a peer.' "$work/hello-swift.log"
+# Through a tunnel: the peer is named user@host, the connection goes to --via.
+"$peer_cli" hello ma@far.invalid --via 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --port 53992 >"$work/hello-via.log"
+grep -q 'Bier Agent on ma@far.invalid accepted mini as a peer.' "$work/hello-via.log"
 printf 'brew "tree"\n' >"$work/source/Brewfiles/main"
 "$peer_cli" seed-if-empty 127.0.0.1 --local mini --identity "$work/home/.ssh/id_ed25519" --data "$work/source" --port 53992 >"$work/client-existing.log"
 grep -q 'Existing peer data was kept unchanged.' "$work/client-existing.log"

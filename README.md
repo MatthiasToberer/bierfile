@@ -31,7 +31,7 @@ menu bar: **full** — all in order, **empty** — something to do here.
 | **One main inventory** | `main` applies to every Mac. New installs are recorded automatically as that Mac's extras until you move them into `main`. All plain [Brewfiles](https://docs.brew.sh/Brew-Bundle-and-Brewfile). |
 | **Removals travel too** | The git history tells "removed elsewhere" from "new here". `bier prune` follows along. |
 | **Encrypted dotfiles and app settings** | `bier vault add ~/.zshrc`, or a whole settings folder — AES-256, one shared passphrase, groups per Mac. Files stay where they are. |
-| **No server, no SSH** | Pair once with a one-time code. Macs exchange signed Git history directly. |
+| **No server** | Pair once with a one-time code. Macs exchange signed Git history directly — on the local network, over Tailscale or through SSH. |
 | **No git knowledge needed** | `bier sync` asks nothing and merges on its own. |
 | **Signed releases** | Installation and upgrades check a signing key published away from GitHub. |
 | **Out of sight, easy to leave** | Everything bier keeps lives in `~/.barrel`. `bier knockout` signs off and leaves; `rm -rf ~/.barrel` works too. |
@@ -40,8 +40,8 @@ menu bar: **full** — all in order, **empty** — something to do here.
 
 Requires macOS, [Homebrew](https://brew.sh) and the Command Line Tools
 (`xcode-select --install`). Macs sync over the local network; to sync
-them anywhere, set up [Tailscale](https://tailscale.com) on each Mac
-first — [how](docs/security/pairing.md#syncing-beyond-the-local-network-tailscale).
+them anywhere, use [Tailscale](docs/security/pairing.md#syncing-beyond-the-local-network-tailscale)
+or [SSH](docs/security/pairing.md#syncing-over-ssh).
 
 On every Mac, one line — like Homebrew:
 

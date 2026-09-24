@@ -17,8 +17,9 @@ Update server" — common on fresh or very new systems — download them from
 [developer.apple.com/download/all](https://developer.apple.com/download/all)
 instead (search for "Command Line Tools"; a free Apple ID is enough).
 
-You do **not** need an SSH login on the other Macs, an account on a data
-server or a private GitHub repository.
+You do **not** need an account on a data server or a private GitHub
+repository. An SSH login on the other Macs is optional — one way to
+reach them when they are not on the same network.
 
 ### Before you install: Macs on different networks
 
@@ -28,6 +29,8 @@ set up [Tailscale](https://tailscale.com) on every Mac **first**. It
 connects them privately wherever they are and encrypts the traffic
 between them. You then pair with Tailscale names; see
 [Syncing beyond the local network](../security/pairing.md#syncing-beyond-the-local-network-tailscale).
+Where SSH reaches the other Mac, that works too, without Tailscale — see
+[Syncing over SSH](../security/pairing.md#syncing-over-ssh).
 
 ## Install
 

@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.40.0
+BIER_VERSION=0.41.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -363,6 +363,42 @@ host_list() {
 peer_name_ok() {
 	[ -n "${1:-}" ] && printf '%s\n' "$1" |
 		grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:@-]*$'
+}
+
+# Runs the peer client against one paired Mac. A peer written as
+# user@host is reached over SSH: a tunnel to the agent on the far side,
+# so nothing but SSH has to be reachable there -- no Tailscale, no open
+# port. Anything else is reached directly, on the local network or over
+# Tailscale.
+peer_call() {
+	local command=$1 peer=$2 port=$PEER_PORT tunnel="" status=0 i=0
+	local -a via=()
+	shift 2
+	case $peer in
+	*@*)
+		port=53992
+		while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
+		ssh -N -o BatchMode=yes -o ConnectTimeout=10 -o ExitOnForwardFailure=yes \
+			-L "127.0.0.1:$port:127.0.0.1:$PEER_PORT" "$peer" 2>/dev/null &
+		tunnel=$!
+		until nc -z 127.0.0.1 "$port" 2>/dev/null; do
+			if ! kill -0 "$tunnel" 2>/dev/null || [ "$i" -ge 75 ]; then
+				kill "$tunnel" 2>/dev/null || true
+				info "Cannot reach $peer over SSH: is key-based login set up?" >&2
+				return 1
+			fi
+			sleep 0.2
+			i=$((i + 1))
+		done
+		via=(--via 127.0.0.1)
+		;;
+	esac
+	"$PEER_CLIENT" "$command" "$peer" ${via[@]+"${via[@]}"} --port "$port" --local "$HOST" "$@" || status=$?
+	if [ -n "$tunnel" ]; then
+		kill "$tunnel" 2>/dev/null || true
+		wait "$tunnel" 2>/dev/null || true
+	fi
+	return "$status"
 }
 
 peer_list() {
@@ -985,7 +1021,7 @@ cmd_peer_hello() {
 	[ -r "$key" ] || die "no SSH identity at $key"
 	if [ -x "$PEER_CLIENT" ]; then
 		info "Checking authenticated Bier Agent access to $peer …"
-		"$PEER_CLIENT" hello "$peer" --local "$HOST" --identity "$key" --port "$PEER_PORT" ||
+		peer_call hello "$peer" --identity "$key" ||
 			die "the Bier Agent on $peer did not accept this Mac"
 		return 0
 	fi
@@ -1000,8 +1036,15 @@ cmd_peer_hello() {
 	info "Bier Agent on $peer accepted $HOST as a peer."
 }
 
+# The address the other Mac should reach this one by: a host name, or
+# user@host to come back over SSH.
 peer_pair_address_ok() {
-	case $1 in
+	local host=${1#*@} user=
+	[ "$host" = "$1" ] || user=${1%@*}
+	case $user in
+	*[!a-zA-Z0-9._-]*) return 1 ;;
+	esac
+	case $host in
 	'' | [!a-zA-Z0-9]* | *[!a-zA-Z0-9.-]*) return 1 ;;
 	esac
 }
@@ -1051,18 +1094,18 @@ cmd_peer_pair() {
 	printf '%s\n' "$code" >"$code_file"
 	chmod 600 "$code_file"
 	info "Pairing with $peer …"
-	"$PEER_CLIENT" pair "$peer" ${address_args[@]+"${address_args[@]}"} --local "$HOST" --identity "$PEER_IDENTITY" --code-file "$code_file" --peer-signers "$LOCAL_PEER_SIGNERS" --port "$PEER_PORT" ||
+	peer_call pair "$peer" ${address_args[@]+"${address_args[@]}"} --identity "$PEER_IDENTITY" --code-file "$code_file" --peer-signers "$LOCAL_PEER_SIGNERS" ||
 		die "pairing with $peer failed"
 	peer_remember "$peer"
 	info "Peer added: $peer"
 	if [ -n "$DATA" ] && [ -d "$DATA/.git" ]; then
 		info "Checking whether the new peer needs this Mac's Bier data …"
-		"$PEER_CLIENT" seed-if-pristine "$peer" --local "$HOST" --identity "$PEER_IDENTITY" --data "$DATA" --port "$PEER_PORT" ||
+		peer_call seed-if-pristine "$peer" --identity "$PEER_IDENTITY" --data "$DATA" ||
 			die "paired successfully, but could not initialise the peer data"
 		# A peer that already recorded its own inventory keeps it, and
 		# only a sync makes the two histories one.
 		info "Synchronising Bier data with $peer …"
-		"$PEER_CLIENT" sync "$peer" --local "$HOST" --identity "$PEER_IDENTITY" --data "$DATA" --port "$PEER_PORT" ||
+		peer_call sync "$peer" --identity "$PEER_IDENTITY" --data "$DATA" ||
 			die "paired successfully, but could not synchronise with $peer; try again with: bier peer sync $peer"
 		peer_sent_set "$peer"
 	fi
@@ -1179,7 +1222,7 @@ cmd_peer_compare() {
 	need_repo
 	if [ -x "$PEER_CLIENT" ]; then
 		info "Reading and verifying Bier data from $peer …"
-		"$PEER_CLIENT" compare "$peer" --local "$HOST" --identity "$PEER_IDENTITY" --data "$DATA" --port "$PEER_PORT" ||
+		peer_call compare "$peer" --identity "$PEER_IDENTITY" --data "$DATA" ||
 			die "could not compare Bier data with $peer"
 		return 0
 	fi
@@ -1214,7 +1257,7 @@ cmd_peer_sync() {
 	[ -r "$PEER_IDENTITY" ] || die "the local Bier peer identity is missing; run install.sh"
 	[ -x "$PEER_CLIENT" ] || die "the Swift peer client is not built; run install.sh"
 	info "Synchronising Bier data with $peer …"
-	"$PEER_CLIENT" sync "$peer" --local "$HOST" --identity "$PEER_IDENTITY" --data "$DATA" --port "$PEER_PORT" ||
+	peer_call sync "$peer" --identity "$PEER_IDENTITY" --data "$DATA" ||
 		die "could not synchronise Bier data with $peer"
 	peer_sent_set "$peer"
 }
@@ -1240,7 +1283,7 @@ peer_seed() {
 	[ "$mode" != if-empty ] || command=seed-if-empty
 	if [ -x "$PEER_CLIENT" ]; then
 		info "Checking and sending Bier data to $peer …"
-		"$PEER_CLIENT" "$command" "$peer" --local "$HOST" --identity "$PEER_IDENTITY" --data "$DATA" --port "$PEER_PORT" ||
+		peer_call "$command" "$peer" --identity "$PEER_IDENTITY" --data "$DATA" ||
 			die "the Bier data snapshot was not accepted by $peer"
 		return 0
 	fi
@@ -3925,7 +3968,7 @@ cmd_knockout() {
 	info ""
 	info "== 3. Signing off"
 	for peer in $peers; do
-		if "$PEER_CLIENT" leave "$peer" --local "$HOST" --identity "$PEER_IDENTITY" --port "$PEER_PORT"; then
+		if peer_call leave "$peer" --identity "$PEER_IDENTITY"; then
 			peer_forget "$peer"
 		else
 			unsigned="$unsigned $peer"

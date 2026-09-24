@@ -12,7 +12,7 @@ private enum CLIError: LocalizedError {
 	var errorDescription: String? {
 		switch self {
 		case .usage:
-			return "usage: bier-peer <hello|pair|leave|seed|seed-if-empty|seed-if-pristine|compare|sync> <host> --local <name> --identity <path> [--data <path>] [--address <own-host>] [--code-file <path>] [--peer-signers <path>] [--port <port>]"
+			return "usage: bier-peer <hello|pair|leave|seed|seed-if-empty|seed-if-pristine|compare|sync> <host> --local <name> --identity <path> [--data <path>] [--address <own-host>] [--code-file <path>] [--peer-signers <path>] [--port <port>] [--via <host>]"
 		case .invalidHost:
 			return "the peer host or port is invalid"
 		case .missingData:
@@ -35,6 +35,7 @@ private struct Options {
 	let codeFile: URL?
 	let peerSigners: URL?
 	let port: Int
+	let via: String?
 
 	init(arguments: [String]) throws {
 		guard arguments.count >= 2 else { throw CLIError.usage }
@@ -55,12 +56,15 @@ private struct Options {
 		codeFile = values["--code-file"].map(URL.init(fileURLWithPath:))
 		peerSigners = values["--peer-signers"].map(URL.init(fileURLWithPath:))
 		port = Int(values["--port"] ?? "53991") ?? 0
+		// Where to connect when that is not the peer itself: the local end
+		// of an SSH tunnel to it.
+		via = values["--via"]
 		guard port > 0 && port <= 65_535 else { throw CLIError.invalidHost }
 	}
 
 	var baseURL: URL {
 		get throws {
-			let networkHost = displayHost.split(separator: "@", maxSplits: 1).last.map(String.init) ?? displayHost
+			let networkHost = via ?? displayHost.split(separator: "@", maxSplits: 1).last.map(String.init) ?? displayHost
 			guard networkHost.range(of: "^[A-Za-z0-9][A-Za-z0-9.:-]*$", options: .regularExpression) != nil,
 				let url = URL(string: "http://\(networkHost):\(port)") else { throw CLIError.invalidHost }
 			return url
@@ -139,7 +143,7 @@ private enum BierPeerCLI {
 		let publicKey = try String(contentsOf: URL(fileURLWithPath: options.identity.path + ".pub"), encoding: .utf8)
 			.trimmingCharacters(in: .whitespacesAndNewlines)
 		let address = options.address
-		guard address.range(of: "^[A-Za-z0-9][A-Za-z0-9.-]*\\z", options: .regularExpression) != nil else {
+		guard address.range(of: "^([A-Za-z0-9._-]+@)?[A-Za-z0-9][A-Za-z0-9.-]*\\z", options: .regularExpression) != nil else {
 			throw CLIError.invalidHost
 		}
 		let pairing = PeerPairingRequest(peer: options.localHost, address: address, publicKey: publicKey,

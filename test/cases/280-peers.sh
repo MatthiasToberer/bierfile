@@ -93,17 +93,17 @@ assert_fails bier mini peer offer --address 'bad/name'
 assert_fails bier mini peer offer --address $'mini\nother'
 assert_fails bier mini peer offer --address ''
 assert_fails bier mini peer pair macbook --address
-assert_fails bier mini peer pair macbook --address 'user@mini'
+assert_fails bier mini peer pair macbook --address 'us er@mini'
 BIER_PAIR_CODE=0123456789abcdef0123456789abcdef
 export BIER_PAIR_CODE
 assert_ok bier mini peer pair macbook.example.ts.net --address mini.example.ts.net
-assert_file_has "$WORK/peer-client.log" 'pair macbook.example.ts.net --address mini.example.ts.net --local mini'
+assert_file_has "$WORK/peer-client.log" 'pair macbook.example.ts.net --port 53991 --local mini --address mini.example.ts.net'
 assert_ok bier mini peer remove macbook.example.ts.net
 assert_ok bier mini peer pair 100.64.0.2 --address 100.64.0.1
-assert_file_has "$WORK/peer-client.log" 'pair 100.64.0.2 --address 100.64.0.1 --local mini'
+assert_file_has "$WORK/peer-client.log" 'pair 100.64.0.2 --port 53991 --local mini --address 100.64.0.1'
 assert_ok bier mini peer remove 100.64.0.2
 assert_ok bier mini peer pair macbook.local
-assert_file_has "$WORK/peer-client.log" 'pair macbook.local --local mini'
+assert_file_has "$WORK/peer-client.log" 'pair macbook.local --port 53991 --local mini'
 assert_ok bier mini peer remove macbook.local
 unset BIER_PAIR_CODE
 system mini <<'EOF'
@@ -111,7 +111,10 @@ brew "wget"
 EOF
 assert_ok bier mini sync
 assert_contains "$OUT" 'In sync with Bier peers.'
-assert_file_has "$WORK/peer-client.log" 'sync admin@192.168.1.42'
+# A peer written user@host is reached through an SSH tunnel.
+assert_file_has "$WORK/peer-client.log" 'sync admin@192.168.1.42 --via 127.0.0.1 --port 5399'
+assert_file_has "$WORK/ssh.args" '-N -o BatchMode=yes'
+assert_file_has "$WORK/ssh.args" ':127.0.0.1:53991 admin@192.168.1.42'
 assert_eq "$(grep -c '^sync admin@192.168.1.42 ' "$WORK/peer-client.log")" 2 \
 	"bier sync has to collect and then distribute peer history"
 unset BIER_PEER_CLIENT BIER_TEST_PEER_LOG
