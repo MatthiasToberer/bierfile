@@ -43,3 +43,16 @@ assert_ok bier mini admin remove kasten
 assert_ok bier mini admin list
 assert_contains "$OUT" "No Bierkasten is connected."
 assert_fails bier mini admin remove kasten
+
+# Conflicts are resolved without a question, for Bierkasten.
+printf 'mine\n' >"$h/.gitconfig"
+printf 'theirs\n' >"$h/.gitconfig.from-safe"
+assert_ok bier mini vault resolve "$h/.gitconfig.from-safe" theirs
+assert_file_has "$h/.gitconfig" theirs
+[ ! -e "$h/.gitconfig.from-safe" ] || fail "the copy took the file's place"
+assert_file_has "$WORK/trash-mini/.gitconfig" mine
+printf 'other\n' >"$h/.gitconfig.from-safe"
+assert_ok bier mini vault resolve "$h/.gitconfig.from-safe" mine
+assert_file_has "$h/.gitconfig" theirs
+assert_fails bier mini vault resolve "$h/.gitconfig" mine
+assert_ok bier mini prune --yes

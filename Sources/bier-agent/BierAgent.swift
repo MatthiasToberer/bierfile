@@ -43,7 +43,8 @@ struct BundleReadRequest: Decodable {
 let adminCommands: [[String]] = [
 	["report"], ["state"], ["sync"], ["brewmaster"], ["status"], ["list"],
 	["peer", "pending"], ["peer", "accept"], ["peer", "reject"], ["peer", "list"],
-	["add"], ["install"], ["take"], ["vault", "add"], ["vault", "forget"],
+	["add"], ["install"], ["uninstall"], ["prune", "--yes"], ["take"],
+	["vault", "add"], ["vault", "forget"], ["vault", "resolve"],
 ]
 
 struct AdminRunRequest: Decodable {

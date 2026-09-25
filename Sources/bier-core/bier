@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.48.2
+BIER_VERSION=0.49.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -2511,6 +2511,9 @@ record_after_removal() {
 cmd_prune() {
 	need_brew
 	need_repo
+	# --yes answers up front: Bierkasten asks in its own window.
+	local yes=no
+	[ "${1:-}" != --yes ] || yes=yes
 
 	local tmp stale entry kind name
 	tmp=$(tmpfile)
@@ -2525,8 +2528,12 @@ cmd_prune() {
 
 	info "Removed elsewhere or taken out of main, still installed here:"
 	printf '%s\n' "$stale" | sed 's/^/  /'
-	printf 'Uninstall? [y/N] '
-	read -r answer || answer=""
+	if [ "$yes" = yes ]; then
+		answer=y
+	else
+		printf 'Uninstall? [y/N] '
+		read -r answer || answer=""
+	fi
 	case $answer in
 	j | J | y | Y) ;;
 	*)
@@ -3405,6 +3412,31 @@ vault_backup() {
 	[ ! -e "$dest" ] || dest=$dest.$(date +%H%M%S)
 	mkdir -p "$(dirname "$dest")"
 	cp -p "$src" "$dest"
+}
+
+# A conflict left the safe's version next to this Mac's file. mine keeps
+# this Mac's, and the next sync shares it; theirs puts the safe's in its
+# place. The one not kept goes to the Trash either way.
+vault_resolve() {
+	local copy=${1/#\~/$HOME} which=$2 target
+	case $copy in
+	*.from-safe) target=${copy%.from-safe} ;;
+	*.from-safe.[0-9]*) target=${copy%.from-safe.*} ;;
+	*) die "$1 is not a conflict copy (…from-safe)" ;;
+	esac
+	[ -f "$copy" ] || die "$1 is not there"
+	case $which in
+	mine)
+		vault_trash "$copy"
+		info "Kept this Mac's $target; the next sync shares it."
+		;;
+	theirs)
+		[ ! -e "$target" ] || vault_trash "$target"
+		mv "$copy" "$target"
+		info "Took the other Mac's $target; yours is in the Trash."
+		;;
+	*) die "mine or theirs?" ;;
+	esac
 }
 
 # Into the Trash, where Finder's "Put Back" can undo it.
@@ -4303,6 +4335,12 @@ EOF
 		for pass in "$@"; do vault_drop "$pass"; done
 		return 0
 		;;
+	resolve)
+		shift
+		[ $# -eq 2 ] || die "usage: bier vault resolve <file>.from-safe mine|theirs"
+		vault_resolve "$1" "$2"
+		return 0
+		;;
 	forget)
 		shift
 		[ $# -gt 0 ] || die "which file? bier vault forget ~/.zshrc"
@@ -5077,7 +5115,7 @@ bier — keeps Brewfiles in sync across Macs
                           list, and offer to share the app's settings
   bier uninstall <pkg>    uninstall here; asks: off every list, only out of
                           main (some Macs keep it), or only off this Mac's
-  bier prune              remove what was deleted elsewhere or left main
+  bier prune [--yes]      remove what was deleted elsewhere or left main
   bier list | ls          everything bier keeps: packages, their settings, files
   bier take               pull entries from other devices into main or here
   bier take --from-main   hand an entry from main to a single device
