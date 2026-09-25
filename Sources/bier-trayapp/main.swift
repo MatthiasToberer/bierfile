@@ -412,6 +412,14 @@ class Controller: NSObject, NSMenuDelegate {
 		}
 
 
+		// Pairing without a terminal: the one-time code, shown here.
+		let connect = NSMenuItem(title: "Connect", action: nil, keyEquivalent: "")
+		let connectMenu = NSMenu()
+		connectMenu.addItem(action("Let a Mac Join …", #selector(doJoin)))
+		connectMenu.addItem(action("Connect Bierkasten …", #selector(doConnectApp)))
+		connect.submenu = connectMenu
+		menu.addItem(connect)
+
 		let login = NSMenuItem(title: "Start at login",
 		                       action: #selector(toggleLogin), keyEquivalent: "")
 		login.target = self
@@ -532,6 +540,54 @@ class Controller: NSObject, NSMenuDelegate {
 	}
 
 	@objc private func doQuit() { NSApp.terminate(nil) }
+
+	/// Opens pairing for ten minutes and shows the code, and what to run
+	/// on the new Mac -- or, one day, to pick this Mac in its Bierkasten.
+	@objc private func doJoin() {
+		let r = Bier.run(["peer", "offer"])
+		let code = line(after: "One-time code: ", in: r.out)
+		let run = line(after: "On the other Mac run:", in: r.out)?.trimmingCharacters(in: .whitespaces)
+		guard r.ok, let code else { return showFailure("Could not open pairing", r.err) }
+		showCode(code, title: "A Mac can join for 10 minutes",
+			text: "On the new Mac, run in Terminal:\n\n    \(run ?? "bier peer pair <this Mac>")\n\nand enter this code — or enter it in Bierkasten's Add a Mac.")
+	}
+
+	/// Lets Bierkasten connect to this Mac's agent, once.
+	@objc private func doConnectApp() {
+		let r = Bier.run(["admin", "offer"])
+		guard r.ok, let code = line(after: "Enter this code in Bierkasten: ", in: r.out) else {
+			return showFailure("Could not open the connection", r.err)
+		}
+		showCode(code, title: "Connect Bierkasten", text: "Enter this code in Bierkasten. It is open for 10 minutes.")
+		if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "net.toberer.bierkasten") {
+			NSWorkspace.shared.open(app)
+		}
+	}
+
+	private func line(after prefix: String, in text: String) -> String? {
+		text.split(separator: "\n").first { $0.hasPrefix(prefix) }.map { String($0.dropFirst(prefix.count)) }
+	}
+
+	private func showCode(_ code: String, title: String, text: String) {
+		NSApp.activate(ignoringOtherApps: true)
+		let alert = NSAlert()
+		alert.messageText = title
+		alert.informativeText = text + "\n\n" + code
+		alert.addButton(withTitle: "Copy Code")
+		alert.addButton(withTitle: "Done")
+		if alert.runModal() == .alertFirstButtonReturn {
+			NSPasteboard.general.clearContents()
+			NSPasteboard.general.setString(code, forType: .string)
+		}
+	}
+
+	private func showFailure(_ title: String, _ detail: String) {
+		NSApp.activate(ignoringOtherApps: true)
+		let alert = NSAlert()
+		alert.messageText = title
+		alert.informativeText = detail.trimmingCharacters(in: .whitespacesAndNewlines)
+		alert.runModal()
+	}
 }
 
 let app = NSApplication.shared

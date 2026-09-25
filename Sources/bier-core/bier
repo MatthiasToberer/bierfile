@@ -24,7 +24,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.50.7
+BIER_VERSION=0.50.8
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -920,7 +920,10 @@ peer_pair_address_ok() {
 }
 
 cmd_peer_offer() {
-	local address="$(hostname -s).local"
+	# Its Tailscale name when Tailscale runs: the name that works from
+	# anywhere, which the other Mac otherwise has to be told.
+	local address
+	address=$(own_address)
 	if [ $# -ne 0 ]; then
 		[ $# -eq 2 ] && [ "$1" = --address ] && peer_pair_address_ok "$2" ||
 			die 'usage: bier peer offer [--address <own-host>]'
