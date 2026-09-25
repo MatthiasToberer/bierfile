@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.50.2
+BIER_VERSION=0.50.3
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -384,7 +384,8 @@ peer_call() {
 	shift 2
 	case $peer in
 	*@*)
-		port=53992
+		# Macs asked side by side each start their own range of ports.
+		port=${PEER_TUNNEL_PORT:-53992}
 		while nc -z 127.0.0.1 "$port" 2>/dev/null; do port=$((port + 1)); done
 		ssh -N -o BatchMode=yes -o ConnectTimeout=10 -o ExitOnForwardFailure=yes \
 			-L "127.0.0.1:$port:127.0.0.1:$PEER_PORT" "$peer" 2>/dev/null &
@@ -1147,20 +1148,32 @@ mac_info() {
 # or reachable when it answers but cannot say how it is.
 # For Bierkasten; slow when a Mac is away, so it is a command of its own.
 cmd_fleet() {
-	local peer out
+	local peer dir n=0
 	[ -x "$PEER_CLIENT" ] || die "the Swift peer client is not built; run install.sh"
+	# All at once: one Mac that is away must not keep the others waiting.
+	dir=$(mktemp -d "$BIER_TMP/fleet.XXXXXX")
 	for peer in $(peer_list); do
-		if out=$(peer_call status "$peer" --identity "$PEER_IDENTITY" 2>/dev/null); then
-			printf 'FLEET\t%s\tonline\n' "$peer"
-			printf '%s\n' "$out" | sed "s/^/AT"$'\t'"$peer"$'\t'"/"
-		elif peer_call hello "$peer" --identity "$PEER_IDENTITY" >/dev/null 2>&1; then
-			# It answers, but could not say how it is: an older bier, or
-			# bier state failing there. Not the same as away.
-			printf 'FLEET\t%s\treachable\n' "$peer"
-		else
-			printf 'FLEET\t%s\toffline\n' "$peer"
-		fi
+		n=$((n + 1))
+		PEER_TUNNEL_PORT=$((53992 + n * 20)) fleet_one "$peer" >"$dir/$n" &
 	done
+	wait
+	[ "$n" = 0 ] || cat "$dir"/*
+}
+
+# A quick hello first: a Mac that is away is known in seconds, not after
+# the long wait a status may need.
+fleet_one() {
+	local peer=$1 out
+	if ! peer_call hello "$peer" --identity "$PEER_IDENTITY" >/dev/null 2>&1; then
+		printf 'FLEET\t%s\toffline\n' "$peer"
+	elif out=$(peer_call status "$peer" --identity "$PEER_IDENTITY" 2>/dev/null); then
+		printf 'FLEET\t%s\tonline\n' "$peer"
+		printf '%s\n' "$out" | sed "s/^/AT"$'\t'"$peer"$'\t'"/"
+	else
+		# It answers, but could not say how it is: an older bier, or
+		# bier state failing there. Not the same as away.
+		printf 'FLEET\t%s\treachable\n' "$peer"
+	fi
 }
 
 # How other Macs reach this one: its Tailscale name when Tailscale runs,
