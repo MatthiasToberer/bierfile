@@ -41,7 +41,7 @@ struct BundleReadRequest: Decodable {
 // for it: the logic stays in one place. Only these commands may run --
 // the first words must match -- and nothing asks: stdin is empty.
 let adminCommands: [[String]] = [
-	["report"], ["fleet"], ["state"], ["sync"], ["brewmaster"], ["status"], ["list"],
+	["report"], ["fleet"], ["state"], ["sync"], ["place"], ["apply"], ["search"], ["config", "apply"], ["brewmaster"], ["status"], ["list"],
 	["peer", "pending"], ["peer", "accept"], ["peer", "reject"], ["peer", "list"], ["peer", "pair"],
 	["add"], ["install"], ["uninstall"], ["prune", "--yes"], ["take"],
 	["vault", "add"], ["vault", "forget"], ["vault", "resolve"], ["vault", "group"], ["share"],
@@ -551,6 +551,9 @@ final class AgentServer {
 				if try store.record("peer-\(peer)-\(nonce)") { respond(connection, status: 409, body: "peer request was already processed"); return }
 				try bundleStore.commitImport(request.id)
 				respond(connection, status: 200, body: "{\"status\":\"repository-committed\"}", contentType: "application/json")
+				// A change marked "install now" is applied as it arrives;
+				// bier decides, this only tells it something came in.
+				if let bier { DispatchQueue.global(qos: .utility).async { _ = runBier(bier, ["apply", "--received"]) } }
 			} catch { respond(connection, status: 403, body: rejection("repository import was rejected", error)) }
 			return
 		}

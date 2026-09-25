@@ -161,6 +161,17 @@ info)
 	exit 1
 	;;
 
+search)
+	# The names in $WORK/brew-casks and $WORK/brew-formulas that contain it.
+	kind=""
+	while [ $# -gt 1 ]; do
+		case $1 in --cask) kind=cask ;; --formula) kind=brew ;; esac
+		shift
+	done
+	[ "$kind" = brew ] || awk '{ print $1 }' "${WORK:?}/brew-casks" 2>/dev/null | grep -F "$1" || true
+	[ "$kind" = cask ] || grep -F "$1" "${WORK:?}/brew-formulas" 2>/dev/null || true
+	;;
+
 --version) echo "Homebrew 7.0.0-fake" ;;
 *) exit 0 ;;
 esac

@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.50.3
+BIER_VERSION=0.50.4
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -186,6 +186,9 @@ HOST=${HOST:-$(hostname -s)}
 
 INVENTORY_MODE=${BIER_INVENTORY:-$(config_get inventory)}
 INVENTORY_MODE=${INVENTORY_MODE:-automatic}
+# Whether changes marked "install now" are applied when they arrive.
+APPLY_MODE=${BIER_APPLY:-$(config_get apply)}
+APPLY_MODE=${APPLY_MODE:-automatic}
 case $INVENTORY_MODE in
 automatic | manual) ;;
 *) die "inventory must be 'automatic' or 'manual' in $CONFIG_FILE" ;;
@@ -334,10 +337,22 @@ $(printf '%s\n' "$bad" | sed 's/^/       /')
 # What a device is supposed to have: its device file plus main. Only
 # together do the two describe what should run on that Mac.
 host_entries() {
+	local g
 	{
 		entries "$BREW_DIR/$1"
 		entries "$MAIN_FILE"
+		for g in $(host_groups "$1"); do entries "$BREW_DIR/@$g"; done
 	} | sort -u
+}
+
+# The groups a Mac belongs to. A group is Macs only (bier vault group);
+# software given to a group is in Brewfiles/@<group>, and every member
+# has it -- one that joins later as well.
+host_groups() {
+	local g
+	for g in $(group_list); do
+		! printf '%s\n' $(group_members "$g") | grep -qxF "$1" || printf '%s\n' "$g"
+	done
 }
 
 own_entries() { host_entries "$HOST"; }
@@ -359,9 +374,8 @@ host_list() {
 	for f in "$BREW_DIR"/*; do
 		[ -f "$f" ] || continue
 		name=$(basename "$f")
-		if [ "$name" != "main" ]; then
-			printf '%s\n' "$name"
-		fi
+		# @laptops is a group's list, not a Mac.
+		case $name in main | @*) ;; *) printf '%s\n' "$name" ;; esac
 	done
 }
 
@@ -2207,6 +2221,163 @@ add_to_list() {
 	fi
 }
 
+# Where a package belongs: every Mac, or the Macs and groups named. bier
+# writes the lists -- main, Brewfiles/@<group>, each Mac's own -- and
+# takes it off every list not named. Works for a package no Mac has yet.
+# --now also installs or removes it on every Mac as soon as the change
+# reaches it (unless that Mac is set to bier config apply ask).
+cmd_place() {
+	need_brew
+	need_repo
+	local where="" now=no targets="" t words name=""
+	# Options before or after the name, as people type them.
+	while [ $# -gt 0 ]; do
+		case $1 in
+		--all) where=all ;;
+		--none) where=none ;;
+		--on)
+			[ $# -ge 2 ] || die "--on which? --on mini,@laptops"
+			where=on
+			targets=$(printf '%s' "$2" | tr ',' ' ')
+			shift
+			;;
+		--now) now=yes ;;
+		-*) die "unknown option: $1" ;;
+		*) [ -z "$name" ] || die "one package at a time"; name=$1 ;;
+		esac
+		shift
+	done
+	[ -n "$name" ] && [ -n "$where" ] ||
+		die "usage: bier place <package> --all | --on <mac>,@<group>,… | --none [--now]"
+	set -- "$name"
+	for t in $targets; do
+		case $t in
+		@*) group_list | grep -qxF "${t#@}" || die "there is no group ${t#@}; make it with: bier vault group ${t#@} <macs>" ;;
+		*) peer_name_ok "$t" && [ "$t" = "${t#*@}" ] || die "$t is not a Mac's name" ;;
+		esac
+	done
+	place_line "$1" || die "$1 is neither a formula, a cask nor an App Store app"
+
+	strip_entry "$PLACE_KIND" "$PLACE_NAME"
+	case $where in
+	all) printf '%s\n' "$PLACE_LINE" >>"$MAIN_FILE"; words="every Mac" ;;
+	none) words="no Mac" ;;
+	on)
+		for t in $targets; do printf '%s\n' "$PLACE_LINE" >>"$BREW_DIR/$t"; done
+		words=$(printf '%s' "$targets" | sed 's/ /, /g')
+		;;
+	esac
+
+	if [ "$now" = no ]; then
+		publish "$HOST: $PLACE_NAME on $words"
+		info "Saved. The Macs install or remove it when someone applies: bier install / bier prune"
+		return 0
+	fi
+	publish "$HOST: $PLACE_NAME on $words (install now)"
+	# Here only this package; this Mac's own change is not news to it.
+	git -C "$DATA" rev-parse HEAD >"$STATE_DIR/applied" 2>/dev/null || true
+	place_here
+	if [ -x "$PEER_CLIENT" ] && [ -n "$(peer_list)" ]; then
+		sync_peers "$HOST: $PLACE_NAME on $words (install now)" ||
+			info "The Macs not reached get it when they are back."
+	fi
+}
+
+# Installs or removes the placed package on this Mac, as its lists now say.
+place_here() {
+	local key id
+	key=$(printf '%s "%s"' "$PLACE_KIND" "$PLACE_NAME")
+	id=$(printf '%s' "$PLACE_LINE" | sed -nE 's/.*id: *([0-9]+).*/\1/p')
+	ADD_MAS_ID=$id
+	ADD_MAS_ID=$id
+	if host_entries "$HOST" | grep -qxF "$key"; then
+		add_installed "$PLACE_KIND" "$PLACE_NAME" && return 0
+		info "Installing $PLACE_NAME here …"
+		case $PLACE_KIND in
+		cask) brew install --cask "$PLACE_NAME" ;;
+		mas) mas install "$id" ;;
+		tap) brew tap "$PLACE_NAME" ;;
+		*) brew install "$PLACE_NAME" ;;
+		esac || info "Could not install $PLACE_NAME here; bier status shows it."
+	elif add_installed "$PLACE_KIND" "$PLACE_NAME"; then
+		info "Removing $PLACE_NAME here …"
+		case $PLACE_KIND in
+		cask) brew uninstall --cask "$PLACE_NAME" ;;
+		brew) brew uninstall "$PLACE_NAME" ;;
+		*) info "Remove $PLACE_NAME by hand; bier does not uninstall a $PLACE_KIND." ;;
+		esac || info "Could not remove $PLACE_NAME here; bier status shows it."
+	fi
+}
+
+# The Brewfile line for a name: as the lists have it, else as Homebrew or
+# the App Store know it. Sets PLACE_KIND, PLACE_NAME, PLACE_LINE.
+place_line() {
+	local name=$1 line store
+	line=$({ grep -hE "^[[:space:]]*($KINDS)[[:space:]]+\"$(rx_quote "$name")\"" "$BREW_DIR"/* 2>/dev/null || true; } |
+		head -1 | sed -E 's/^[[:space:]]+//; s/[[:space:]]*#.*$//')
+	if [ -n "$line" ]; then
+		PLACE_KIND=${line%% *}
+		PLACE_NAME=$name
+		PLACE_LINE=$line
+	elif PLACE_KIND=$(add_kind "$name") && [ "$PLACE_KIND" != mas ]; then
+		PLACE_NAME=$name
+		PLACE_LINE=$(printf '%s "%s"' "$PLACE_KIND" "$name")
+	elif store=$(mas_lookup "$name"); then
+		PLACE_KIND=mas
+		PLACE_NAME=${store#*$'\t'}
+		PLACE_LINE=$(printf 'mas "%s", id: %s' "$PLACE_NAME" "${store%%$'\t'*}")
+	else
+		return 1
+	fi
+}
+
+# Brings this Mac in line with its lists: installs what is missing,
+# removes what was taken off. --received does so only when a change
+# marked "install now" came in since last time, and this Mac applies
+# changes (bier config apply automatic, the default).
+cmd_apply() {
+	need_brew
+	need_repo
+	local mark=$STATE_DIR/applied head since
+	head=$(git -C "$DATA" rev-parse HEAD 2>/dev/null) || return 0
+	mkdir -p "$STATE_DIR"
+	since=$(cat "$mark" 2>/dev/null || true)
+	printf '%s\n' "$head" >"$mark"
+	if [ "${1:-}" = --received ]; then
+		[ -n "$since" ] && [ "$since" != "$head" ] || return 0
+		git -C "$DATA" log --format=%s "$since..$head" 2>/dev/null | grep -q '(install now)$' || return 0
+		if [ "$APPLY_MODE" = ask ]; then
+			info "Changes came in to install; this Mac asks first: bier apply"
+			return 0
+		fi
+	fi
+	(cmd_install) || info "Not everything could be installed; bier status shows what is missing."
+	(cmd_prune --yes) || info "Not everything could be removed; bier status shows what is left."
+}
+
+# What Homebrew and the App Store have by that name, for Bierkasten:
+#   FOUND <kind> <name> <on a list: yes|no>
+cmd_search() {
+	need_brew
+	[ $# -eq 1 ] || die "usage: bier search <name>"
+	local listed n
+	listed=$(all_entries)
+	{
+		# Nothing found is no error: grep's 1 must not end the search.
+		{ brew search --cask "$1" 2>/dev/null || true; } | { grep -v '^==>' || true; } | head -25 | sed 's/^/cask /'
+		{ brew search --formula "$1" 2>/dev/null || true; } | { grep -v '^==>' || true; } | head -25 | sed 's/^/brew /'
+		! command -v mas >/dev/null 2>&1 || { mas search "$1" 2>/dev/null || true; } | head -10 |
+			awk '{ $1 = ""; sub(/^ +/, ""); sub(/ +\(.*$/, ""); print "mas " $0 }'
+	} | while read -r kind n; do
+		[ -n "$n" ] || continue
+		if printf '%s\n' "$listed" | grep -qxF "$kind \"$n\""; then
+			printf 'FOUND\t%s\t%s\tyes\n' "$kind" "$n"
+		else
+			printf 'FOUND\t%s\t%s\tno\n' "$kind" "$n"
+		fi
+	done
+}
+
 # Shares an installed app's settings and profiles, without asking: with
 # every Mac, or --for a group or a single Mac. Paths that hold keys or
 # passwords stay out, as with bier add.
@@ -3005,14 +3176,12 @@ cmd_install() {
 	need_repo
 	# Both before either: finding the second one poisoned after the
 	# first has already been installed would be half a rescue.
-	verify_brewfile "$MAIN_FILE"
-	verify_brewfile "$HOST_FILE"
-	if [ -f "$MAIN_FILE" ]; then
-		brew bundle install --file "$MAIN_FILE"
-	fi
-	if [ -f "$HOST_FILE" ]; then
-		brew bundle install --file "$HOST_FILE"
-	fi
+	local g files=("$MAIN_FILE" "$HOST_FILE") f
+	for g in $(host_groups "$HOST"); do files+=("$BREW_DIR/@$g"); done
+	for f in "${files[@]}"; do verify_brewfile "$f"; done
+	for f in "${files[@]}"; do
+		[ ! -f "$f" ] || brew bundle install --file "$f"
+	done
 	info "The inventory of $HOST is installed."
 }
 
@@ -5039,6 +5208,7 @@ cmd_sync() {
 		sync_data "${1:-$HOST: inventory updated}"
 	fi
 	vault_open
+	(cmd_apply --received) || true
 	return "$status"
 }
 
@@ -5169,11 +5339,14 @@ cmd_version() {
 # combined.
 cmd_config() {
 	if [ $# -gt 0 ]; then
-		[ $# -eq 2 ] && [ "$1" = inventory ] || die "usage: bier config [inventory <automatic|manual>]"
-		case $2 in automatic | manual) ;; *) die "inventory must be 'automatic' or 'manual'" ;; esac
-		config_set_value inventory "$2"
-		INVENTORY_MODE=$2
-		info "inventory = $2"
+		[ $# -eq 2 ] || die "usage: bier config [inventory <automatic|manual> | apply <automatic|ask>]"
+		case $1=$2 in
+		inventory=automatic | inventory=manual) INVENTORY_MODE=$2 ;;
+		apply=automatic | apply=ask) APPLY_MODE=$2 ;;
+		*) die "usage: bier config [inventory <automatic|manual> | apply <automatic|ask>]" ;;
+		esac
+		config_set_value "$1" "$2"
+		info "$1 = $2"
 		return 0
 	fi
 	info "File:   $CONFIG_FILE"
@@ -5185,6 +5358,7 @@ cmd_config() {
 	fi
 	info "host  = $HOST"
 	info "inventory = $INVENTORY_MODE"
+	info "apply = $APPLY_MODE   (changes marked install now: automatic, or ask)"
 	info ""
 	if [ -z "$DATA" ]; then
 		info "Without a data repository bier can neither record nor sync anything."
@@ -5212,6 +5386,11 @@ bier — keeps Brewfiles in sync across Macs
                           main (some Macs keep it), or only off this Mac's
   bier prune [--yes]      remove what was deleted elsewhere or left main
   bier list | ls          everything bier keeps: packages, their settings, files
+  bier place <pkg> --all | --on <mac>,@<group>,… | --none [--now]
+                          where a package belongs; --now installs it on
+                          every Mac as soon as the change reaches it
+  bier apply              install and remove what the lists say for here
+  bier search <name>      what Homebrew and the App Store have by that name
   bier share [--for <group|mac>] <app>
                           share an installed app's settings and profiles
   bier take               pull entries from other devices into main or here
@@ -5318,6 +5497,9 @@ access) cmd_access ;;
 brewmaster | doctor) cmd_brewmaster ;;
 report) cmd_report ;;
 fleet) cmd_fleet ;;
+place) cmd_place "$@" ;;
+apply) cmd_apply "$@" ;;
+search) cmd_search "$@" ;;
 share) cmd_share "$@" ;;
 admin) cmd_admin "$@" ;;
 version | --version | -V) cmd_version ;;
