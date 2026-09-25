@@ -44,7 +44,7 @@ let adminCommands: [[String]] = [
 	["report"], ["fleet"], ["state"], ["sync"], ["brewmaster"], ["status"], ["list"],
 	["peer", "pending"], ["peer", "accept"], ["peer", "reject"], ["peer", "list"], ["peer", "pair"],
 	["add"], ["install"], ["uninstall"], ["prune", "--yes"], ["take"],
-	["vault", "add"], ["vault", "forget"], ["vault", "resolve"],
+	["vault", "add"], ["vault", "forget"], ["vault", "resolve"], ["vault", "group"], ["share"],
 ]
 
 struct AdminRunRequest: Decodable {

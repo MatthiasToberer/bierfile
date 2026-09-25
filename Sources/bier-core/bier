@@ -1172,6 +1172,7 @@ own_address() {
 # Everything Bierkasten shows, in lines of tab-separated fields: what
 # bier state says, and
 #   SELF    <address>                  how other Macs reach this one
+#   GROUP   <name> <macs>              a group and its members
 #   MAC     <name>                     a Mac with a list of its own
 #   ENTRY   main|<mac> <entry>         what a list holds
 #   APPSET  <package> <app> <what> <scope>  an app's shared settings
@@ -1184,6 +1185,7 @@ cmd_report() {
 	cmd_state
 	printf 'SELF\t%s\n' "$(own_address)"
 	for h in $(host_list); do printf 'MAC\t%s\n' "$h"; done
+	for h in $(group_list); do printf 'GROUP\t%s\t%s\n' "$h" "$(group_members "$h")"; done
 	entries "$MAIN_FILE" | sed 's/^/ENTRY'$'\t''main'$'\t''/'
 	for f in "$BREW_DIR"/*; do
 		[ -f "$f" ] && [ "$f" != "$MAIN_FILE" ] || continue
@@ -2185,6 +2187,30 @@ add_to_list() {
 		ADD_SCOPE=$HOST
 		info "Added to Brewfiles/$HOST."
 	fi
+}
+
+# Shares an installed app's settings and profiles, without asking: with
+# every Mac, or --for a group or a single Mac. Paths that hold keys or
+# passwords stay out, as with bier add.
+cmd_share() {
+	need_repo
+	need_gpg
+	local scope="" name kind
+	if [ "${1:-}" = --for ]; then
+		scope=${2:-}
+		[ -n "$scope" ] || die "--for what? a group or a Mac"
+		shift 2
+	fi
+	[ $# -eq 1 ] || die "usage: bier share [--for <group|mac>] <app>"
+	name=$1
+	kind=$(kind_of "$name")
+	[ -n "$kind" ] || die "$name is neither installed here nor on a list"
+	add_installed "$kind" "$name" || die "$name is not installed on $HOST; its settings are read from here"
+	ADD_SCOPE=$scope
+	ADD_MAS_ID=""
+	[ "$kind" != mas ] || ADD_MAS_ID=$(mas_lookup "$name" | cut -f1)
+	add_settings "$kind" "$name" all
+	publish "$HOST: shared $name's settings${scope:+ with $scope}"
 }
 
 # The app a cask installs, as a path.
@@ -5168,6 +5194,8 @@ bier — keeps Brewfiles in sync across Macs
                           main (some Macs keep it), or only off this Mac's
   bier prune [--yes]      remove what was deleted elsewhere or left main
   bier list | ls          everything bier keeps: packages, their settings, files
+  bier share [--for <group|mac>] <app>
+                          share an installed app's settings and profiles
   bier take               pull entries from other devices into main or here
   bier take --from-main   hand an entry from main to a single device
   bier push [message]     commit the Brewfiles and push them
@@ -5272,6 +5300,7 @@ access) cmd_access ;;
 brewmaster | doctor) cmd_brewmaster ;;
 report) cmd_report ;;
 fleet) cmd_fleet ;;
+share) cmd_share "$@" ;;
 admin) cmd_admin "$@" ;;
 version | --version | -V) cmd_version ;;
 help | -h | --help) cmd_help ;;

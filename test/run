@@ -56,6 +56,10 @@ for case_file in "$REPO"/test/cases/*.sh; do
 			# If set -e aborts the case, it must be visible where.
 			trap 'printf "    ABORTED AT: %s\n" "$BASH_COMMAND" >&2' ERR
 			world
+			# world made GPGHOME in here, so it is cleaned up in here: its
+			# gpg-agent, left running, piled up by the hundred until the
+			# Mac could not fork any more.
+			trap 'GNUPGHOME=$GPGHOME gpgconf --kill gpg-agent 2>/dev/null; rm -rf "$GPGHOME"' EXIT
 			# shellcheck source=/dev/null
 			source "$case_file"
 			exit $FAILED
