@@ -30,7 +30,8 @@ Installing and removing software open a terminal, because they take
 long, may ask for your password and are worth watching.
 
 Further entries: **Upgrade … (in Terminal)** when a newer release is
-out, **Start at login**, **Info** (version, device, the guide) and
+out, **Start at login**, **Info** (version, device and its group, the
+guide) and
 **Quit**.
 
 ## Full Disk Access

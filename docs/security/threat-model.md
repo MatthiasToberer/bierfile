@@ -69,7 +69,7 @@ it — can change the shared lists. Consequences, and what limits them:
 - **Code hidden in a Brewfile.** A Brewfile is Ruby: `brew bundle`
   evaluates it, and a line such as `brew "wget"; system("…")` would run.
   bier therefore checks **every whole line** against the grammar of a
-  package entry. `bier install` and `bier take` refuse a file that holds
+  package entry. `bier install` and `bier apply` refuse a file that holds
   anything else; `bier status` warns about it unasked. Options are
   allowed by name — `postinstall` is not, because its value is a shell
   command.

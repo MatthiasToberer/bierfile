@@ -96,7 +96,7 @@ The mini is a desktop tower; a laptop-only setting has no business
 there:
 
 ```sh
-bier vault group laptops macbook
+bier group laptops macbook
 bier vault add --for laptops ~/.config/battery-tweaks
 ```
 

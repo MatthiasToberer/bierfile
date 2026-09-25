@@ -3,7 +3,7 @@
 # Getting rid of something everywhere
 
 A program has to go from every Mac. Three Macs — `mini`, `macbook`,
-`studio` — and HandBrake is in `main`.
+`studio` — and HandBrake is for All Macs.
 
 ## On any Mac
 
@@ -14,7 +14,7 @@ bier uninstall --everywhere handbrake
 ```
 handbrake (cask)
 ==> Uninstalling Cask handbrake
-Brewfiles/mini written: 0 on top of 137 in main
+Recorded on mini: 0 not assigned, beside 137 for All Macs
 Commit: mini: removed handbrake
 Saved in the local Bier history.
 ```
@@ -27,8 +27,8 @@ bier sync
 
 ## On the other Macs
 
-HandBrake is still installed there — bier never uninstalls anything
-without asking. The next time you look at the menu:
+HandBrake is still installed there: an uninstall changes the lists, and
+each Mac removes it when asked. The next time you look at the menu:
 
 ```
 1 removed elsewhere, still here
@@ -47,6 +47,16 @@ Removed elsewhere or taken out of main, still installed here:
   cask "handbrake"
 Uninstall? [y/N] y
 ```
+
+## All at once
+
+To have every Mac remove it as soon as the change arrives, say so:
+
+```sh
+bier place handbrake --none --now
+```
+
+Macs in a group whose rule is `apply ask` still only report it.
 
 ## Why this works
 

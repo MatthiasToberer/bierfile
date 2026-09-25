@@ -248,37 +248,34 @@ and puts it in place.
 ## Step 4: When the Macs should differ
 
 Not everything belongs on every machine — a 5 GB LaTeX distribution on
-the laptop, for instance. There are two drawers for that:
-
-- **`Brewfiles/main`** — what should run on **all** Macs.
-- **`Brewfiles/<device name>`** — what **only this** Mac has on top.
-
-What other Macs have on top is shown by `bier list`; you adopt it one
-entry at a time:
+the laptop, for instance. So every Mac is in a **group**, and everything
+goes to **All Macs** or to a **group**:
 
 ```sh
-bier take
+bier group desk mini
+bier group laptops macbook
 ```
 
-```
-What other devices have on top of main:
+A group of one is fine; a second laptop later just joins `laptops`.
+Now say where things belong:
 
-   1  cask "font-meslo-lg-nerd-font"               macbook
-   2  mas "WireGuard"                              macbook
-
-Numbers (e.g. 1 3-5), empty = cancel: 1
-Where to?  [m] into main, for all devices   [h] only mini   [c] cancel:
+```sh
+bier place mactex --on laptops --now      # only the laptops, installed right away
+bier place firefox --all --now            # every Mac, and every Mac added later
 ```
 
-- **`m` — into main:** the font applies to every Mac from now on and
-  leaves macbook's own list, because listing it twice would be wrong.
-- **`h` — only this Mac:** the font goes into your own list. macbook
-  keeps its entry; both have it, each separately.
+What you install by hand on one Mac is recorded on that Mac, **not
+assigned** — nothing you try out is forced onto the others. `bier list`
+shows it, and `bier place` gives it to a group or to All Macs when it
+has earned its place.
 
-The other way round — out of the shared inventory, to a single Mac — is
-`bier take --from-main`. The rule behind both: **anything that does not
-belong everywhere must not be in `main`.** More in
-[main and device lists](../concepts/lists.md).
+The rule behind it: **lists only add, never subtract.** Anything that
+does not belong everywhere must not be for All Macs — it belongs to the
+groups that want it. More in [Groups](../concepts/groups.md) and
+[All Macs, groups, and what is not assigned](../concepts/lists.md).
+
+A Mac can move: `bier group move macbook desk`. It takes on its new
+group at once — software, files and settings.
 
 ## Step 5: Files, not only packages
 

@@ -40,7 +40,7 @@ Installed on mini but not recorded (bier sync):
   + brew "htop"
 Removed on another device, still here (bier prune):
   ~ brew "ghidra"
-No longer in main, still here (bier prune, or bier take to keep it):
+No longer in main, still here (bier prune, or bier place to keep it):
   ~ brew "nmap"
 Recorded but not installed on mini (bier install):
   - cask "iterm2"
@@ -66,7 +66,7 @@ The rest compares this Mac with its lists:
 | --- | --- | --- |
 | `+` | installed here, not recorded | `bier sync` (manual inventory: `bier sync --record`) |
 | `~` | removed on another Mac, still here | `bier prune` |
-| `~` | taken out of `main`, another Mac keeps it | `bier prune`, or `bier take` to keep it |
+| `~` | taken off All Macs, this Mac's group does not keep it | `bier prune`, or `bier place` to keep it |
 | `-` | recorded for this Mac, not installed | `bier install` |
 
 `bier status` also warns about vault links that point nowhere and about
@@ -76,13 +76,13 @@ lines in a Brewfile that are not package entries — see
 ## What do the others have?
 
 ```sh
-bier list             # main, every Mac's extras, and who has what
+bier list             # All Macs, each group, and what is not assigned
 bier diff             # this Mac against each other Mac
 bier diff studio      # against one
 ```
 
-What other Macs have on top never counts as a difference *here*. To
-adopt something: [`bier take`](take.md).
+What other groups have never counts as a difference *here*. To give
+something to All Macs or a group: [Where software belongs](placing.md).
 
 ## Keeping bier itself current
 

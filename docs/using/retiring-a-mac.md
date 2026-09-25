@@ -4,7 +4,7 @@
 
 A Mac leaves the fleet — sold, broken, or wiped without uninstalling
 bier first. Its list would otherwise stay in the shared data forever and
-show up in `bier list` and `bier take`.
+show up in `bier list` and in its group.
 
 ## The Mac is still there
 
@@ -14,8 +14,7 @@ On that Mac:
 bier knockout
 ```
 
-This syncs one last time, takes the Mac out of the lists and every vault
-group, hands that to the other Macs, signs off at each of them — they
+This syncs one last time, takes the Mac out of the lists and its group, hands that to the other Macs, signs off at each of them — they
 forget its key and address — and removes bier. The files from the vault
 stay where they are. See
 [Installation › Uninstalling](../start/installation.md#uninstalling).
@@ -45,7 +44,7 @@ studio has 3 entries of its own.
 Take studio out? [y/N]
 ```
 
-bier deletes `Brewfiles/studio`, removes the Mac from every vault group
+bier deletes `Brewfiles/studio`, takes the Mac out of its group
 and commits that; `bier sync` passes it on to the other Macs. Vault files meant only for that Mac stay in the
 vault. The git history still has everything, should you need it.
 

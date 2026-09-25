@@ -110,10 +110,12 @@ Handed on to `install.sh`. With the one line, put them after a `_`:
 
 ## After installing
 
-- On the **first** Mac: `bier main`, once — see
-  [main and device lists](../concepts/lists.md).
+- On the **first** Mac: `bier main`, once — its software becomes what
+  All Macs have; see [All Macs, groups, and what is not assigned](../concepts/lists.md).
 - On **every further** Mac: pair it — see [Pairing](../security/pairing.md) —
   then `bier install`.
+- Put every Mac in a group — `bier group laptops mini macbook` — see
+  [Groups](../concepts/groups.md). A new Mac is *new* until it is moved.
 
 The [seven-minute pilsner](../tutorials/seven-minute-pilsner.md) walks
 through both.
@@ -140,7 +142,7 @@ bier knockout
 After you type `knockout` to confirm, it:
 
 1. syncs one last time, so nothing made on this Mac is lost,
-2. takes this Mac out of the lists and every vault group and hands that
+2. takes this Mac out of the lists and its group and hands that
    to the paired Macs,
 3. signs off at every paired Mac — each forgets this Mac's key and
    address; one that cannot be reached is named, with what to run there,

@@ -2,79 +2,68 @@
 
 # Two Macs: installing something new
 
-The everyday case in automatic mode, the default. Two Macs, `mini` and
-`macbook`, already set up and paired. You install a tool on one and
-decide it belongs on both.
-
-## On mini
+The everyday case. Two Macs, `mini` and `macbook`, set up, paired, and
+in one group, `desk`:
 
 ```sh
-bier add ripgrep
+bier group desk mini macbook
 ```
 
-bier installs it and asks where it goes: `h` for only this Mac. Or
-install it with plain `brew install ripgrep` — then **Sync now** in the
-menu bar, or
+You install a tool on one and decide it belongs on both.
+
+## Straight to where it belongs
 
 ```sh
+bier place ripgrep --on desk --now
+```
+
+ripgrep is installed on this Mac at once, goes to every Mac online, and
+each Mac in `desk` installs it as soon as the change arrives. A Mac that
+was switched off installs it on its next sync. `--all` instead of
+`--on desk` would give it to every Mac, and every Mac added later.
+
+## Or the other way round: try it first
+
+Install it as usual:
+
+```sh
+brew install ripgrep
 bier sync
 ```
 
-records ripgrep in `Brewfiles/mini` (in automatic mode), commits and
-exchanges the history with macbook.
-
-## On macbook
-
-mini's sync has already delivered the entry here, but macbook's glass
-stays full: ripgrep is something *mini* has on top, and nothing macbook
-is supposed to have. `bier list` shows it:
+`bier sync` records ripgrep on mini, **not assigned**: nothing you try
+out on one Mac is forced onto the others. `bier list` shows it:
 
 ```
-Every Mac (main)
+All Macs
   …
 
-Only on macbook (this Mac)
+Group desk (mini, macbook)
   …
 
-Only on mini
+Not assigned, installed on mini (this Mac)
   ripgrep                          formula
 ```
 
-To have it everywhere, move it into the shared list:
+When it has earned its place:
 
 ```sh
-bier take
+bier place ripgrep --on desk --now
 ```
 
-```
-What other devices have on top of main:
-
-   1  brew "ripgrep"                               mini
-
-Numbers (e.g. 1 3-5), empty = cancel: 1
-Where to?  [m] into main, for all devices   [h] only macbook   [c] cancel: m
-
-Plan:
-  brew "ripgrep"
-    + Brewfiles/main
-    - Brewfiles/mini
-
-Apply and push? [y/N] y
-…
-Install now? [y/N] y
-```
-
-Both Macs now have ripgrep. A `bier sync` passes the move on, and every
-Mac you pair later gets ripgrep with `bier install`.
+It leaves mini's own list and goes to the group; macbook installs it as
+the change arrives.
 
 ## What happened
 
-- A new package always lands in the list of the Mac it was installed on.
-  bier never promotes an entry to every Mac on its own — that decision is
-  yours, and `bier take` is where you make it.
-- Answering `h` instead of `m` would have put ripgrep on macbook's own
-  list only; mini would keep its entry, and a third Mac would not get it.
-- The rule behind this: [main and device lists](../concepts/lists.md).
+- A new package lands on the list of the Mac it was installed on, not
+  assigned. bier never gives it to a group or to All Macs on its own —
+  that decision is yours, and `bier place` is where you make it.
+- Software goes to All Macs or to groups, never to a single Mac. With
+  two Macs a group of two is enough; with a third you decide whether it
+  joins `desk` or gets a group of its own.
+- The rules behind this: [Groups](../concepts/groups.md) and
+  [All Macs, groups, and what is not assigned](../concepts/lists.md).
 
 ---
 

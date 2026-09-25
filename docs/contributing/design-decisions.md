@@ -5,24 +5,33 @@
 Each one has a history. Anyone wanting to overturn one should know why it
 is there.
 
-Each one has a history. Anyone wanting to overturn one should know why it
-is there.
+**Groups, not Mac by Mac** (0.50.5). Every Mac is in exactly one group,
+and everything — software, files, app settings, the rules for taking
+changes — goes to All Macs or to a group, never to a single Mac. Lists
+per Mac made sense for two Macs and became unreadable past five: who
+has what had to be pieced together Mac by Mac, and a new Mac got
+nothing of what the Macs like it had. One group per Mac, not several:
+only then is moving a Mac unambiguous, with no rule for which of two
+groups wins. A moved Mac takes on its new group at once; its own files
+are kept as a backup rather than as conflict copies, because the move
+was a decision, not a collision. The groups live in plain text in the
+data repository, not in the vault: every Mac needs them to know its
+software, whether or not it can open the vault.
 
 **No stored diffs.** The difference between two devices is recomputed on
 every invocation, never stored. The Brewfile format has no "minus": a
 stored diff would no longer be installable, and it would silently change
 meaning as soon as `main` grows.
 
-**A delta can only add, never subtract.** Anything a device must
-explicitly not run cannot live in `main`. The alternative — an exclusion
-list per device — brings a second mechanism with special cases of its
-own. `bier take --from-main` solves the same case with what is already
-there.
+**Lists only add, never subtract.** Anything a Mac must explicitly not
+run cannot be for All Macs; it belongs to the groups that want it. The
+alternative — an exclusion list — brings a second mechanism with special
+cases of its own. `bier place … --on <groups>` solves the same case with
+what is already there.
 
 **`bier dump` removes nothing.** Something recorded but not installed
-stays. Otherwise you would lose whatever `bier take` has just picked. An
-entry really goes away only through `uninstall`, `prune` or a move into
-`main`.
+stays. An entry really goes away only through `uninstall`, `prune` or
+`place`.
 
 **`bier dump` does not adopt what was removed elsewhere.** Otherwise a
 dump on the second Mac cements the removal as a device-specific
@@ -46,12 +55,12 @@ Anything that is in there but not installed here drops out for good —
 even if another device still has it. The command shows that before
 asking:
 
-    Will drop out of main for good, because it is not installed
-    on mini — even if another device still has it:
+    Will no longer be for All Macs, because it is not installed
+    on mini — even if another Mac still has it:
       - cask "font-meslo-lg-nerd-font"
 
-    To keep it, hand it to a device first:
-      bier take --from-main
+    To keep it for some Macs, give it to their group first:
+      bier place <package> --on <group>
 
 That is why it is a command for the beginning of a setup, not an everyday
 tool.
@@ -77,7 +86,7 @@ have carried it through any conflict.
 
 `verify_brewfile` therefore checks the **whole** line against the
 grammar of an entry and refuses the file otherwise. `bier install` and
-`bier take` verify before handing anything to `brew`; `bier status`
+`bier apply` verify before handing anything to `brew`; `bier status`
 warns without being asked. Options are allowed by name —
 `postinstall` is not among them, because its value is a shell command.
 

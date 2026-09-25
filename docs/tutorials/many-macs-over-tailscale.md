@@ -100,6 +100,20 @@ new one.
 The menu bar and `bier brewmaster` point out a Mac that waits. Not
 wanted? `bier peer reject laptop`.
 
+## 5. Put every Mac in a group
+
+A freshly paired Mac is *new* until it is in a group, and everything —
+software, files, settings, rules — goes to All Macs or to groups:
+
+```sh
+bier group laptops laptop mini
+bier group desk studio
+bier place blender --on desk --now
+```
+
+In Bierkasten you drag the new Mac onto its group. See
+[Groups](../concepts/groups.md).
+
 ## When something does not connect
 
 - `hostname not found`, `Internet connection appears to be offline`:

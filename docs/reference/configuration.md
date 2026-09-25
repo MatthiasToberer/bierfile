@@ -29,11 +29,11 @@ inventory = automatic                # or manual
 ### Inventory mode
 
 - **automatic** (default, recommended) — `bier sync` records everything
-  installed that is not in `main` yet into this Mac's own list. `main`
-  stays the main inventory and changes only through `bier main` and
-  `bier take`.
-- **manual** — `bier sync` records nothing; `main` and the device lists
-  stay exactly as you write them. Useful for a
+  installed that no list gives this Mac on its own list, *not assigned*.
+  All Macs and the groups change only through `bier main`, `bier place`,
+  `bier add` and `bier uninstall`.
+- **manual** — `bier sync` records nothing; the lists stay exactly as
+  you write them. Useful for a
   [trial run](../start/trial-run.md) or for curating by hand.
 
 See [Automatic and manual](../concepts/lists.md#automatic-and-manual).
@@ -64,7 +64,8 @@ Everything bier keeps lives in `~/.barrel`:
 | `~/.barrel/config` | the config |
 | `~/.barrel/peers` | the addresses of paired Macs |
 | `~/.barrel/allowed_signers` | the pinned release key, and where it came from (`.url`) |
-| `~/.barrel/data/Brewfiles/` | `main` and one list per Mac |
+| `~/.barrel/data/Brewfiles/` | `main` (All Macs), `@<group>` per group, and per Mac what it recorded, not assigned |
+| `~/.barrel/data/groups` | which Macs are in which group, and each group's rules |
 | `~/.barrel/data/Safe/` | the encrypted vault, plus `README-recovery.txt` |
 | `~/.barrel/vault/` | plain copies of the vault files, outside every repository |
 | `~/.barrel/state/` | what this Mac and the safe last agreed on, what each peer had, backups |

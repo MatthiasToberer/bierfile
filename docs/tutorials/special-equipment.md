@@ -4,71 +4,82 @@
 
 Three Macs: `mini`, `macbook`, and `studio`, the machine for video
 editing. DaVinci Resolve lives on `studio` and has no business on the
-other two.
-
-## Install it where it belongs
-
-On `studio`, install it as usual and share it:
+other two. So `studio` gets a group of its own:
 
 ```sh
-brew install --cask davinci-resolve
-bier sync
+bier group desk mini macbook
+bier group video studio
 ```
 
-Because you never move it into `main`, it lands in `Brewfiles/studio`
-and stays there. On any Mac:
+## Give it to the group that needs it
+
+On any Mac:
+
+```sh
+bier place davinci-resolve --on video --now
+```
+
+`studio` installs it as the change arrives. On any Mac:
 
 ```sh
 bier list
 ```
 
 ```
-Every Mac (main)
+All Macs
   …
 
-Only on studio (this Mac)
-  davinci-resolve                  app
-
-Only on macbook
+Group desk (mini, macbook)
   font-meslo-lg-nerd-font          app
-  WireGuard                        App Store
+
+Group video (studio)
+  davinci-resolve                  app
 ```
 
-The other two Macs do **not** nag about Resolve — it is not in the shared
-inventory. That is exactly what the device lists are for.
+The other two Macs do **not** nag about Resolve — it is not theirs. A
+second editing Mac later only has to join `video` to get it:
+
+```sh
+bier group move studio2 video
+```
 
 ## Later: something turns out to belong everywhere
 
-macbook's font should be on every Mac after all. On any Mac:
+The font should be on every Mac after all:
 
 ```sh
-bier take
+bier place font-meslo-lg-nerd-font --all --now
 ```
 
-Pick the font and answer `m`. It moves from `Brewfiles/macbook` into
-`Brewfiles/main`. After the next `bier sync`, `mini` and `studio` report
-it as *recorded but not installed* until they have it.
+It leaves `desk` and is for All Macs; `studio` installs it as the change
+arrives.
 
 ## The other direction
 
-Something in `main` should only be on one Mac — say a large toolchain
-that only `studio` needs. On a Mac that should lose it:
+Something for All Macs should only be on `studio` — say a large
+toolchain:
 
 ```sh
-bier uninstall --from-main --keep studio toolchain
+bier place toolchain --on video --now
 ```
 
-or plain `bier uninstall toolchain`, answer `m` and pick `studio`. It is
-uninstalled here, leaves `main` and moves to `studio`'s list; `studio`
-keeps it installed.
+It leaves All Macs; `mini` and `macbook` remove it as the change
+arrives, `studio` keeps it. Without `--now` they report it after the
+next `bier sync` as *no longer for All Macs, still here* and remove it
+with `bier prune` — or you keep it for them with another `bier place`.
 
-Every other Mac that has it installed reports it after the next
-`bier sync` as *no longer in main, still here*. There you decide:
-`bier prune` removes it, `bier take` keeps it on that Mac's own list.
-BierMenu offers both.
+## Moving a Mac
 
-To only move the entry without uninstalling anything, there is
-`bier take --from-main`: pick the entry, then the Mac to hand it to.
+`macbook` becomes an editing machine too:
+
+```sh
+bier group move macbook video
+```
+
+It takes on `video` at once: Resolve and the toolchain are installed,
+what only `desk` had is removed, and `video`'s files and app settings
+replace its own, which stay as a backup. In Bierkasten you drag the Mac
+onto the group and see all of that before it moves.
 
 ---
 

@@ -51,11 +51,12 @@ bier install
 ```sh
 bier sync                   # record here, exchange with peers — after every install
 bier status                 # what differs here?
-bier list                   # what do the others have on top?
-bier take                   # adopt some of it
-bier uninstall htop         # asks: everywhere, only out of main, or only here
-bier prune                  # remove here what was deleted elsewhere
-bier add handbrake-app      # install, put it on a list, share its settings
+bier list                   # All Macs, each group, what is not assigned
+bier group laptops mini macbook          # every Mac is in one group
+bier place firefox --on laptops --now    # software for a group, right away
+bier uninstall htop         # asks: everywhere, off All Macs, or off a group
+bier prune                  # remove here what was taken off elsewhere
+bier share handbrake-app    # an app's settings, for All Macs or --for a group
 bier vault add ~/.zshrc     # a file, not only packages
 bier knockout               # sign off and take bier off this Mac
 ```

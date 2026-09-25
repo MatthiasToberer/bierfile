@@ -7,7 +7,7 @@ bier diff [host…]
 ```
 
 Compares what this Mac is supposed to have with what other Macs are
-supposed to have — `main` plus each device list. Without arguments,
+supposed to have — All Macs, its group and what it recorded. Without arguments,
 against every other Mac.
 
 ```

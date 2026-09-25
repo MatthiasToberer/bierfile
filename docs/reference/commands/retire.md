@@ -7,7 +7,7 @@ bier retire <name>
 ```
 
 Takes a Mac out of the fleet: deletes `Brewfiles/<name>`, removes the
-Mac from every vault group and commits. Shows what the Mac had and asks
+Mac out of its group and commits. Shows what the Mac had and asks
 first. Vault files meant only for that Mac stay; the git history keeps
 everything.
 

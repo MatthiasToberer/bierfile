@@ -7,7 +7,8 @@ bier status
 ```
 
 Shows what the next `bier sync` would carry, then checks this Mac against
-its lists — `main` plus `Brewfiles/<host>` — and prints what differs:
+its lists — All Macs, its group, and what it recorded itself — and
+prints what differs:
 
 ```
 Sync (bier sync):
@@ -21,7 +22,7 @@ Installed on mini but not recorded (bier sync):
   + brew "htop"
 Removed on another device, still here (bier prune):
   ~ brew "ghidra"
-No longer in main, still here (bier prune, or bier take to keep it):
+No longer in main, still here (bier prune, or bier place to keep it):
   ~ brew "nmap"
 Recorded but not installed on mini (bier install):
   - cask "iterm2"

@@ -13,31 +13,35 @@ bier uninstall ghidra
 ```
 
 ```
-brew "ghidra" is listed in: main, studio
+brew "ghidra" is listed in: main, @video
 What should happen?
   [a] everywhere     uninstall here, take it off every list;
                      the other Macs offer bier prune
-  [m] out of main    uninstall here, take it out of main;
-                     you pick the Macs that keep it
+  [m] off All Macs   uninstall here, take it off All Macs;
+                     you pick the groups that keep it
   [c] cancel
 Choice:
 ```
 
-- **everywhere** — off `main` and every Mac's list. The other Macs learn
-  of it with the next `bier sync` and offer `bier prune`.
-- **out of main** — off `main`; only the Macs you pick keep it, on their
-  own lists. If you pick this Mac, it stays installed here. Macs that had
-  it only through `main` report it as *no longer in main* and let you
-  remove it (`bier prune`) or keep it (`bier take`).
-- **only here** (offered when it is not in `main`) — uninstalled here and
-  off this Mac's list; every other list stays.
+- **everywhere** — off All Macs, every group and every Mac's own list.
+  The other Macs learn of it with the next `bier sync` and offer
+  `bier prune`.
+- **off All Macs** — only the groups you pick keep it. If this Mac's
+  group is one of them, it stays installed here. Macs that had it only
+  through All Macs report it as *no longer in main* and let you remove
+  it (`bier prune`) or keep it for their group (`bier place`).
+- **off a group** (offered for this Mac's group) — uninstalled here and
+  off that group's list; everything else stays.
+- **only here** (offered when this Mac only recorded it, not assigned) —
+  uninstalled here and off this Mac's own list.
 
 Scripts, and anything without a terminal, say it up front — without an
 answer bier changes nothing:
 
 ```sh
 bier uninstall --everywhere ghidra
-bier uninstall --from-main --keep studio ghidra
+bier uninstall --from-main --keep video ghidra
+bier uninstall --group desk ghidra
 bier uninstall --here htop
 ```
 

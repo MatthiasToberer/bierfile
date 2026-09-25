@@ -10,7 +10,7 @@ Takes bier off this Mac and this Mac out of the group. After you type
 `knockout` to confirm, it:
 
 1. syncs one last time, so nothing made here is lost;
-2. takes this Mac out of `Brewfiles/` and every vault group, and hands
+2. takes this Mac out of `Brewfiles/` and its group, and hands
    that to the paired Macs;
 3. signs off at every paired Mac — each forgets this Mac's key and the
    addresses it reached it by, and accepts nothing from it any more;
