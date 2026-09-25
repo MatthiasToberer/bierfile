@@ -7,6 +7,9 @@
 # program repository there are no Brewfiles, so it does nothing.
 Brewfiles/* merge=union
 
+# Groups too: a line each, and two Macs making groups at once must merge.
+groups merge=union
+
 # Encrypted, so there are no lines to merge. Let git call them binary
 # and report a conflict honestly rather than glue two ciphertexts
 # together -- that was measured, and it ruins the file silently.

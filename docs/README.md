@@ -39,6 +39,8 @@ would rather have every step explained.
 
 ## Concepts
 
+- **[Groups](concepts/groups.md)** — every Mac in one group; software,
+  files and rules go to All Macs or to groups
 - **[main and device lists](concepts/lists.md)** — the one rule
   everything rests on
 - **[How removals travel](concepts/removals.md)** — why the git history

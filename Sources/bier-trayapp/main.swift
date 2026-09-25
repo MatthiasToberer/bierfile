@@ -17,6 +17,7 @@ import ServiceManagement
 struct BierState {
 	var ok = false
 	var host = ""
+	var group = ""
 	var install: [String] = [] // arrived: on this Mac's lists, not installed
 	var remove: [String] = [] // arrived: removed elsewhere or out of main
 	var settings: [String] = [] // arrived: settings from another Mac
@@ -137,6 +138,7 @@ enum Bier {
 			switch tag {
 			case "STATE": s.ok = f[1] == "ok"
 			case "HOST": s.host = f[1]
+			case "MYGROUP": s.group = f[1]
 			case "VERSION": s.version = f[1]
 			case "NEWCODE": s.release = f[1]
 			case "REPO": s.repo = f[1]
@@ -426,7 +428,8 @@ class Controller: NSObject, NSMenuDelegate {
 			let f = DateFormatter()
 			f.dateFormat = "HH:mm"
 			menu.addItem(detail("last checked \(f.string(from: last))"
-					+ (state.host.isEmpty ? "" : " · \(state.host)")))
+					+ (state.host.isEmpty ? "" : " · \(state.host)")
+					+ (state.group.isEmpty ? "" : " · group \(state.group)")))
 		}
 
 		// Quit set apart, as is customary on macOS.
@@ -445,7 +448,7 @@ class Controller: NSObject, NSMenuDelegate {
 			sub.addItem(detail("Commit \(state.commit)"))
 		}
 		if !state.host.isEmpty {
-			sub.addItem(detail("Device \(state.host)"))
+			sub.addItem(detail("Device \(state.host)" + (state.group.isEmpty ? "" : ", group \(state.group)")))
 		}
 		if !state.repo.isEmpty {
 			sub.addItem(detail(state.repo))

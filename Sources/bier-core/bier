@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.50.4
+BIER_VERSION=0.50.5
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -195,6 +195,9 @@ automatic | manual) ;;
 esac
 
 BREW_DIR=$DATA/Brewfiles
+# Who is in which group, and each group's rules. Plain text beside the
+# Brewfiles: every Mac needs it to know its software, vault or not.
+GROUPS_FILE=$DATA/groups
 
 # Everything that is not a Brewfile. The plain files live outside any
 # repository on purpose: a .gitignore is a rule that can be got wrong,
@@ -336,23 +339,16 @@ $(printf '%s\n' "$bad" | sed 's/^/       /')
 
 # What a device is supposed to have: its device file plus main. Only
 # together do the two describe what should run on that Mac.
+# What a Mac has: All Macs, its group's software, and what it recorded
+# itself and nobody has given to a group yet.
 host_entries() {
 	local g
+	g=$(host_group "$1")
 	{
 		entries "$BREW_DIR/$1"
 		entries "$MAIN_FILE"
-		for g in $(host_groups "$1"); do entries "$BREW_DIR/@$g"; done
+		[ -z "$g" ] || entries "$BREW_DIR/@$g"
 	} | sort -u
-}
-
-# The groups a Mac belongs to. A group is Macs only (bier vault group);
-# software given to a group is in Brewfiles/@<group>, and every member
-# has it -- one that joins later as well.
-host_groups() {
-	local g
-	for g in $(group_list); do
-		! printf '%s\n' $(group_members "$g") | grep -qxF "$1" || printf '%s\n' "$g"
-	done
 }
 
 own_entries() { host_entries "$HOST"; }
@@ -918,6 +914,7 @@ resolve_union() {
 			sed -i '' -e '/^<<<<<<< /d' -e '/^=======$/d' -e '/^>>>>>>> /d' "$DATA/$f"
 		done
 		git -C "$DATA" add Brewfiles
+		[ ! -f "$GROUPS_FILE" ] || git -C "$DATA" add groups
 		GIT_EDITOR=true git -C "$DATA" rebase --continue >/dev/null 2>&1 || return 1
 		open=$(git -C "$DATA" diff --name-only --diff-filter=U 2>/dev/null || true)
 	done
@@ -951,6 +948,7 @@ publish() {
 	# script or the README as well and hide them under an inventory
 	# message — that happened to me exactly once.
 	git -C "$DATA" add Brewfiles
+	[ ! -f "$GROUPS_FILE" ] || git -C "$DATA" add groups
 	[ ! -d "$SAFE_DIR" ] || git -C "$DATA" add Safe
 	if git -C "$DATA" diff --cached --quiet; then
 		info "Nothing to commit."
@@ -1205,6 +1203,7 @@ own_address() {
 # bier state says, and
 #   SELF    <address>                  how other Macs reach this one
 #   GROUP   <name> <macs>              a group and its members
+#   RULE    <group> <rule> <value>     apply or inventory, set for a group
 #   MAC     <name>                     a Mac with a list of its own
 #   ENTRY   main|<mac> <entry>         what a list holds
 #   APPSET  <package> <app> <what> <scope>  an app's shared settings
@@ -1217,7 +1216,12 @@ cmd_report() {
 	cmd_state
 	printf 'SELF\t%s\n' "$(own_address)"
 	for h in $(host_list); do printf 'MAC\t%s\n' "$h"; done
-	for h in $(group_list); do printf 'GROUP\t%s\t%s\n' "$h" "$(group_members "$h")"; done
+	for h in $(group_list); do
+		printf 'GROUP\t%s\t%s\n' "$h" "$(group_members "$h")"
+		for f in apply inventory; do
+			[ -z "$(group_rule "$h" "$f")" ] || printf 'RULE\t%s\t%s\t%s\n' "$h" "$f" "$(group_rule "$h" "$f")"
+		done
+	done
 	entries "$MAIN_FILE" | sed 's/^/ENTRY'$'\t''main'$'\t''/'
 	for f in "$BREW_DIR"/*; do
 		[ -f "$f" ] && [ "$f" != "$MAIN_FILE" ] || continue
@@ -2248,13 +2252,13 @@ cmd_place() {
 		shift
 	done
 	[ -n "$name" ] && [ -n "$where" ] ||
-		die "usage: bier place <package> --all | --on <mac>,@<group>,… | --none [--now]"
+		die "usage: bier place <package> --all | --on <group>,… | --none [--now]"
 	set -- "$name"
+	groups_migrate
+	# Only to groups: a single Mac gets software through its group.
 	for t in $targets; do
-		case $t in
-		@*) group_list | grep -qxF "${t#@}" || die "there is no group ${t#@}; make it with: bier vault group ${t#@} <macs>" ;;
-		*) peer_name_ok "$t" && [ "$t" = "${t#*@}" ] || die "$t is not a Mac's name" ;;
-		esac
+		group_list | grep -qxF "${t#@}" ||
+			die "${t#@} is not a group. Software goes to All Macs or to groups: bier group"
 	done
 	place_line "$1" || die "$1 is neither a formula, a cask nor an App Store app"
 
@@ -2263,7 +2267,7 @@ cmd_place() {
 	all) printf '%s\n' "$PLACE_LINE" >>"$MAIN_FILE"; words="every Mac" ;;
 	none) words="no Mac" ;;
 	on)
-		for t in $targets; do printf '%s\n' "$PLACE_LINE" >>"$BREW_DIR/$t"; done
+		for t in $targets; do printf '%s\n' "$PLACE_LINE" >>"$BREW_DIR/@${t#@}"; done
 		words=$(printf '%s' "$targets" | sed 's/ /, /g')
 		;;
 	esac
@@ -2344,15 +2348,36 @@ cmd_apply() {
 	since=$(cat "$mark" 2>/dev/null || true)
 	printf '%s\n' "$head" >"$mark"
 	if [ "${1:-}" = --received ]; then
-		[ -n "$since" ] && [ "$since" != "$head" ] || return 0
-		git -C "$DATA" log --format=%s "$since..$head" 2>/dev/null | grep -q '(install now)$' || return 0
-		if [ "$APPLY_MODE" = ask ]; then
+		[ -n "$since" ] || return 0
+		local group was
+		group=$(host_group "$HOST")
+		was=$(cat "$STATE_DIR/group" 2>/dev/null || true)
+		printf '%s\n' "$group" >"$STATE_DIR/group"
+		# A move to another group is applied like a change marked
+		# install now: the Mac takes on its new group's rules.
+		if [ "$group" = "$was" ]; then
+			git -C "$DATA" log --format=%s "$since..$head" 2>/dev/null | grep -q '(install now)$' || return 0
+		fi
+		if [ "$(apply_mode)" = ask ]; then
 			info "Changes came in to install; this Mac asks first: bier apply"
 			return 0
 		fi
 	fi
 	(cmd_install) || info "Not everything could be installed; bier status shows what is missing."
 	(cmd_prune --yes) || info "Not everything could be removed; bier status shows what is left."
+}
+
+# The rules in effect here: the group's, else this Mac's config.
+apply_mode() {
+	local rule
+	rule=$(group_rule "$(host_group "$HOST")" apply)
+	printf '%s' "${rule:-$APPLY_MODE}"
+}
+
+inventory_mode() {
+	local rule
+	rule=$(group_rule "$(host_group "$HOST")" inventory)
+	printf '%s' "${rule:-$INVENTORY_MODE}"
 }
 
 # What Homebrew and the App Store have by that name, for Bierkasten:
@@ -3177,7 +3202,8 @@ cmd_install() {
 	# Both before either: finding the second one poisoned after the
 	# first has already been installed would be half a rescue.
 	local g files=("$MAIN_FILE" "$HOST_FILE") f
-	for g in $(host_groups "$HOST"); do files+=("$BREW_DIR/@$g"); done
+	g=$(host_group "$HOST")
+	[ -z "$g" ] || files+=("$BREW_DIR/@$g")
 	for f in "${files[@]}"; do verify_brewfile "$f"; done
 	for f in "${files[@]}"; do
 		[ ! -f "$f" ] || brew bundle install --file "$f"
@@ -3226,6 +3252,7 @@ sync_data() {
 sync_peers() {
 	local msg=$1 peer peers
 	git -C "$DATA" add Brewfiles
+	[ ! -f "$GROUPS_FILE" ] || git -C "$DATA" add groups
 	[ ! -d "$SAFE_DIR" ] || git -C "$DATA" add Safe
 	if git -C "$DATA" diff --cached --quiet; then
 		info "Nothing to commit."
@@ -3535,17 +3562,99 @@ vault_is_meta() {
 	return 1
 }
 
-# Who is in a group. Reads the file in the vault, which travels
-# encrypted like everything else.
+# Groups. Every Mac is in exactly one; a Mac in none is new, until it is
+# moved. Everything is given to All Macs or to a group -- software in
+# Brewfiles/@<group>, files in the vault under @<group>/, rules as
+# <group>.<rule> = <value> in the groups file. A Mac has All Macs plus
+# its group, and when it moves, it takes on the new group's rules.
+groups_source() {
+	if [ -f "$GROUPS_FILE" ]; then
+		printf '%s' "$GROUPS_FILE"
+	elif [ -f "$VAULT/.groups" ]; then
+		# Before the groups file: the vault's list, read as it was.
+		printf '%s' "$VAULT/.groups"
+	fi
+}
+
 group_members() {
-	[ -f "$VAULT/.groups" ] || return 0
-	sed -nE "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$VAULT/.groups" |
-		tail -1
+	local f
+	f=$(groups_source)
+	[ -n "$f" ] || return 0
+	sed -nE "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$f" | tail -1
 }
 
 group_list() {
-	[ -f "$VAULT/.groups" ] || return 0
-	sed -nE 's/^[[:space:]]*([A-Za-z0-9_-]+)[[:space:]]*=.*/\1/p' "$VAULT/.groups"
+	local f
+	f=$(groups_source)
+	[ -n "$f" ] || return 0
+	sed -nE 's/^[[:space:]]*([A-Za-z0-9_-]+)[[:space:]]*=.*/\1/p' "$f" | awk '!seen[$0]++'
+}
+
+# A group's rule: apply (automatic|ask) or inventory (automatic|manual).
+group_rule() {
+	[ -n "$1" ] && [ -f "$GROUPS_FILE" ] || return 0
+	sed -nE "s/^[[:space:]]*$1\.$2[[:space:]]*=[[:space:]]*(.*)$/\1/p" "$GROUPS_FILE" | tail -1
+}
+
+# The group a Mac is in; nothing for a new one.
+host_group() {
+	local g
+	for g in $(group_list); do
+		if printf '%s\n' $(group_members "$g") | grep -qxF "$1"; then
+			printf '%s\n' "$g"
+			return 0
+		fi
+	done
+}
+
+# Sets one line of the groups file: "<key> = <value>", replacing it.
+groups_set() {
+	local key=$1 value=$2 tmp
+	[ -f "$GROUPS_FILE" ] || printf '# bier groups: <group> = <macs>, <group>.<rule> = <value>\n' >"$GROUPS_FILE"
+	tmp=$(tmpfile)
+	awk -v key="$key" -v value="$value" '
+		{ k = $0; sub(/^[[:space:]]*/, "", k); sub(/[[:space:]]*=.*$/, "", k) }
+		k == key && index($0, "=") { if (!done) print key " = " value; done = 1; next }
+		{ print }
+		END { if (!done) print key " = " value }' "$GROUPS_FILE" >"$tmp"
+	mv "$tmp" "$GROUPS_FILE"
+}
+
+# Takes a Mac out of whatever group it is in.
+groups_take_out() {
+	local g rest
+	for g in $(group_list); do
+		printf '%s\n' $(group_members "$g") | grep -qxF "$1" || continue
+		# Its last member leaving: grep finds nothing, which is no error.
+		rest=$(printf '%s\n' $(group_members "$g") | { grep -vxF "$1" || true; } | tr '\n' ' ')
+		groups_set "$g" "${rest% }"
+	done
+}
+
+# Once, when bier first keeps groups: the vault's groups come along, and
+# every Mac with a list of its own gets a group of its own, holding that
+# list -- nothing is lost, and merging groups is then a matter of moving.
+groups_migrate() {
+	[ -n "$DATA" ] && [ -d "$BREW_DIR" ] && [ ! -f "$GROUPS_FILE" ] || return 0
+	local h line
+	# Data repositories set up before groups lack the merge rule: two
+	# Macs creating the file at once would stop at a conflict.
+	grep -qx 'groups merge=union' "$DATA/.gitattributes" 2>/dev/null ||
+		printf '\ngroups merge=union\n' >>"$DATA/.gitattributes"
+	git -C "$DATA" add .gitattributes 2>/dev/null || true
+	printf '# bier groups: <group> = <macs>, <group>.<rule> = <value>\n' >"$GROUPS_FILE"
+	if [ -f "$VAULT/.groups" ]; then
+		grep -E '^[[:space:]]*[A-Za-z0-9_-]+[[:space:]]*=' "$VAULT/.groups" >>"$GROUPS_FILE" || true
+	fi
+	for h in $(host_list); do
+		[ -n "$(host_group "$h")" ] || groups_set "$h" "$h"
+		[ -n "$(entries "$BREW_DIR/$h")" ] || continue
+		grep -E "^[[:space:]]*($KINDS)[[:space:]]+\"" "$BREW_DIR/$h" >>"$BREW_DIR/@$(host_group "$h")" || true
+		line=$(tmpfile)
+		grep -vE "^[[:space:]]*($KINDS)[[:space:]]+\"" "$BREW_DIR/$h" >"$line" || true
+		mv "$line" "$BREW_DIR/$h"
+	done
+	info "Groups: every Mac is in one now; each list became its Mac's group."
 }
 
 # Does this Mac get the file?
@@ -3560,46 +3669,78 @@ vault_wanted() {
 }
 
 cmd_group() {
-	local name=${1:-} line rest
+	need_repo
+	groups_migrate
+	local name=${1:-} mac g rest
 	[ $# -eq 0 ] || shift
-
 	case $name in
 	"")
-		if [ ! -f "$VAULT/.groups" ]; then
-			info "No groups. Everything in the vault goes to every Mac."
-			info "  bier vault group laptops mini macbook"
-			return 0
-		fi
-		for line in $(group_list); do
-			rest=$(group_members "$line")
-			if printf '%s\n' $rest | grep -qx "$HOST"; then
-				info "  $line = $rest   (this Mac)"
+		for g in $(group_list); do
+			if printf '%s\n' $(group_members "$g") | grep -qxF "$HOST"; then
+				info "  $g = $(group_members "$g")   (this Mac)"
 			else
-				info "  $line = $rest"
+				info "  $g = $(group_members "$g")"
 			fi
+			for rest in apply inventory; do
+				[ -z "$(group_rule "$g" "$rest")" ] || info "      $rest = $(group_rule "$g" "$rest")"
+			done
 		done
+		rest=$(for mac in $(host_list); do [ -n "$(host_group "$mac")" ] || printf '%s ' "$mac"; done)
+		[ -z "$rest" ] || info "  new (in no group yet) = ${rest% }"
+		return 0
+		;;
+	move)
+		[ $# -eq 2 ] || die "usage: bier group move <mac> <group>"
+		group_list | grep -qxF "$2" || die "there is no group $2; make it with: bier group $2 $1"
+		groups_take_out "$1"
+		groups_set "$2" "$(group_members "$2") $1"
+		group_publish "$HOST: $1 moved to $2"
+		return 0
+		;;
+	rule)
+		[ $# -eq 3 ] || die "usage: bier group rule <group> apply automatic|ask | inventory automatic|manual"
+		group_list | grep -qxF "$1" || die "there is no group $1"
+		case $2=$3 in
+		apply=automatic | apply=ask | inventory=automatic | inventory=manual) ;;
+		*) die "usage: bier group rule <group> apply automatic|ask | inventory automatic|manual" ;;
+		esac
+		groups_set "$1.$2" "$3"
+		group_publish "$HOST: $1 sets $2 = $3"
 		return 0
 		;;
 	--drop)
-		[ $# -gt 0 ] || die "which group? bier vault group --drop laptops"
-		[ -f "$VAULT/.groups" ] || die "no groups at all"
-		sed -i '' -E "/^[[:space:]]*$1[[:space:]]*=/d" "$VAULT/.groups"
-		info "Group $1 is gone. Files under @$1/ go to nobody until"
-		info "the group exists again — bier vault drop removes them."
+		[ $# -eq 1 ] || die "which group? bier group --drop laptops"
+		group_list | grep -qxF "$1" || die "there is no group $1"
+		sed -i '' -E "/^[[:space:]]*$1(\.[a-z]+)?[[:space:]]*=/d" "$GROUPS_FILE"
+		rm -f "$BREW_DIR/@$1"
+		group_publish "$HOST: group $1 dropped; its Macs are new"
 		return 0
 		;;
+	-*) die "usage: bier group [<group> <mac>… | move <mac> <group> | rule … | --drop <group>]" ;;
 	esac
-
-	[ $# -gt 0 ] || die "which Macs? bier vault group laptops mini macbook"
-	mkdir -p "$VAULT"
-	touch "$VAULT/.groups"
-	for line in "$@"; do
-		host_list | grep -qx "$line" ||
-			info "Note: no Mac called $line has recorded anything yet."
+	printf '%s' "$name" | grep -Eq '^[A-Za-z0-9_-]+$' || die "a group's name is letters, digits, - and _"
+	case $name in new | main | all) die "$name is taken; call the group something else" ;; esac
+	[ $# -gt 0 ] || die "which Macs? bier group $name mini macbook"
+	# Exactly these Macs: taken out of their groups, and the group's
+	# former members that are not named become new.
+	for g in $(group_members "$name"); do groups_take_out "$g"; done
+	for mac in "$@"; do
+		peer_name_ok "$mac" || die "$mac is not a Mac's name"
+		groups_take_out "$mac"
 	done
-	sed -i '' -E "/^[[:space:]]*$name[[:space:]]*=/d" "$VAULT/.groups"
-	printf '%s = %s\n' "$name" "$*" >>"$VAULT/.groups"
-	info "$name = $*"
+	groups_set "$name" "$*"
+	group_publish "$HOST: group $name = $*"
+}
+
+# A change of groups goes out at once, and each Mac it concerns takes on
+# its group's rules as it arrives -- this one right away.
+group_publish() {
+	[ ! -d "$VAULT" ] || [ ! -f "$VAULT/.groups" ] || cp "$GROUPS_FILE" "$VAULT/.groups"
+	publish "$1"
+	if [ -x "$PEER_CLIENT" ] && [ -n "$(peer_list)" ]; then
+		sync_peers "$1" || info "The Macs not reached take it on when they are back."
+	fi
+	(cmd_apply --received) || true
 }
 
 # --- Copy mode --------------------------------------------------------------
@@ -4873,7 +5014,7 @@ cmd_knockout() {
 
 		info ""
 		info "== 2. Out of the group"
-		if [ -f "$BREW_DIR/$HOST" ] || grep -qs "$HOST" "$VAULT/.groups"; then
+		if [ -f "$BREW_DIR/$HOST" ] || [ -n "$(host_group "$HOST")" ]; then
 			[ -f "$BREW_DIR/$HOST" ] || : >"$BREW_DIR/$HOST"
 			(RETIRE_CONFIRMED=yes cmd_retire --self) || info "  could not take $HOST out -- do it from another Mac: bier retire $HOST"
 		else
@@ -5019,7 +5160,9 @@ cmd_retire() {
 	fi
 
 	rm -f "$BREW_DIR/$name"
-	if [ -f "$VAULT/.groups" ]; then
+	if [ -f "$GROUPS_FILE" ]; then
+		groups_take_out "$name"
+	elif [ -f "$VAULT/.groups" ]; then
 		local g rest
 		for g in $(group_list); do
 			rest=$(printf '%s\n' $(group_members "$g") | grep -vx "$name" | tr '\n' ' ')
@@ -5193,7 +5336,8 @@ cmd_sync() {
 		record=yes
 		shift
 	fi
-	if [ "$INVENTORY_MODE" = automatic ] || [ "$record" = yes ]; then
+	groups_migrate
+	if [ "$(inventory_mode)" = automatic ] || [ "$record" = yes ]; then
 		cmd_dump
 	else
 		info "Inventory is manual; keeping the Brewfiles as written."
@@ -5240,6 +5384,7 @@ cmd_update() {
 #   VAULT_LEFT <path>      a .from-safe copy from a conflict
 #   PENDING <mac> <by>     a Mac introduced by a peer, waiting for accept
 #   INFO   <what> <value>  about this Mac: macos, model, disk
+#   MYGROUP <name>         the group this Mac is in; new when in none
 #
 # What other devices have more or less of is deliberately absent: it says
 # nothing about whether there is anything to do on *this* Mac, and in the
@@ -5289,6 +5434,7 @@ cmd_state() {
 	fi
 	printf 'HOST\t%s\n' "$HOST"
 	printf 'VERSION\t%s\n' "$BIER_VERSION"
+	printf 'MYGROUP\t%s\n' "$(host_group "$HOST" | grep . || echo new)"
 	mac_info
 	local release
 	release=$(latest_release)
@@ -5386,7 +5532,10 @@ bier — keeps Brewfiles in sync across Macs
                           main (some Macs keep it), or only off this Mac's
   bier prune [--yes]      remove what was deleted elsewhere or left main
   bier list | ls          everything bier keeps: packages, their settings, files
-  bier place <pkg> --all | --on <mac>,@<group>,… | --none [--now]
+  bier group [<group> <mac>…]  groups of Macs; every Mac is in one
+  bier group move <mac> <group>   the Mac takes on the group's rules
+  bier group rule <group> apply automatic|ask | inventory automatic|manual
+  bier place <pkg> --all | --on <group>,… | --none [--now]
                           where a package belongs; --now installs it on
                           every Mac as soon as the change reaches it
   bier apply              install and remove what the lists say for here
@@ -5498,6 +5647,7 @@ brewmaster | doctor) cmd_brewmaster ;;
 report) cmd_report ;;
 fleet) cmd_fleet ;;
 place) cmd_place "$@" ;;
+group) cmd_group "$@" ;;
 apply) cmd_apply "$@" ;;
 search) cmd_search "$@" ;;
 share) cmd_share "$@" ;;
