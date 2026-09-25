@@ -10,20 +10,21 @@
 # Both are recorded in ~/.barrel/config. Git commands go to DATA
 # unless the code itself is meant (bier upgrade, bier version).
 #
-# Brewfiles/main is the shared inventory, Brewfiles/<host> holds only what
-# one Mac has on top of it. Both are valid Brewfiles; together they are
-# what a device is supposed to have.
+# Every Mac is in one group. Brewfiles/main is what All Macs have,
+# Brewfiles/@<group> what a group's Macs have on top, and
+# Brewfiles/<host> what one Mac has installed that nobody has given to
+# All Macs or a group yet. All are valid Brewfiles; together they are
+# what a Mac is supposed to have.
 #
-# A device file can only add, never subtract. Anything a device must not
-# run therefore cannot live in main — it belongs in the device file of
-# the Mac that wants it.
+# Lists only add, never subtract. Anything a Mac must not run therefore
+# cannot be for All Macs -- it belongs to the groups that want it.
 
 set -euo pipefail
 
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.50.5
+BIER_VERSION=0.50.6
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -721,174 +722,13 @@ expand_selection() {
 	done
 }
 
-# Moves entries between main and the device files.
-#
-#   bier take               what other devices have on top, to here or to main
-#   bier take --from-main   hand something from main to a single device
-#
-# Into main means: added to main and removed from every device file,
-# because main applies to all and listing it twice would be wrong. Into
-# the own file means: added here only, the others keep their entry.
+# take moved entries between main and the Macs' own lists. With groups,
+# software goes to All Macs or to groups -- that is bier place.
 cmd_take() {
-	need_repo
-	local from_main=no
-	if [ "${1:-}" = "--from-main" ]; then from_main=yes; fi
-
-	local listing n entry
-	listing=$(tmpfile)
-	if [ "$from_main" = yes ]; then
-		entries "$MAIN_FILE" >"$listing"
-	else
-		{
-			local h
-			for h in $(host_list); do
-				if [ "$h" != "$HOST" ]; then
-					entries "$BREW_DIR/$h"
-				fi
-			done
-		} | sort -u >"$listing"
-	fi
-
-	if [ ! -s "$listing" ]; then
-		if [ "$from_main" = yes ]; then
-			info "Brewfiles/main is empty."
-		else
-			info "No other device has anything on top of main."
-		fi
-		return 0
-	fi
-
-	if [ "$from_main" = yes ]; then
-		info "In Brewfiles/main — pick one to hand it to a device:"
-	else
-		info "What other devices have on top of main:"
-	fi
-	info ""
-	n=0
-	while IFS= read -r entry; do
-		n=$((n + 1))
-		if [ "$from_main" = yes ]; then
-			printf '  %2s  %s\n' "$n" "$entry"
-		else
-			printf '  %2s  %-44s %s\n' "$n" "$entry" "$(hosts_with "$entry")"
-		fi
-	done <"$listing"
-
-	info ""
-	printf 'Numbers (e.g. 1 3-5), empty = cancel: '
-	read -r sel || sel=""
-	if [ -z "$sel" ]; then
-		info "Cancelled."
-		return 0
-	fi
-	local picks
-	picks=$(expand_selection "$sel" "$n")
-	if [ -z "$picks" ]; then
-		info "Nothing selected."
-		return 0
-	fi
-
-	# Decide on the destination.
-	local target answer i
-	if [ "$from_main" = yes ]; then
-		if [ -z "$(host_list)" ]; then
-			die "there is no device file yet — run 'bier dump' first"
-		fi
-		info ""
-		info "Hand it to which device?"
-		i=0
-		for h in $(host_list); do
-			i=$((i + 1))
-			printf '  %2s  %s\n' "$i" "$h"
-		done
-		printf 'Number: '
-		read -r answer || answer=""
-		target=$(host_list | sed -n "${answer}p")
-		[ -n "$target" ] || die "no device with number $answer"
-	else
-		info ""
-		printf 'Where to?  [m] into main, for all devices   [h] only %s   [c] cancel: ' "$HOST"
-		read -r answer || answer=""
-		case $answer in
-		m | M) target=main ;;
-		h | H) target=$HOST ;;
-		*)
-			info "Cancelled."
-			return 0
-			;;
-		esac
-	fi
-
-	# Show the plan before anything happens.
-	local key line
-	info ""
-	info "Plan:"
-	for i in $picks; do
-		key=$(sed -n "${i}p" "$listing")
-		info "  $key"
-		if [ "$from_main" = yes ]; then
-			info "    + Brewfiles/$target"
-			info "    - Brewfiles/main"
-		elif [ "$target" = main ]; then
-			info "    + Brewfiles/main"
-			for h in $(hosts_with "$key"); do
-				info "    - Brewfiles/$h"
-			done
-		else
-			info "    + Brewfiles/$target   (the others keep their entry)"
-		fi
-	done
-
-	info ""
-	printf 'Apply and push? [y/N] '
-	read -r answer || answer=""
-	case $answer in
-	j | J | y | Y) ;;
-	*)
-		info "Cancelled."
-		return 0
-		;;
-	esac
-
-	local taken kind name
-	taken=$(tmpfile)
-	for i in $picks; do
-		key=$(sed -n "${i}p" "$listing")
-		line=$(find_line "$key")
-		kind=${key%% *}
-		name=$(printf '%s' "$key" | sed -E 's/^[a-z]+ "([^"]+)"$/\1/')
-		printf '%s\n' "$line" >>"$taken"
-
-		if [ "$from_main" = yes ]; then
-			strip_entry "$kind" "$name"
-			printf '%s\n' "$line" >>"$BREW_DIR/$target"
-		elif [ "$target" = main ]; then
-			strip_entry "$kind" "$name"
-			printf '%s\n' "$line" >>"$MAIN_FILE"
-		else
-			printf '%s\n' "$line" >>"$BREW_DIR/$target"
-		fi
-	done
-
-	if [ "$from_main" = yes ]; then
-		publish "$HOST: $(count_word "$(wc -l <"$taken" | tr -d ' ')") from main to $target"
-	else
-		publish "$HOST: took $(count_word "$(wc -l <"$taken" | tr -d ' ')") into $target"
-	fi
-
-	# Install only if this Mac is supposed to have them afterwards.
-	if [ "$target" = main ] || [ "$target" = "$HOST" ]; then
-		info ""
-		printf 'Install now? [y/N] '
-		read -r answer || answer=""
-		case $answer in
-		j | J | y | Y)
-			verify_brewfile "$taken"
-			brew bundle install --file "$taken"
-			;;
-		*) info "Not installed — bier status reports it as missing, bier install fetches it." ;;
-		esac
-	fi
+	die "take is gone: software goes to All Macs or to groups now.
+     bier list                          what is where, and what is not assigned
+     bier place <pkg> --all             for All Macs
+     bier place <pkg> --on <group>,…    for groups"
 }
 
 # Fetches from the server and resolves conflicts on its own.
@@ -1985,7 +1825,7 @@ cmd_dump() {
 
 	out=$(tmpfile)
 	{
-		printf '# %s — what this Mac has on top of Brewfiles/main.\n' "$HOST"
+		printf '# %s — installed here, not given to All Macs or a group yet.\n' "$HOST"
 		printf '# Written by "bier dump", do not edit by hand.\n\n'
 		cat "$new_lines" "$old_lines"
 	} >"$out"
@@ -1994,7 +1834,7 @@ cmd_dump() {
 	local n m
 	n=$(entries "$HOST_FILE" | wc -l | tr -d ' ')
 	m=$(entries "$MAIN_FILE" | wc -l | tr -d ' ')
-	info "Brewfiles/$HOST written: $n on top of $m in main"
+	info "Recorded on $HOST: $n not assigned, beside $m for All Macs"
 
 	if [ -n "$stale_now" ]; then
 		if [ "$adopt" = no ]; then
@@ -2058,13 +1898,25 @@ cmd_main() {
 	cp "$incoming" "$MAIN_FILE"
 	info "Brewfiles/main: inventory of $HOST, $(count_word "$(entries "$MAIN_FILE" | wc -l | tr -d ' ')")"
 
-	# Rebase every device file onto the new main.
-	local host file tmp
+	# Every other list onto the new main: groups and what the Macs
+	# recorded keep only what All Macs do not have already.
+	local host file tmp g
+	for g in $(group_list); do
+		file=$BREW_DIR/@$g
+		[ -f "$file" ] || continue
+		tmp=$(tmpfile)
+		{
+			printf '# group %s — what its Macs have on top of All Macs.\n\n' "$g"
+			delta "$file" "$MAIN_FILE"
+		} >"$tmp"
+		mv "$tmp" "$file"
+		info "  group $g: $(entries "$file" | wc -l | tr -d ' ') entries left"
+	done
 	for host in $(host_list); do
 		file=$BREW_DIR/$host
 		tmp=$(tmpfile)
 		{
-			printf '# %s — what this Mac has on top of Brewfiles/main.\n' "$host"
+			printf '# %s — installed here, not given to All Macs or a group yet.\n' "$host"
 			printf '# Written by "bier dump", do not edit by hand.\n\n'
 			delta "$file" "$MAIN_FILE"
 		} >"$tmp"
@@ -2083,7 +1935,8 @@ cmd_main() {
 # offers to share the app's settings as well. The counterpart of
 # uninstall, and the way to add something in manual inventory mode.
 #
-#   --main | --here          which list, instead of asking
+#   --all | --group <g> | --here   All Macs, a group, or only recorded
+#                            here, not assigned yet -- instead of asking
 #   --settings | --no-settings   share every settings location found,
 #                            or none, instead of asking
 cmd_add() {
@@ -2092,8 +1945,14 @@ cmd_add() {
 	local where="" settings="" name kind added=""
 	while [ $# -gt 0 ]; do
 		case $1 in
-		--main) where=main ;;
+		--main | --all) where=main ;;
 		--here) where=here ;;
+		--group)
+			[ $# -ge 2 ] || die "--group which?"
+			group_list | grep -qxF "$2" || die "there is no group $2; see: bier group"
+			where=group:$2
+			shift
+			;;
 		--settings) settings=all ;;
 		--no-settings) settings=none ;;
 		--) shift; break ;;
@@ -2102,7 +1961,7 @@ cmd_add() {
 		esac
 		shift
 	done
-	[ $# -ge 1 ] || die "usage: bier add [--main | --here] [--settings | --no-settings] <package>…"
+	[ $# -ge 1 ] || die "usage: bier add [--all | --group <g> | --here] [--settings | --no-settings] <package>…"
 
 	local store line
 	for name in "$@"; do
@@ -2202,11 +2061,18 @@ add_to_list() {
 		return 0
 	fi
 	if [ -z "$where" ]; then
-		printf 'Where to?  [m] main, every Mac   [h] only %s   [c] cancel: ' "$HOST"
+		local own
+		own=$(host_group "$HOST")
+		if [ -n "$own" ]; then
+			printf 'Where to?  [a] All Macs   [g] group %s   [h] only record it here   [c] cancel: ' "$own"
+		else
+			printf 'Where to?  [a] All Macs   [h] only record it here   [c] cancel: '
+		fi
 		read -r answer ||
-			die "nobody to ask. Say where: bier add --main | --here $name"
+			die "nobody to ask. Say where: bier add --all | --group <g> | --here $name"
 		case $answer in
-		m | M) where=main ;;
+		a | A | m | M) where=main ;;
+		g | G) [ -n "$own" ] || die "$HOST is in no group yet"; where=group:$own ;;
 		h | H) where=here ;;
 		*)
 			info "Cancelled; $name stays installed but on no list."
@@ -2217,11 +2083,16 @@ add_to_list() {
 	if [ "$where" = main ]; then
 		strip_entry "$kind" "$name"
 		printf '%s\n' "$line" >>"$MAIN_FILE"
-		info "Added to Brewfiles/main."
+		info "Added for All Macs."
+	elif [ "${where#group:}" != "$where" ]; then
+		entries "$BREW_DIR/@${where#group:}" | grep -qxF "$key" || printf '%s\n' "$line" >>"$BREW_DIR/@${where#group:}"
+		strip_entry_in "$BREW_DIR/$HOST" "$kind" "$name"
+		ADD_SCOPE=${where#group:}
+		info "Added for the group ${where#group:}."
 	else
 		entries "$BREW_DIR/$HOST" | grep -qxF "$key" || printf '%s\n' "$line" >>"$BREW_DIR/$HOST"
 		ADD_SCOPE=$HOST
-		info "Added to Brewfiles/$HOST."
+		info "Recorded on $HOST, not assigned yet: bier place $name --all | --on <group>"
 	fi
 }
 
@@ -2412,10 +2283,10 @@ cmd_share() {
 	local scope="" name kind
 	if [ "${1:-}" = --for ]; then
 		scope=${2:-}
-		[ -n "$scope" ] || die "--for what? a group or a Mac"
+		group_list | grep -qxF "$scope" || die "--for which group? see: bier group"
 		shift 2
 	fi
-	[ $# -eq 1 ] || die "usage: bier share [--for <group|mac>] <app>"
+	[ $# -eq 1 ] || die "usage: bier share [--for <group>] <app>"
 	name=$1
 	kind=$(kind_of "$name")
 	[ -n "$kind" ] || die "$name is neither installed here nor on a list"
@@ -2599,11 +2470,11 @@ EOF
 # Uninstalls packages here and decides, per package, which lists lose it.
 # Removal becomes an action instead of something guessed from a dump.
 #
-#   --everywhere          out of main and every Mac's list
+#   --everywhere          off every list, All Macs and every group
 #   --from-main [--keep a,b]
-#                         out of main; only the Macs named keep it, on
-#                         their own lists
-#   --here                out of this Mac's list only (not if in main)
+#                         off All Macs; only the groups named keep it
+#   --group <g>           off one group's list
+#   --here                off what this Mac recorded and nobody assigned
 #
 # Without one of them it asks. Nobody at the keyboard to ask means it
 # stops before changing anything: taking something off every Mac is not
@@ -2611,14 +2482,21 @@ EOF
 cmd_uninstall() {
 	need_brew
 	need_repo
-	local mode="" keep="" keep_given=no
+	local mode="" keep="" keep_given=no group=""
 	while [ $# -gt 0 ]; do
 		case $1 in
 		--everywhere) mode=everywhere ;;
-		--from-main) mode=main ;;
+		--from-main | --from-all) mode=main ;;
 		--here) mode=here ;;
+		--group)
+			[ $# -ge 2 ] || die "--group which?"
+			group_list | grep -qxF "$2" || die "there is no group $2; see: bier group"
+			mode=group
+			group=$2
+			shift
+			;;
 		--keep)
-			[ $# -ge 2 ] || die "--keep needs the Macs that keep it: --keep mini,macbook"
+			[ $# -ge 2 ] || die "--keep needs the groups that keep it: --keep laptops,studio"
 			keep=$(printf '%s' "$2" | tr ',' ' ')
 			keep_given=yes
 			shift
@@ -2629,7 +2507,7 @@ cmd_uninstall() {
 		esac
 		shift
 	done
-	[ $# -ge 1 ] || die "usage: bier uninstall [--everywhere | --from-main [--keep <mac>,…] | --here] <package>…"
+	[ $# -ge 1 ] || die "usage: bier uninstall [--everywhere | --from-main [--keep <group>,…] | --group <g> | --here] <package>…"
 	[ "$keep_given" = no ] || [ "$mode" = main ] || die "--keep only goes with --from-main"
 
 	local name kind key line how hosts h keepers done_any=no removed=""
@@ -2640,10 +2518,11 @@ cmd_uninstall() {
 			kind=$(kind_of "$name")
 			[ -n "$kind" ] || die "$name is neither installed here nor in the Brewfiles"
 			case $mode in
-			here) ! in_main "$kind" "$name" ||
-				die "$name is in main, so every Mac is meant to have it -- take it out of main instead:
-     bier uninstall --from-main [--keep <mac>,…] $name" ;;
-			main) in_main "$kind" "$name" || die "$name is not in main" ;;
+			here) listed_in "$kind" "$name" | grep -qxF "$HOST" ||
+				die "$name is given to All Macs or a group, not only recorded here -- take it off there:
+     bier uninstall --from-main [--keep <group>,…] | --group <g> $name" ;;
+			main) in_main "$kind" "$name" || die "$name is not for All Macs" ;;
+			group) listed_in "$kind" "$name" | grep -qxF "@$group" || die "$name is not given to $group" ;;
 			esac
 		done
 	fi
@@ -2661,11 +2540,10 @@ cmd_uninstall() {
 			uninstall_ask "$key" "$hosts"
 			how=$UNINSTALL_HOW
 			keepers=$UNINSTALL_KEEP
+			[ "$how" != group ] || group=$UNINSTALL_GROUP
 		fi
 		for h in $keepers; do
-			case $h in
-			main | "" | [!A-Za-z0-9]* | *[!A-Za-z0-9._-]*) die "not a Mac name: $h" ;;
-			esac
+			group_list | grep -qxF "${h#@}" || die "not a group: $h"
 		done
 		case $how in
 		cancel)
@@ -2673,18 +2551,21 @@ cmd_uninstall() {
 			continue
 			;;
 		here)
-			in_main "$kind" "$name" &&
-				die "$name is in main, so every Mac is meant to have it -- take it out of main instead:
-     bier uninstall --from-main [--keep <mac>,…] $name"
+			listed_in "$kind" "$name" | grep -qxF "$HOST" ||
+				die "$name is given to All Macs or a group -- take it off there:
+     bier uninstall --from-main [--keep <group>,…] | --group <g> $name"
 			;;
 		main)
-			in_main "$kind" "$name" || die "$name is not in main"
+			in_main "$kind" "$name" || die "$name is not for All Macs"
 			;;
 		esac
 
 		info "$name ($kind)"
-		# A Mac that keeps it keeps it installed, this one included.
-		if [ "$how" = main ] && printf '%s\n' $keepers | grep -qxF "$HOST"; then
+		# A Mac that keeps it keeps it installed, this one included: through
+		# a group that keeps it, or when only another group loses it.
+		if [ "$how" = main ] && printf '%s\n' $keepers | sed 's/^@//' | grep -qxF "$(host_group "$HOST")"; then
+			info "  stays installed here"
+		elif [ "$how" = group ] && { [ "$(host_group "$HOST")" != "$group" ] || in_main "$kind" "$name"; }; then
 			info "  stays installed here"
 		elif ! uninstall_one "$kind" "$name"; then
 			info "  stays in the Brewfiles as long as it is installed"
@@ -2694,10 +2575,11 @@ cmd_uninstall() {
 		case $how in
 		everywhere) strip_entry "$kind" "$name" ;;
 		here) strip_entry_in "$BREW_DIR/$HOST" "$kind" "$name" ;;
+		group) strip_entry_in "$BREW_DIR/@$group" "$kind" "$name" ;;
 		main)
 			strip_entry "$kind" "$name"
 			for h in $keepers; do
-				printf '%s\n' "$line" >>"$BREW_DIR/$h"
+				printf '%s\n' "$line" >>"$BREW_DIR/@${h#@}"
 			done
 			;;
 		esac
@@ -2734,6 +2616,7 @@ uninstall_ask() {
 	local key=$1 hosts=$2 answer others h picks i
 	UNINSTALL_HOW=cancel
 	UNINSTALL_KEEP=""
+	UNINSTALL_GROUP=""
 	info ""
 	if [ -n "$hosts" ]; then
 		info "$key is listed in: $(printf '%s ' $hosts | sed 's/ $//' | sed 's/ /, /g')"
@@ -2744,24 +2627,27 @@ uninstall_ask() {
 	info "  [a] everywhere     uninstall here, take it off every list;"
 	info "                     the other Macs offer bier prune"
 	if printf '%s\n' $hosts | grep -qx main; then
-		info "  [m] out of main    uninstall here, take it out of main;"
-		info "                     you pick the Macs that keep it"
-	else
-		info "  [h] only here      uninstall here, take it off this Mac's list;"
-		info "                     the other lists stay"
+		info "  [m] off All Macs   uninstall here, take it off All Macs;"
+		info "                     you pick the groups that keep it"
+	fi
+	if [ -n "$(host_group "$HOST")" ] && printf '%s\n' $hosts | grep -qxF "@$(host_group "$HOST")"; then
+		info "  [g] off $(host_group "$HOST")       uninstall here, take it off this Mac's group"
+	fi
+	if printf '%s\n' $hosts | grep -qxF "$HOST"; then
+		info "  [h] only here      uninstall here; it was only recorded here"
 	fi
 	info "  [c] cancel"
 	printf 'Choice: '
 	read -r answer ||
 		die "nobody to ask. Say what to do:
-     bier uninstall --everywhere | --from-main [--keep <mac>,…] | --here <package>"
+     bier uninstall --everywhere | --from-main [--keep <group>,…] | --group <g> | --here <package>"
 	case $answer in
 	a | A) UNINSTALL_HOW=everywhere ;;
 	m | M)
 		printf '%s\n' $hosts | grep -qx main || return 0
 		UNINSTALL_HOW=main
-		others=$( { host_list; printf '%s\n' $hosts; } | grep -vx main | awk '!seen[$0]++')
-		info "Which Macs keep it? Numbers or names, separated by spaces; empty for none."
+		others=$(group_list)
+		info "Which groups keep it? Numbers or names, separated by spaces; empty for none."
 		i=0
 		for h in $others; do
 			i=$((i + 1))
@@ -2774,14 +2660,19 @@ uninstall_ask() {
 			*[!0-9]*) UNINSTALL_KEEP="$UNINSTALL_KEEP $h" ;;
 			*)
 				h=$(printf '%s\n' $others | sed -n "${h}p")
-				[ -n "$h" ] || die "no Mac with that number"
+				[ -n "$h" ] || die "no group with that number"
 				UNINSTALL_KEEP="$UNINSTALL_KEEP $h"
 				;;
 			esac
 		done
 		;;
+	g | G)
+		printf '%s\n' $hosts | grep -qxF "@$(host_group "$HOST")" || return 0
+		UNINSTALL_HOW=group
+		UNINSTALL_GROUP=$(host_group "$HOST")
+		;;
 	h | H)
-		printf '%s\n' $hosts | grep -qx main && return 0
+		printf '%s\n' $hosts | grep -qxF "$HOST" || return 0
 		UNINSTALL_HOW=here
 		;;
 	esac
@@ -2869,11 +2760,14 @@ cmd_list() {
 	# not see a broken pipe halfway through.
 	local -a parts=()
 	apps=$(list_app_settings)
-	parts+=("$(list_section "Every Mac (main)" "$MAIN_FILE" "$apps")")
-	parts+=("$(list_section "Only on $HOST (this Mac)" "$BREW_DIR/$HOST" "$apps")")
+	parts+=("$(list_section "All Macs" "$MAIN_FILE" "$apps")")
+	for h in $(group_list); do
+		parts+=("$(list_section "Group $h ($(group_members "$h" | sed 's/ /, /g'))" "$BREW_DIR/@$h" "$apps")")
+	done
+	parts+=("$(list_section "Not assigned, installed on $HOST (this Mac)" "$BREW_DIR/$HOST" "$apps")")
 	for h in $(host_list); do
 		[ "$h" != "$HOST" ] || continue
-		parts+=("$(list_section "Only on $h" "$BREW_DIR/$h" "$apps")")
+		parts+=("$(list_section "Not assigned, installed on $h" "$BREW_DIR/$h" "$apps")")
 	done
 	parts+=("$(list_files)" "$(list_loose_settings "$apps")")
 	for h in "${parts[@]}"; do
@@ -5519,17 +5413,18 @@ cmd_help() {
 	cat <<'EOF'
 bier — keeps Brewfiles in sync across Macs
 
-  bier dump [--adopt]     record what this Mac has on top of main; things
-                          removed elsewhere stay out, --adopt takes them in
-  bier main [--no-push]   create Brewfiles/main from this Mac and rebase
-                          every device file onto it (commits + pushes)
+  bier dump [--adopt]     record what this Mac has that no list gives it
+                          (not assigned); --adopt takes in what was
+                          removed elsewhere too
+  bier main [--no-push]   make this Mac's software what All Macs have, and
+                          tidy every other list onto it (commits + pushes)
   bier status             check the system against the Brewfiles
   bier diff [host...]     compare the inventory with other devices
-  bier install            install main + this device's own Brewfile
-  bier add <pkg>          install it if needed, put it on main or this Mac's
-                          list, and offer to share the app's settings
-  bier uninstall <pkg>    uninstall here; asks: off every list, only out of
-                          main (some Macs keep it), or only off this Mac's
+  bier install            install what All Macs and this Mac's group have
+  bier add <pkg>          install it if needed, give it to All Macs or a
+                          group, and offer to share the app's settings
+  bier uninstall <pkg>    uninstall here; asks: off every list, off All Macs
+                          (some groups keep it), or off a group
   bier prune [--yes]      remove what was deleted elsewhere or left main
   bier list | ls          everything bier keeps: packages, their settings, files
   bier group [<group> <mac>…]  groups of Macs; every Mac is in one
@@ -5540,10 +5435,8 @@ bier — keeps Brewfiles in sync across Macs
                           every Mac as soon as the change reaches it
   bier apply              install and remove what the lists say for here
   bier search <name>      what Homebrew and the App Store have by that name
-  bier share [--for <group|mac>] <app>
+  bier share [--for <group>] <app>
                           share an installed app's settings and profiles
-  bier take               pull entries from other devices into main or here
-  bier take --from-main   hand an entry from main to a single device
   bier push [message]     commit the Brewfiles and push them
   bier sync [--record] [message]
                           record, fetch, merge, push — the everyday command

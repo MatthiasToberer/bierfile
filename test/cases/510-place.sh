@@ -75,3 +75,8 @@ assert_ok bier mini state
 assert_contains "$OUT" "MYGROUP	studio"
 assert_ok bier mini search htop
 assert_contains "$OUT" "FOUND	brew	htop	"
+
+# take moved entries between main and the Macs' lists; now place does.
+assert_fails bier mini take
+assert_contains "$OUT" "take is gone"
+assert_contains "$OUT" "bier place <pkg> --on <group>"

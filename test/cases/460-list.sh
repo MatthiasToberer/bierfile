@@ -34,10 +34,10 @@ assert_ok bier mini sync
 
 assert_ok bier mini ls
 list=$OUT
-assert_contains "$list" "Every Mac (main)"
+assert_contains "$list" "All Macs"
 assert_contains "$list" "handbrake-app"
 assert_contains "$list" "settings: Application Support"
-assert_contains "$list" "Only on mini (this Mac)"
+assert_contains "$list" "installed on mini (this Mac)"
 assert_contains "$list" "settings: config (only mini)"
 assert_contains "$list" "Files"
 assert_contains "$list" "~/.zshrc"

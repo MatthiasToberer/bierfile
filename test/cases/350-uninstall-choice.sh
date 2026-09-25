@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# uninstall asks which lists lose the entry: all, only main, or only here
+# uninstall asks which lists lose the entry: all, All Macs, or a group
 #
 # It used to take the entry off every list. Keeping a program on one Mac
 # while taking it out of main then meant editing Brewfiles by hand, and
@@ -31,27 +31,28 @@ assert_contains "$OUT" "nobody to ask"
 assert_file_has "$WORK/sys-mini" 'brew "nmap"'
 assert_file_has "$(bf mini main)" 'brew "nmap"'
 
-# Out of main, macbook keeps it.
+# Off All Macs, the group macbook keeps it. (The first sync gave every
+# Mac with a list a group of its own.)
 answer m macbook
 assert_ok bier mini uninstall nmap
 assert_contains "$OUT" "listed in: main"
 assert_file_lacks "$WORK/sys-mini" 'brew "nmap"'
 assert_file_lacks "$(bf mini main)" 'brew "nmap"'
-assert_file_has "$(bf mini macbook)" 'brew "nmap"'
-assert_file_lacks "$(bf mini mini)" 'brew "nmap"'
+assert_file_has "$(bf mini @macbook)" 'brew "nmap"'
+assert_file_lacks "$(bf mini @mini)" 'brew "nmap"'
 assert_ok bier mini sync
 
-# "Only here" makes no sense for what is in main.
+# "Only here" makes no sense for what All Macs have.
 assert_fails bier mini uninstall --here wget
-assert_contains "$OUT" "take it out of main instead"
+assert_contains "$OUT" "given to All Macs or a group"
 assert_file_has "$WORK/sys-mini" 'brew "wget"'
 
-# Only here: the entry leaves this Mac's list, nobody else's.
+# Off this Mac's group: the entry leaves that group's list, nobody else's.
 assert_ok bier macbook sync
-answer h
+answer g
 assert_ok bier mini uninstall htop
 assert_file_lacks "$WORK/sys-mini" 'brew "htop"'
-assert_file_lacks "$(bf mini mini)" 'brew "htop"'
+assert_file_lacks "$(bf mini @mini)" 'brew "htop"'
 
 # A Mac that had it only through main is asked, not told to record it.
 assert_ok bier macbook sync
@@ -71,7 +72,7 @@ EOF
 assert_ok bier macbook uninstall --from-main --keep macbook tree
 assert_contains "$OUT" "stays installed here"
 assert_file_has "$WORK/sys-macbook" 'brew "tree"'
-assert_file_has "$(bf macbook macbook)" 'brew "tree"'
+assert_file_has "$(bf macbook @macbook)" 'brew "tree"'
 assert_ok bier macbook sync
 assert_ok bier mini sync
 bier mini state

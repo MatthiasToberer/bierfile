@@ -35,7 +35,7 @@ BIER_APPS_DIR=$WORK/apps-mini
 export BIER_APPS_DIR
 : >"$WORK/.in"
 assert_fails bier mini add handbrake-app
-assert_contains "$OUT" "Say where: bier add --main | --here handbrake-app"
+assert_contains "$OUT" "Say where: bier add --all | --group <g> | --here handbrake-app"
 
 # Into main, and only the presets are shared.
 answer m 1
