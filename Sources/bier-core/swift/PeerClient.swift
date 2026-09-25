@@ -67,7 +67,9 @@ public struct PeerClient: PeerTransport {
 		let peerRequest = PeerRequest(method: method, path: path, peer: peerName, time: time, nonce: nonce, body: body)
 		let signature = try sign(peerRequest.canonicalData)
 		guard let url = URL(string: path, relativeTo: baseURL)?.absoluteURL else { throw PeerClientError.invalidConfiguration }
-		var request = URLRequest(url: url, timeoutInterval: 20)
+		// The status of a Mac runs bier state there, and that asks brew,
+		// which can take a while; everything else answers at once.
+		var request = URLRequest(url: url, timeoutInterval: path == "/v1/peer/status" ? 90 : 20)
 		request.httpMethod = method
 		request.httpBody = body
 		request.setValue("application/json", forHTTPHeaderField: "Content-Type")

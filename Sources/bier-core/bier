@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.50.1
+BIER_VERSION=0.50.2
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -1143,7 +1143,8 @@ mac_info() {
 }
 
 # Every paired Mac's own state, asked over the network: what bier state
-# says there, each line headed AT <peer>, and FLEET <peer> online|offline.
+# says there, each line headed AT <peer>, and FLEET <peer> online|offline,
+# or reachable when it answers but cannot say how it is.
 # For Bierkasten; slow when a Mac is away, so it is a command of its own.
 cmd_fleet() {
 	local peer out
@@ -1152,6 +1153,10 @@ cmd_fleet() {
 		if out=$(peer_call status "$peer" --identity "$PEER_IDENTITY" 2>/dev/null); then
 			printf 'FLEET\t%s\tonline\n' "$peer"
 			printf '%s\n' "$out" | sed "s/^/AT"$'\t'"$peer"$'\t'"/"
+		elif peer_call hello "$peer" --identity "$PEER_IDENTITY" >/dev/null 2>&1; then
+			# It answers, but could not say how it is: an older bier, or
+			# bier state failing there. Not the same as away.
+			printf 'FLEET\t%s\treachable\n' "$peer"
 		else
 			printf 'FLEET\t%s\toffline\n' "$peer"
 		fi

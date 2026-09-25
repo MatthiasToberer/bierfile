@@ -64,13 +64,16 @@ cat >"$WORK/fleet-client" <<'EOF2'
 #!/bin/sh
 case $2 in
 up.ts.net) printf 'STATE\tok\nHOST\tup\nINFO\tmacos\t26.0\n' ;;
+old.ts.net) [ "$1" = hello ] ;;
 *) exit 1 ;;
 esac
 EOF2
 chmod +x "$WORK/fleet-client"
 BIER_PEER_CLIENT=$WORK/fleet-client
 assert_ok bier mini peer add up.ts.net
+assert_ok bier mini peer add old.ts.net
 assert_ok bier mini fleet
 assert_contains "$OUT" "FLEET	up.ts.net	online"
 assert_contains "$OUT" "AT	up.ts.net	INFO	macos	26.0"
 assert_contains "$OUT" "FLEET	other.ts.net	offline"
+assert_contains "$OUT" "FLEET	old.ts.net	reachable"
