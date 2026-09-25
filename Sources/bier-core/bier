@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.50.0
+BIER_VERSION=0.51.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -1125,6 +1125,37 @@ cmd_admin() {
 		;;
 	*) die 'usage: bier admin <offer|list|remove <name>>' ;;
 	esac
+}
+
+# What Bierkasten shows about a Mac. The model name comes from
+# system_profiler, which takes a second, so it is asked once.
+mac_info() {
+	local cache=$STATE_DIR/model model
+	if [ -s "$cache" ]; then
+		model=$(cat "$cache")
+	else
+		model=$(system_profiler SPHardwareDataType 2>/dev/null | sed -n 's/^ *Model Name: //p' | head -1)
+		[ -z "$model" ] || { mkdir -p "$STATE_DIR"; printf '%s\n' "$model" >"$cache"; }
+	fi
+	printf 'INFO\tmacos\t%s\n' "$(sw_vers -productVersion 2>/dev/null)"
+	[ -z "$model" ] || printf 'INFO\tmodel\t%s\n' "$model"
+	df -H / 2>/dev/null | awk 'NR == 2 { printf "INFO\tdisk\t%s free of %s\n", $4, $2 }'
+}
+
+# Every paired Mac's own state, asked over the network: what bier state
+# says there, each line headed AT <peer>, and FLEET <peer> online|offline.
+# For Bierkasten; slow when a Mac is away, so it is a command of its own.
+cmd_fleet() {
+	local peer out
+	[ -x "$PEER_CLIENT" ] || die "the Swift peer client is not built; run install.sh"
+	for peer in $(peer_list); do
+		if out=$(peer_call status "$peer" --identity "$PEER_IDENTITY" 2>/dev/null); then
+			printf 'FLEET\t%s\tonline\n' "$peer"
+			printf '%s\n' "$out" | sed "s/^/AT"$'\t'"$peer"$'\t'"/"
+		else
+			printf 'FLEET\t%s\toffline\n' "$peer"
+		fi
+	done
 }
 
 # How other Macs reach this one: its Tailscale name when Tailscale runs,
@@ -4994,6 +5025,7 @@ cmd_update() {
 #   VAULT_IN <file> <how>  settings from another Mac, not in place yet
 #   VAULT_LEFT <path>      a .from-safe copy from a conflict
 #   PENDING <mac> <by>     a Mac introduced by a peer, waiting for accept
+#   INFO   <what> <value>  about this Mac: macos, model, disk
 #
 # What other devices have more or less of is deliberately absent: it says
 # nothing about whether there is anything to do on *this* Mac, and in the
@@ -5043,6 +5075,7 @@ cmd_state() {
 	fi
 	printf 'HOST\t%s\n' "$HOST"
 	printf 'VERSION\t%s\n' "$BIER_VERSION"
+	mac_info
 	local release
 	release=$(latest_release)
 	if [ -n "$release" ] && newer_version "$BIER_VERSION" "$release"; then
@@ -5144,6 +5177,7 @@ bier — keeps Brewfiles in sync across Macs
   bier retire <name>      take a Mac out of the fleet — the one that
                           broke, or was wiped without uninstalling
   bier admin offer        let Bierkasten connect to this Mac (one-time code)
+  bier fleet              every paired Mac's own state, asked over the network
   bier brewmaster         check this Mac, its peers and the vault, and say
                           how to fix what is wrong (like brew doctor)
   bier access             how to let bier read app settings in their
@@ -5237,6 +5271,7 @@ knockout) cmd_knockout "$@" ;;
 access) cmd_access ;;
 brewmaster | doctor) cmd_brewmaster ;;
 report) cmd_report ;;
+fleet) cmd_fleet ;;
 admin) cmd_admin "$@" ;;
 version | --version | -V) cmd_version ;;
 help | -h | --help) cmd_help ;;
