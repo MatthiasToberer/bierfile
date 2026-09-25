@@ -106,6 +106,12 @@ assert_ok bier mini peer pair macbook.local
 assert_file_has "$WORK/peer-client.log" 'pair macbook.local --port 53991 --local mini'
 assert_ok bier mini peer remove macbook.local
 unset BIER_PAIR_CODE
+# The code as an option, and full Tailscale names with their dot.
+assert_ok bier mini peer pair macbook.example.ts.net. --code 0123456789abcdef0123456789abcdef --address mini.example.ts.net.
+assert_file_has "$WORK/peer-client.log" 'pair macbook.example.ts.net --port 53991 --local mini --address mini.example.ts.net'
+assert_ok bier mini peer remove macbook.example.ts.net
+assert_ok bier mini report
+assert_contains "$OUT" "SELF	"
 system mini <<'EOF'
 brew "wget"
 EOF

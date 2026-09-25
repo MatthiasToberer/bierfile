@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.49.0
+BIER_VERSION=0.50.0
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -1127,8 +1127,20 @@ cmd_admin() {
 	esac
 }
 
+# How other Macs reach this one: its Tailscale name when Tailscale runs,
+# else its name on the local network.
+own_address() {
+	local ts name=""
+	ts=$(command -v tailscale || echo /Applications/Tailscale.app/Contents/MacOS/Tailscale)
+	[ ! -x "$ts" ] || name=$("$ts" status --json 2>/dev/null |
+		sed -n 's/.*"DNSName": *"\([^"]*\)".*/\1/p' | head -1)
+	name=${name%.}
+	printf '%s\n' "${name:-$(hostname -s).local}"
+}
+
 # Everything Bierkasten shows, in lines of tab-separated fields: what
 # bier state says, and
+#   SELF    <address>                  how other Macs reach this one
 #   MAC     <name>                     a Mac with a list of its own
 #   ENTRY   main|<mac> <entry>         what a list holds
 #   APPSET  <package> <app> <what> <scope>  an app's shared settings
@@ -1139,6 +1151,7 @@ cmd_admin() {
 cmd_report() {
 	local h f scope peer
 	cmd_state
+	printf 'SELF\t%s\n' "$(own_address)"
 	for h in $(host_list); do printf 'MAC\t%s\n' "$h"; done
 	entries "$MAIN_FILE" | sed 's/^/ENTRY'$'\t''main'$'\t''/'
 	for f in "$BREW_DIR"/*; do
@@ -1164,18 +1177,23 @@ cmd_report() {
 }
 
 cmd_peer_pair() {
-	local peer=${1:-} code code_file
+	# A trailing dot, as Tailscale prints full names, is no part of it.
+	local peer=${1%.} code=${BIER_PAIR_CODE:-} code_file usage
 	local -a address_args=()
-	{ [ $# -eq 1 ] || [ $# -eq 3 ]; } && peer_name_ok "$peer" ||
-		die 'usage: bier peer pair <host> [--address <own-host>]'
-	if [ $# -eq 3 ]; then
-		[ "$2" = --address ] && peer_pair_address_ok "$3" ||
-			die 'usage: bier peer pair <host> [--address <own-host>]'
-		address_args=(--address "$3")
-	fi
+	usage='usage: bier peer pair <host> [--address <own-host>] [--code <code>]'
+	peer_name_ok "$peer" || die "$usage"
+	shift
+	# --code is for Bierkasten, which cannot type into a prompt.
+	while [ $# -gt 0 ]; do
+		case $1 in
+		--address) [ $# -ge 2 ] && peer_pair_address_ok "${2%.}" || die "$usage"; address_args=(--address "${2%.}") ;;
+		--code) [ $# -ge 2 ] || die "$usage"; code=$2 ;;
+		*) die "$usage" ;;
+		esac
+		shift 2
+	done
 	[ -x "$PEER_CLIENT" ] || die "the Swift peer client is not built; run install.sh"
 	[ -r "$PEER_IDENTITY" ] && [ -r "$PEER_IDENTITY.pub" ] || die "the local Bier peer identity is missing; run install.sh"
-	code=${BIER_PAIR_CODE:-}
 	if [ -z "$code" ]; then
 		printf 'One-time code from %s: ' "$peer"
 		read -r code || code=
@@ -1810,7 +1828,7 @@ bier peer — manage Macs Bier may contact
   bier peer check <host>  check safe, non-interactive SSH access
   bier peer hello <host>  prove authenticated Bier Agent access
   bier peer offer [--address <own-host>]  show a one-time code for SSH-free pairing
-  bier peer pair <host> [--address <own-host>]  pair with a Mac using its one-time code
+  bier peer pair <host> [--address <own-host>] [--code <code>]  pair using its one-time code
   bier peer compare <host> compare verified data without changing it
   bier peer sync <host>   synchronise data and history with a peer
   bier peer seed <host>   copy data to a new, empty Bier peer
@@ -5144,7 +5162,7 @@ bier — keeps Brewfiles in sync across Macs
   bier peer check <host>  check safe, non-interactive SSH access
   bier peer hello <host>  prove authenticated Bier Agent access
   bier peer offer [--address <own-host>]  show a one-time code for SSH-free pairing
-  bier peer pair <host> [--address <own-host>]  pair with a Mac using its one-time code
+  bier peer pair <host> [--address <own-host>] [--code <code>]  pair using its one-time code
   bier peer compare <host> compare verified data without changing it
   bier peer sync <host>   synchronise data and history with a peer
   bier peer seed <host>   copy data to a new, empty Bier peer
