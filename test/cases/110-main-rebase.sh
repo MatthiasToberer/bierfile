@@ -27,6 +27,6 @@ EOF
 answer n
 bier mini main --no-push || true
 out=$OUT
-assert_contains "$out" "Will drop out of main for good"
+assert_contains "$out" "Will no longer be for All Macs"
 assert_contains "$out" "only-on-the-other-one"
 assert_file_has "$(bf mini main)" "only-on-the-other-one" "cancelling must change nothing"

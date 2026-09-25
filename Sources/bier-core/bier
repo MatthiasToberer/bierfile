@@ -1816,7 +1816,7 @@ cmd_dump() {
 
 	# What was already recorded here but is not (yet) installed stays.
 	# Otherwise a dump would throw away what you deliberately picked with
-	# "bier take". An entry really goes away only through "bier uninstall"
+	# "bier place". An entry really goes away only through "bier uninstall"
 	# or "bier prune".
 	keep_base=$(tmpfile)
 	cat "$base" "$new_lines" >"$keep_base"
@@ -1878,12 +1878,12 @@ cmd_main() {
 		lost=$(comm -23 <(entries "$MAIN_FILE") <(entries "$incoming") || true)
 		if [ -n "$lost" ]; then
 			info ""
-			info "Will drop out of main for good, because it is not installed"
-			info "on $HOST — even if another device still has it:"
+			info "Will no longer be for All Macs, because it is not installed"
+			info "on $HOST — even if another Mac still has it:"
 			printf '%s\n' "$lost" | sed 's/^/  - /'
 			info ""
-			info "To keep it, hand it to a device first:"
-			info "  bier take --from-main"
+			info "To keep it for some Macs, give it to their group first:"
+			info "  bier place <package> --on <group>"
 		fi
 
 		info ""
@@ -3043,7 +3043,7 @@ cmd_status() {
 			printf '%s\n' "$stale" | sed 's/^/  ~ /'
 		fi
 		if [ -n "$dropped" ]; then
-			info "No longer in main, still here (bier prune, or bier take to keep it):"
+			info "No longer in main, still here (bier prune, or bier place to keep it):"
 			printf '%s\n' "$dropped" | sed 's/^/  ~ /'
 		fi
 		if [ -n "$drift_gone" ]; then

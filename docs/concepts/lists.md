@@ -1,82 +1,77 @@
 [Docs](../README.md) › Concepts
 
-# main and device lists
+# All Macs, groups, and what is not assigned
 
-Two lists in [Brewfile format](https://docs.brew.sh/Brew-Bundle-and-Brewfile)
-together describe what a Mac is supposed to have:
+Every Mac is in exactly one [group](groups.md). What it is supposed to
+have comes from three lists in [Brewfile format](https://docs.brew.sh/Brew-Bundle-and-Brewfile):
 
 ```
-Brewfiles/main       what should run on every Mac
-Brewfiles/<host>     what this one Mac has on top
+Brewfiles/main       All Macs — every Mac, and every Mac added later
+Brewfiles/@<group>   what the group's Macs have on top
+Brewfiles/<host>     what this one Mac has installed that nobody has
+                     given to All Macs or a group yet: not assigned
 ```
 
-Both are valid Brewfiles and can be handed straight to
-`brew bundle install --file`. **`main` is the main inventory** — the
-software every Mac is supposed to have. You create it once, from the
-inventory of your template Mac, with
-[`bier main`](../reference/commands/main.md).
+All are valid Brewfiles and can be handed straight to
+`brew bundle install --file`. You create `main` once, from the software
+of your template Mac, with [`bier main`](../reference/commands/main.md).
+From then on you give software to All Macs or to groups with
+[`bier place`](../reference/commands/place.md) — never to a single Mac.
+A Mac of its own is a group of one.
 
 ## Automatic and manual
 
-How the lists are kept up to date depends on the inventory mode.
+What a group's Macs do with software installed by hand is a rule of the
+group (`bier group rule <group> inventory automatic|manual`).
 
-**Automatic — the default, and the recommended way.** You install
-software as usual; `bier sync` records it. What a Mac has beyond `main`
-goes into that Mac's own list, so nothing you try out on one Mac is
-forced onto the others. When something belongs everywhere, you move it
-into `main` with [`bier take`](../using/take.md). `main` changes only
-when you decide so.
+**Automatic — the default.** You install software as usual; `bier sync`
+records it on that Mac's own list, *not assigned*. Nothing you try out
+on one Mac is forced onto the others. When it belongs to a group or to
+All Macs, `bier place` gives it there.
 
-**Manual — for curating by hand.** `bier sync` records nothing. `main`
-and the device lists contain exactly what you write into them, and
-`bier install` brings that onto each Mac. Useful for a
-[trial run](../start/trial-run.md) or if you want every entry to be a
-deliberate choice.
-
-Switch with `bier config inventory automatic|manual` — see
-[Configuration](../reference/configuration.md#inventory-mode). The rest
-of this documentation assumes automatic mode.
+**Manual — for curating by hand.** `bier sync` records nothing. The
+lists contain exactly what you give them, and `bier install` brings
+that onto each Mac. Useful for a [trial run](../start/trial-run.md) or if
+every entry should be a deliberate choice.
 
 ## The rule
 
-> **A device list can only add, never subtract.**
+> **Lists only add, never subtract.**
 
-Anything a Mac must explicitly *not* have therefore cannot live in
-`main` — it belongs in the lists of the Macs that want it. That sounds
-like a limitation, but it spares a whole class of special cases: there is
-no exclusion list, no "minus", nothing that changes meaning when `main`
-grows. [`bier take`](../using/take.md) moves entries in both directions
-when you change your mind.
+A Mac has All Macs plus its group plus what it recorded. Anything a Mac
+must *not* have therefore cannot be for All Macs — it belongs to the
+groups that want it. That spares a whole class of special cases: no
+exclusion list, no "minus", nothing that changes meaning when All Macs
+grows. `bier place` moves entries between All Macs and groups whenever
+you change your mind.
 
 ## Who writes what
 
 | List | Adds entries | Removes entries |
 | --- | --- | --- |
-| `Brewfiles/<host>` | `bier dump` (and so `bier sync`), `bier take` | `bier take`, `bier uninstall`, `bier retire` |
-| `Brewfiles/main` | `bier main`, `bier take` | `bier main`, `bier take`, `bier uninstall` |
-
-`bier dump` reads `main` but never rewrites it. Whatever you install
-lands in this Mac's list; promoting it to every Mac is always your
-decision.
+| `Brewfiles/main` (All Macs) | `bier main`, `bier place --all`, `bier add --all` | `bier main`, `bier place`, `bier uninstall` |
+| `Brewfiles/@<group>` | `bier place --on`, `bier add --group` | `bier place`, `bier uninstall --group`, `bier group --drop` |
+| `Brewfiles/<host>` (not assigned) | `bier dump` (and so `bier sync`), `bier add --here` | `bier place`, `bier uninstall`, `bier retire` |
 
 ## What bier compares
 
-For this Mac, bier takes `main` plus this Mac's list and holds it against
-what Homebrew reports as installed. Three kinds of difference come out:
+For this Mac, bier takes All Macs, its group and what it recorded, and
+holds that against what Homebrew reports as installed:
 
 | Kind | Meaning | Fixed by |
 | --- | --- | --- |
 | installed but not recorded | new here | `bier sync` (manual mode: `bier sync --record`) |
-| removed elsewhere, still here | another Mac removed it | `bier prune` |
-| no longer in main, still here | taken out of main, another Mac keeps it | `bier prune`, or `bier take` to keep it |
-| recorded but not installed | on this Mac's lists, missing here | `bier install` |
+| removed elsewhere, still here | taken off a list this Mac follows | `bier prune`, or `bier apply` |
+| no longer for All Macs, still here | taken off All Macs, its group does not keep it | `bier prune`, or `bier place` to keep it |
+| recorded but not installed | on this Mac's lists, missing here | `bier install`, or `bier apply` |
 
-What *other* Macs have on top is deliberately not a difference: it says
-nothing about whether there is anything to do here. `bier list` shows it.
+A change marked *install now* (`bier place … --now`, or moving a Mac to
+another group) is applied by each Mac as it arrives, unless its group's
+rule says `apply ask`.
 
 ## Where the lists live
 
 Not in the program repository. The lists reveal which software runs on
 your Macs, so they live in a private local repository — `~/.barrel/data` by
-default — and travel only to Macs you have paired. See
-[Configuration and paths](../reference/configuration.md).
+default — together with the `groups` file, and travel only to Macs you
+have paired. See [Configuration and paths](../reference/configuration.md).

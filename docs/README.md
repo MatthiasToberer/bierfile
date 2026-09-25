@@ -1,8 +1,10 @@
 # bier documentation
 
-bier keeps the Homebrew inventory and the dotfiles of several Macs
-identical. It records what is installed, shares it directly with paired
-Macs and shows the state as a beer glass in the menu bar.
+bier keeps the Homebrew software, the dotfiles and the app settings of
+several Macs in step. Every Mac is in one group; everything goes to All
+Macs or to a group. bier shares it directly with paired Macs and shows
+the state as a beer glass in the menu bar — or all of it in a window,
+in Bierkasten.
 
 New here? Start with **[the quick round](tutorials/quick-round.md)** if
 you know your way around a terminal, or with
@@ -41,8 +43,8 @@ would rather have every step explained.
 
 - **[Groups](concepts/groups.md)** — every Mac in one group; software,
   files and rules go to All Macs or to groups
-- **[main and device lists](concepts/lists.md)** — the one rule
-  everything rests on
+- **[All Macs, groups, and what is not assigned](concepts/lists.md)** —
+  the lists and the one rule everything rests on
 - **[How removals travel](concepts/removals.md)** — why the git history
   matters
 - **[When two Macs change at once](concepts/conflicts.md)**
@@ -50,7 +52,8 @@ would rather have every step explained.
 ## Using bier
 
 - **[Everyday: sync and status](using/everyday.md)**
-- **[Adopting entries](using/take.md)** — `bier take`
+- **[Where software belongs](using/placing.md)** — `bier place`, for All
+  Macs or groups, now or later
 - **[Removing software](using/removing.md)** — `bier uninstall` and
   `bier prune`
 - **[BierMenu](using/biermenu.md)** — the glass in the menu bar
@@ -59,7 +62,8 @@ would rather have every step explained.
 ## Vault
 
 - **[Dotfiles in the vault](vault/dotfiles.md)**
-- **[Groups](vault/groups.md)** — files for some Macs only
+- **[Files for a group](vault/groups.md)** — files and settings for some
+  Macs only
 - **[Passphrase and recovery](vault/recovery.md)**
 
 ## Peers & security

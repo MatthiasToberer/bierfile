@@ -28,9 +28,10 @@ menu bar: **full** — all in order, **empty** — something to do here.
 
 | | |
 | --- | --- |
-| **One main inventory** | `main` applies to every Mac. New installs are recorded automatically as that Mac's extras until you move them into `main`. All plain [Brewfiles](https://docs.brew.sh/Brew-Bundle-and-Brewfile). |
+| **Groups, not Mac by Mac** | Every Mac is in one group. Software, files, app settings and rules go to **All Macs** or to a **group** — with one Mac or a hundred, you look at a handful of groups. Move a Mac and it takes on its new group. All plain [Brewfiles](https://docs.brew.sh/Brew-Bundle-and-Brewfile). |
+| **Right away, or when you say** | `bier place firefox --on laptops --now` installs it on every laptop as soon as the change reaches it. |
 | **Removals travel too** | The git history tells "removed elsewhere" from "new here". `bier prune` follows along. |
-| **Encrypted dotfiles and app settings** | `bier vault add ~/.zshrc`, or a whole settings folder — AES-256, one shared passphrase, groups per Mac. Files stay where they are. |
+| **Encrypted dotfiles and app settings** | `bier vault add ~/.zshrc`, or an app's settings with `bier share` — AES-256, one shared passphrase, for All Macs or a group. Files stay where they are. |
 | **No server** | Pair once with a one-time code. Macs exchange signed Git history directly — on the local network, over Tailscale or through SSH. |
 | **No git knowledge needed** | `bier sync` asks nothing and merges on its own. |
 | **Signed releases** | Installation and upgrades check a signing key published away from GitHub. |
@@ -53,13 +54,17 @@ It fetches the latest signed release into `~/.barrel`, checks the
 signature and sets everything up. Then:
 
 ```sh
-# on the first Mac, once: this Mac becomes the baseline
+# on the first Mac, once: its software becomes what All Macs have
 bier main
 
 # on every further Mac
 bier peer offer                  # shows a one-time code
 #   …then on the first Mac:  bier peer pair second-mac.local
 bier install
+
+# groups of Macs, and software for a group
+bier group laptops mabook febook
+bier place blender --on studio --now
 ```
 
 From then on, one command after every install:
@@ -67,6 +72,8 @@ From then on, one command after every install:
 ```sh
 bier sync
 ```
+
+Or all of it in a window: Bierkasten, the Mac app for bier (beta).
 
 Step by step, assuming nothing:
 **[The seven-minute pilsner →](docs/tutorials/seven-minute-pilsner.md)**
@@ -83,7 +90,7 @@ Step by step, assuming nothing:
 | --- | --- |
 | **[Getting started](docs/README.md#getting-started)** | Installation, a first trial run |
 | **[Tutorials](docs/README.md#tutorials)** | The quick round, the seven-minute pilsner, worked examples |
-| **[Concepts](docs/README.md#concepts)** | The two lists, how removals travel, simultaneous changes |
+| **[Concepts](docs/README.md#concepts)** | Groups and All Macs, how removals travel, simultaneous changes |
 | **[Using bier](docs/README.md#using-bier)** | Everyday sync, adopting entries, removing software, the menu bar |
 | **[Vault](docs/README.md#vault)** | Dotfiles, groups, recovery without bier |
 | **[Peers & security](docs/README.md#peers--security)** | Pairing, threat model, signed releases |

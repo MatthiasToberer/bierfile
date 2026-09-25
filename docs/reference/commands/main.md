@@ -6,21 +6,22 @@
 bier main [--no-push]
 ```
 
-Replaces `Brewfiles/main` with the inventory of this Mac and rebases
-every device list onto it. **Once in the life of a setup**, on the
-template Mac.
+Makes this Mac's software what **All Macs** have — `Brewfiles/main` —
+and tidies every other list onto it: the groups' lists and what the
+Macs recorded keep only what All Macs do not have already. **Once in the
+life of a setup**, on the template Mac.
 
 If `main` already has entries, bier lists what would drop out — entries
 in `main` that are not installed here, even if another Mac still has
 them — and asks before continuing:
 
 ```
-Will drop out of main for good, because it is not installed
-on mini — even if another device still has it:
+Will no longer be for All Macs, because it is not installed
+on mini — even if another Mac still has it:
   - cask "font-meslo-lg-nerd-font"
 
-To keep it, hand it to a device first:
-  bier take --from-main
+To keep it for some Macs, give it to their group first:
+  bier place <package> --on <group>
 ```
 
 Commits the result; `--no-push` leaves it uncommitted for a later

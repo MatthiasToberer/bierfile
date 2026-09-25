@@ -3,15 +3,16 @@
 # bier add
 
 ```
-bier add [--main | --here] [--settings | --no-settings] <package>…
+bier add [--all | --group <g> | --here] [--settings | --no-settings] <package>…
 ```
 
 Installs each package if it is not here yet — a cask, a formula, or an
 App Store app by its store name (`bier add Pages`, installed with `mas`
 and listed with its store id) —, puts it on a list and commits:
 
-- `m` / `--main` — into `main`, for every Mac;
-- `h` / `--here` — only onto this Mac's list.
+- `a` / `--all` — for All Macs (`--main` works too);
+- `g` / `--group <g>` — for a group; asked for this Mac's own group;
+- `h` / `--here` — only recorded on this Mac, not assigned yet.
 
 For an app, bier then looks where it keeps its settings: in the places
 Homebrew's *zap* list names for the cask — everything the app leaves
@@ -40,17 +41,21 @@ passwords, secrets or credentials, `.pem`/`.key`/`.p12` — and the
 settings of VPN clients and password managers (Tailscale, WireGuard,
 Tunnelblick, Bitwarden, 1Password, KeePassXC, …). Such files also stay
 out of a shared folder. To share one anyway, add it by hand with
-`bier vault add`. Settings of something added only here are shared with this
-Mac only. What is shared already is not offered again.
+`bier vault add`. Settings of something added for a group are shared
+with that group only. What is shared already is not offered again.
+Later, [`bier share`](share.md) shares an app's settings without asking.
 
 On a Mac that receives the settings of a sandboxed app it has never
 started, bier starts the app once, hidden, so that macOS sets up its
 container, quits it, and puts the settings in. Where the app is not
 installed yet, the settings wait until it is.
 
-Without a terminal to ask at, `--main`/`--here` and
+Without a terminal to ask at, `--all`/`--group`/`--here` and
 `--settings`/`--no-settings` say it up front. Settings that live
 elsewhere — iCloud, group containers — are not found; add them with
 `bier vault add --app <App> <path>`.
+
+To give something to groups without installing it here, or to move it
+later: [`bier place`](place.md).
 
 **See also:** [`uninstall`](uninstall.md), [Vault](../../vault/dotfiles.md)
