@@ -15,6 +15,8 @@ printf 'z\n' >"$h/.zshrc"
 assert_ok bier mini dump
 assert_ok bier mini main
 assert_ok bier mini vault add "$h/.zshrc"
+mkdir -p "$h/Tools/Foo" && printf 'f\n' >"$h/Tools/Foo/foo.conf"
+assert_ok bier mini vault add --app Foo "$h/Tools/Foo"
 BIER_PEER_CLIENT=$WORK/none
 export BIER_PEER_CLIENT
 assert_ok bier mini peer add other.ts.net
@@ -25,6 +27,8 @@ assert_contains "$OUT" "MAC	mini"
 assert_contains "$OUT" 'ENTRY	main	brew "wget"'
 assert_contains "$OUT" "FILE	~/.zshrc	"
 assert_contains "$OUT" "PEER	other.ts.net	never"
+assert_contains "$OUT" "APPSET		Foo	Foo	"
+assert_contains "$OUT" "HISTORY	"
 
 mkdir -p "$h/.barrel/agent/bin"
 printf '#!/bin/sh\n' >"$h/.barrel/agent/bin/bier-agent"

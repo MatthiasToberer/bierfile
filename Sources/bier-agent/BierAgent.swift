@@ -61,7 +61,9 @@ func runBier(_ bier: String, _ args: [String]) -> AdminRunResponse {
 	process.executableURL = URL(fileURLWithPath: bier)
 	process.arguments = args
 	var environment = ProcessInfo.processInfo.environment
-	environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+	// bier's own bin first, as in a terminal set up by the installer.
+	let own = URL(fileURLWithPath: bier).deletingLastPathComponent().path
+	environment["PATH"] = "\(own):/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 	process.environment = environment
 	process.standardInput = FileHandle.nullDevice
 	let out = Pipe(), err = Pipe()

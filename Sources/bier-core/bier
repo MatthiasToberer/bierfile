@@ -23,7 +23,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.48.1
+BIER_VERSION=0.48.2
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -1135,6 +1135,7 @@ cmd_admin() {
 #   FILE    <path> <scope>             a file or folder/ shared by path
 #   PEER    <address> <commit|never> <time>  a paired Mac, what it last
 #                                      had, and when it was last synced
+#   HISTORY <time> <subject>           the latest changes, newest first
 cmd_report() {
 	local h f scope peer
 	cmd_state
@@ -1144,7 +1145,8 @@ cmd_report() {
 		[ -f "$f" ] && [ "$f" != "$MAIN_FILE" ] || continue
 		entries "$f" | sed "s/^/ENTRY"$'\t'"${f##*/}"$'\t'"/"
 	done
-	list_app_settings | sed 's/^/APPSET'$'\t''/'
+	# list_app_settings separates with |: tabs as IFS merge empty fields.
+	list_app_settings | tr '|' '\t' | sed 's/^/APPSET'$'\t''/'
 	list_files | sed -n 's/^  //p' | while IFS= read -r f; do
 		scope=""
 		case $f in
@@ -1158,6 +1160,7 @@ cmd_report() {
 		printf 'PEER\t%s\t%s\t%s\n' "$peer" "${sent:-never}" \
 			"$(awk -F '\t' -v peer="$peer" '$1 == peer { t = $3 } END { print t }' "$STATE_DIR/peers-sent" 2>/dev/null)"
 	done
+	git -C "$DATA" log -12 --format='HISTORY%x09%ct%x09%s' 2>/dev/null || true
 }
 
 cmd_peer_pair() {
