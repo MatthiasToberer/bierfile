@@ -41,7 +41,7 @@ struct BundleReadRequest: Decodable {
 // for it: the logic stays in one place. Only these commands may run --
 // the first words must match -- and nothing asks: stdin is empty.
 let adminCommands: [[String]] = [
-	["report"], ["fleet"], ["state"], ["sync"], ["place"], ["group"], ["apply"], ["search"], ["config", "apply"], ["brewmaster"], ["status"], ["list"],
+	["report"], ["fleet"], ["state"], ["sync"], ["place"], ["group"], ["undo"], ["apply"], ["search"], ["config", "apply"], ["brewmaster"], ["status"], ["list"],
 	["peer", "pending"], ["peer", "accept"], ["peer", "reject"], ["peer", "list"], ["peer", "pair"],
 	["add"], ["install"], ["uninstall"], ["prune", "--yes"], ["take"],
 	["vault", "add"], ["vault", "forget"], ["vault", "resolve"], ["vault", "group"], ["share"],

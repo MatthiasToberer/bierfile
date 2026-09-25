@@ -22,6 +22,7 @@
 | [`bier search <name>`](search.md) | what Homebrew and the App Store have by that name |
 | [`bier install`](install.md) | install what All Macs and this Mac's group have |
 | [`bier apply`](apply.md) | install and remove what the lists say for here |
+| [`bier undo <commit>`](undo.md) | take back one change, on every Mac |
 | [`bier add <pkg>…`](add.md) | install, give it to All Macs or a group, offer its settings |
 | [`bier share [--for <group>] <app>`](share.md) | share an app's settings and profiles |
 | [`bier uninstall <pkg>…`](uninstall.md) | uninstall; asks which lists lose it |

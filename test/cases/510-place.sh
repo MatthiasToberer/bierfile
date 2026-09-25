@@ -80,3 +80,13 @@ assert_contains "$OUT" "FOUND	brew	htop	"
 assert_fails bier mini take
 assert_contains "$OUT" "take is gone"
 assert_contains "$OUT" "bier place <pkg> --on <group>"
+
+# undo takes one change back, as a change of its own.
+assert_ok bier mini place htop --on studio
+change=$(git -C "$data" log -1 --format=%h)
+assert_ok bier mini undo "$change"
+assert_contains "$(git -C "$data" log -1 --format=%s)" 'undo "mini: htop on studio"'
+assert_ok bier mini report
+assert_not_contains "$OUT" 'ENTRY	@studio	brew "htop"'
+assert_contains "$OUT" "HISTORY	"
+assert_fails bier mini undo nosuchchange

@@ -24,7 +24,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.50.6
+BIER_VERSION=0.50.7
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -1050,7 +1050,7 @@ own_address() {
 #   FILE    <path> <scope>             a file or folder/ shared by path
 #   PEER    <address> <commit|never> <time>  a paired Mac, what it last
 #                                      had, and when it was last synced
-#   HISTORY <time> <subject>           the latest changes, newest first
+#   HISTORY <time> <subject> <commit>  the latest changes, newest first
 cmd_report() {
 	local h f scope peer
 	cmd_state
@@ -1082,7 +1082,7 @@ cmd_report() {
 		printf 'PEER\t%s\t%s\t%s\n' "$peer" "${sent:-never}" \
 			"$(awk -F '\t' -v peer="$peer" '$1 == peer { t = $3 } END { print t }' "$STATE_DIR/peers-sent" 2>/dev/null)"
 	done
-	git -C "$DATA" log -12 --format='HISTORY%x09%ct%x09%s' 2>/dev/null || true
+	git -C "$DATA" log -20 --format='HISTORY%x09%ct%x09%s%x09%h' 2>/dev/null || true
 }
 
 cmd_peer_pair() {
@@ -2249,6 +2249,33 @@ inventory_mode() {
 	local rule
 	rule=$(group_rule "$(host_group "$HOST")" inventory)
 	printf '%s' "${rule:-$INVENTORY_MODE}"
+}
+
+# Takes back one change: a new commit that undoes it, passed on like any
+# other. A change marked install now is undone the same way -- the Macs
+# remove what it installed. One that later changes build on is refused
+# rather than half undone.
+cmd_undo() {
+	need_repo
+	[ $# -eq 1 ] || die "usage: bier undo <commit>   (bier report or git log name them)"
+	local commit subject mark=""
+	commit=$(git -C "$DATA" rev-parse --verify --quiet "$1^{commit}") || die "no change called $1"
+	subject=$(git -C "$DATA" log -1 --format=%s "$commit")
+	git -C "$DATA" diff --quiet HEAD -- Brewfiles groups Safe 2>/dev/null ||
+		die "there are changes not saved yet; bier sync first"
+	case $subject in *"(install now)") mark=" (install now)" ;; esac
+	if ! git -C "$DATA" revert --no-commit "$commit" >/dev/null 2>&1; then
+		git -C "$DATA" revert --abort >/dev/null 2>&1 || true
+		die "later changes build on \"$subject\"; it cannot be taken back on its own"
+	fi
+	publish "$HOST: undo \"${subject% (install now)}\"$mark"
+	if [ -n "$mark" ]; then
+		git -C "$DATA" rev-parse HEAD >"$STATE_DIR/applied" 2>/dev/null || true
+		(cmd_apply) || true
+	fi
+	if [ -x "$PEER_CLIENT" ] && [ -n "$(peer_list)" ]; then
+		sync_peers "$HOST: undo" || info "The Macs not reached take it on when they are back."
+	fi
 }
 
 # What Homebrew and the App Store have by that name, for Bierkasten:
@@ -5434,6 +5461,7 @@ bier — keeps Brewfiles in sync across Macs
                           where a package belongs; --now installs it on
                           every Mac as soon as the change reaches it
   bier apply              install and remove what the lists say for here
+  bier undo <commit>      take back one change, on every Mac
   bier search <name>      what Homebrew and the App Store have by that name
   bier share [--for <group>] <app>
                           share an installed app's settings and profiles
@@ -5540,6 +5568,7 @@ brewmaster | doctor) cmd_brewmaster ;;
 report) cmd_report ;;
 fleet) cmd_fleet ;;
 place) cmd_place "$@" ;;
+undo) cmd_undo "$@" ;;
 group) cmd_group "$@" ;;
 apply) cmd_apply "$@" ;;
 search) cmd_search "$@" ;;
