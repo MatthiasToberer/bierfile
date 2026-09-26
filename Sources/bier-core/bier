@@ -426,6 +426,54 @@ peer_list() {
 	grep -E '^[A-Za-z0-9][A-Za-z0-9._:@-]*$' "$PEERS_FILE" | sort -u
 }
 
+# A Mac has one name: the one it signs with (its hostname -s). An
+# address -- febook.local, febook.tailfb3bf.ts.net, ma@febook -- is only
+# how it is reached, and can change without it becoming another Mac.
+# bier learns the name when pairing and whenever the Mac answers.
+PEER_NAMES=$AGENT_HOME/state/peer-names
+
+peer_name_of() {
+	local address=$1 name=""
+	[ ! -f "$PEER_NAMES" ] || name=$(awk -F '\t' -v a="$address" '$1 == a { n = $2 } END { print n }' "$PEER_NAMES")
+	[ -n "$name" ] || [ ! -f "$AGENT_HOME/state/paired-addresses" ] ||
+		name=$(awk -v a="$address" '$2 == a { n = $1 } END { print n }' "$AGENT_HOME/state/paired-addresses")
+	if [ -z "$name" ]; then
+		name=${address##*@}
+		name=${name%%.*}
+	fi
+	printf '%s\n' "$name"
+}
+
+peer_name_set() {
+	local address=$1 name=$2 tmp
+	peer_name_ok "$name" || return 0
+	mkdir -p "$(dirname "$PEER_NAMES")"
+	tmp=$(mktemp "$(dirname "$PEER_NAMES")/peer-names.XXXXXX")
+	{
+		[ ! -f "$PEER_NAMES" ] || awk -F '\t' -v a="$address" '$1 != a' "$PEER_NAMES"
+		printf '%s\t%s\n' "$address" "$name"
+	} >"$tmp"
+	mv "$tmp" "$PEER_NAMES"
+}
+
+# Asks the Mac at an address for its name, and remembers it. Quick:
+# the agent's hello answers at once, or the Mac is away.
+peer_learn_name() {
+	local name
+	name=$(peer_call name "$1" --identity "$PEER_IDENTITY" 2>/dev/null) || return 1
+	peer_name_set "$1" "$name"
+	printf '%s\n' "$name"
+}
+
+# The address a Mac is reached by, from its name.
+peer_address_of() {
+	local address
+	for address in $(peer_list); do
+		[ "$(peer_name_of "$address")" != "$1" ] || { printf '%s\n' "$address"; return 0; }
+	done
+	return 1
+}
+
 peer_remember() {
 	local peer=$1
 	if peer_list | grep -qxF "$peer"; then
@@ -847,7 +895,7 @@ cmd_peer_list() {
 	while IFS= read -r peer; do
 		[ -n "$peer" ] || continue
 		n=$((n + 1))
-		printf '  %2s  %s\n' "$n" "$peer"
+		printf '  %2s  %-16s %s\n' "$n" "$(peer_name_of "$peer")" "$peer"
 	done <<EOF
 $peers
 EOF
@@ -1019,7 +1067,7 @@ cmd_fleet() {
 # the long wait a status may need.
 fleet_one() {
 	local peer=$1 out
-	if ! peer_call hello "$peer" --identity "$PEER_IDENTITY" >/dev/null 2>&1; then
+	if ! peer_learn_name "$peer" >/dev/null; then
 		printf 'FLEET\t%s\toffline\n' "$peer"
 	elif out=$(peer_call status "$peer" --identity "$PEER_IDENTITY" 2>/dev/null); then
 		printf 'FLEET\t%s\tonline\n' "$peer"
@@ -1051,8 +1099,9 @@ own_address() {
 #   ENTRY   main|<mac> <entry>         what a list holds
 #   APPSET  <package> <app> <what> <scope>  an app's shared settings
 #   FILE    <path> <scope>             a file or folder/ shared by path
-#   PEER    <address> <commit|never> <time>  a paired Mac, what it last
-#                                      had, and when it was last synced
+#   PEER    <address> <commit|never> <time> <name>  a paired Mac, what
+#                                      it last had, when it was last synced,
+#                                      and its name
 #   HISTORY <time> <subject> <commit>  the latest changes, newest first
 cmd_report() {
 	local h f scope peer
@@ -1082,8 +1131,9 @@ cmd_report() {
 	local sent
 	for peer in $(peer_list); do
 		sent=$(peer_sent_get "$peer")
-		printf 'PEER\t%s\t%s\t%s\n' "$peer" "${sent:-never}" \
-			"$(awk -F '\t' -v peer="$peer" '$1 == peer { t = $3 } END { print t }' "$STATE_DIR/peers-sent" 2>/dev/null)"
+		printf 'PEER\t%s\t%s\t%s\t%s\n' "$peer" "${sent:-never}" \
+			"$(awk -F '\t' -v peer="$peer" '$1 == peer { t = $3 } END { print t }' "$STATE_DIR/peers-sent" 2>/dev/null)" \
+			"$(peer_name_of "$peer")"
 	done
 	git -C "$DATA" log -20 --format='HISTORY%x09%ct%x09%s%x09%h' 2>/dev/null || true
 }
@@ -1118,7 +1168,8 @@ cmd_peer_pair() {
 	peer_call pair "$peer" ${address_args[@]+"${address_args[@]}"} --identity "$PEER_IDENTITY" --code-file "$code_file" --peer-signers "$LOCAL_PEER_SIGNERS" ||
 		die "pairing with $peer failed"
 	peer_remember "$peer"
-	info "Peer added: $peer"
+	peer_learn_name "$peer" >/dev/null || true
+	info "Peer added: $(peer_name_of "$peer") at $peer"
 	if [ -n "$DATA" ] && [ -d "$DATA/.git" ]; then
 		info "Checking whether the new peer needs this Mac's Bier data …"
 		peer_call seed-if-pristine "$peer" --identity "$PEER_IDENTITY" --data "$DATA" ||
@@ -1636,7 +1687,7 @@ peer_introduce_all() {
 	local done_file=$AGENT_HOME/state/introduced peer other name key body
 	local -a names=() addresses=()
 	for peer in $(peer_list); do
-		if ! name=$(peer_call name "$peer" --identity "$PEER_IDENTITY" 2>/dev/null); then
+		if ! name=$(peer_learn_name "$peer"); then
 			info "Cannot introduce $peer: no answer, or its bier is older than 0.46 (bier upgrade there)."
 			continue
 		fi
@@ -1708,6 +1759,7 @@ cmd_peer_accept() {
 		chmod 600 "$tmp"
 		mv "$tmp" "$LOCAL_PEER_SIGNERS"
 		peer_remember "$address"
+		peer_name_set "$address" "$name"
 		# It has this Mac waiting too; the confirmation, signed with this
 		# Mac's key, lets it trust this one without a second accept.
 		if peer_call confirm "$address" --identity "$PEER_IDENTITY" >/dev/null 2>&1; then
@@ -1727,6 +1779,27 @@ cmd_peer_reject() {
 	pending_take "$1" | while read -r name address by _; do
 		info "Rejected $name ($address), introduced by $by."
 	done
+}
+
+# A Mac reached another way -- moved from SSH to Tailscale, say. The key
+# stays: it is still the same Mac.
+cmd_peer_address() {
+	[ $# -eq 2 ] || die "usage: bier peer address <mac> <new-address>"
+	local mac=$1 new=${2%.} old tmp
+	peer_pair_address_ok "$new" || die "$new is not an address: a host name, or user@host"
+	old=$(peer_address_of "$mac") || die "no paired Mac called $mac; see: bier peer list"
+	if [ "$old" != "$new" ]; then
+		tmp=$(tmpfile)
+		awk -v o="$old" -v n="$new" '$0 == o { $0 = n } { print }' "$PEERS_FILE" >"$tmp"
+		mv "$tmp" "$PEERS_FILE"
+		[ ! -f "$PEER_NAMES" ] || { tmp=$(tmpfile); awk -F '\t' -v a="$old" '$1 != a' "$PEER_NAMES" >"$tmp"; mv "$tmp" "$PEER_NAMES"; }
+	fi
+	peer_name_set "$new" "$mac"
+	if [ -x "$PEER_CLIENT" ] && peer_learn_name "$new" >/dev/null; then
+		info "$mac is reached at $new now, and answers there."
+	else
+		info "$mac is reached at $new now. It does not answer there yet -- is it awake, and on Tailscale?"
+	fi
 }
 
 cmd_peer_help() {
@@ -1749,6 +1822,7 @@ bier peer — manage Macs Bier may contact
   bier peer upgrade <host> replace an agent with the latest signed release
   bier peer uninstall <host> stop and remove a Bier agent via SSH
   bier peer remove <host> forget a remembered Mac, its address or its key
+  bier peer address <mac> <new-address>  reach a Mac another way; its key stays
   bier peer pending       Macs another peer introduced, waiting to be trusted
   bier peer accept <mac>|all  trust an introduced Mac, on both sides
   bier peer reject <mac>|all  drop an introduced Mac
@@ -1779,6 +1853,7 @@ upgrade | update) cmd_peer_upgrade "$@" ;;
 uninstall) cmd_peer_uninstall "$@" ;;
 discover) cmd_peer_discover "$@" ;;
 pending) cmd_peer_pending "$@" ;;
+address) cmd_peer_address "$@" ;;
 accept) cmd_peer_accept "$@" ;;
 reject) cmd_peer_reject "$@" ;;
 help | -h | --help) cmd_peer_help ;;
@@ -5525,6 +5600,7 @@ bier — keeps Brewfiles in sync across Macs
   bier peer add <host>    remember a Mac that Bier may contact
   bier peer list          show remembered Macs
   bier peer remove <host> forget a remembered Mac, its address or its key
+  bier peer address <mac> <new-address>  reach a Mac another way; its key stays
   bier peer pending       Macs another peer introduced, waiting to be trusted
   bier peer accept <mac>|all  trust an introduced Mac, on both sides
   bier peer reject <mac>|all  drop an introduced Mac

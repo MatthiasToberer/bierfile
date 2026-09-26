@@ -63,8 +63,8 @@ assert_contains "$OUT" "INFO	macos	"
 cat >"$WORK/fleet-client" <<'EOF2'
 #!/bin/sh
 case $2 in
-up.ts.net) printf 'STATE\tok\nHOST\tup\nINFO\tmacos\t26.0\n' ;;
-old.ts.net) [ "$1" = hello ] ;;
+up.ts.net) if [ "$1" = name ]; then echo up; else printf 'STATE\tok\nHOST\tup\nINFO\tmacos\t26.0\n'; fi ;;
+old.ts.net) [ "$1" = name ] && echo old ;;
 *) exit 1 ;;
 esac
 EOF2
@@ -83,3 +83,16 @@ mkdir -p "$h/.barrel/agent"
 printf 'macbook ssh-ed25519 AAAA\n' >"$h/.barrel/agent/peer_signers"
 assert_ok bier mini state
 assert_contains "$OUT" "TRUSTS	macbook"
+
+# A Mac has one name, whatever address it is reached by; changing the
+# address keeps its key.
+assert_ok bier mini peer list
+assert_contains "$OUT" "up               up.ts.net"
+printf 'up ssh-ed25519 AAAA\n' >>"$h/.barrel/agent/peer_signers"
+assert_ok bier mini peer address up up.example.ts.net
+assert_contains "$OUT" "up is reached at up.example.ts.net now"
+assert_ok bier mini peer list
+assert_contains "$OUT" "up.example.ts.net"
+assert_not_contains "$OUT" "up.ts.net"
+assert_file_has "$h/.barrel/agent/peer_signers" "up ssh-ed25519 AAAA"
+assert_fails bier mini peer address nobody x.ts.net
