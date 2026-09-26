@@ -49,7 +49,7 @@ A **Mac** has one name, `id` — its `hostname -s`. The rest:
 
 | Page | Adds |
 | --- | --- |
-| `overview` | `counts` (`macs`, `inSync`, `missing`, `extra`, `offline`), `needsYou`, `links`, `activity` |
+| `overview` | `counts` (`macs` — the paired ones —, `inSync`, `missing`, `extra`, `offline`), `needsYou`, `links`, `activity` |
 | `groups` | `new`: the Macs in no group |
 | `all` | `software` on every Mac, `files`, `appSettings` |
 | `group` | `group`; `software`, `files` and `appSettings` for its Macs |

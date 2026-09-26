@@ -75,7 +75,7 @@ import Testing
 
 	@Test func overviewCountsAndNeedsYou() throws {
 		let page = try view().page("overview")
-		#expect(page.counts == ViewCounts(macs: 3, inSync: 0, missing: 1, extra: 1, offline: 1))
+		#expect(page.counts == ViewCounts(macs: 2, inSync: 0, missing: 1, extra: 1, offline: 1))
 		let kinds = page.needsYou?.map(\.kind) ?? []
 		#expect(kinds == ["pending", "missing", "extra", "conflict", "offline"])
 		#expect(page.needsYou?.first?.actions.map(\.args) == [["peer", "accept", "book"], ["peer", "reject", "book"]])

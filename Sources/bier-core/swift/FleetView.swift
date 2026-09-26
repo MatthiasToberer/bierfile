@@ -491,7 +491,8 @@ public struct FleetView {
 		var page = FleetPage(page: name, generated: now, this: this, macs: macs, groups: groups)
 		switch (name, argument) {
 		case ("overview", nil):
-			let macs = page.macs
+			// A Mac waiting to be accepted is not one of the fleet yet.
+			let macs = page.macs.filter { $0.reach != .unpaired }
 			page.counts = ViewCounts(macs: macs.count, inSync: macs.filter { $0.inSync == true }.count,
 				missing: macs.map(\.missing).reduce(0, +), extra: macs.map(\.extra).reduce(0, +),
 				offline: macs.filter { $0.reach == .offline }.count)
