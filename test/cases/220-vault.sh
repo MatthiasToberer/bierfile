@@ -86,3 +86,10 @@ ln -s "$WORK/home-mini/Documents" "$WORK/home-mini/Library/Containers/app/Data/D
 assert_ok bier mini vault add "$WORK/home-mini/Library/Containers/app/Data/Documents/notes.txt"
 vaulted=$(cd "$WORK/home-mini/.barrel/vault" && find . -type f -name 'notes.txt*')
 assert_eq "./Documents/notes.txt" "$vaulted" "the file is in the vault under its real place"
+
+# Paths as bier shows them, "~/…": Bierkasten hands them over without a
+# shell that would expand the tilde.
+printf 'tilde\n' >"$WORK/home-mini/.tilderc"
+assert_ok bier mini vault add '~/.tilderc'
+assert_ok bier mini vault forget '~/.tilderc'
+assert_contains "$OUT" "is no longer synced"

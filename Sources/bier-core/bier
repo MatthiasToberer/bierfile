@@ -4315,6 +4315,16 @@ vault_entries_for() {
 
 # Stops syncing it; the file stays on every Mac. The .forgotten marker
 # tells the other Macs to stop too instead of moving it to the Trash.
+# "~/.zshrc" as the full path. A shell expands the tilde, but Bierkasten
+# runs bier without one and hands over paths as bier shows them.
+home_path() {
+	case $1 in
+	"~") printf '%s\n' "$HOME" ;;
+	"~/"*) printf '%s\n' "$HOME/${1#\~/}" ;;
+	*) printf '%s\n' "$1" ;;
+	esac
+}
+
 vault_forget() {
 	local src=$1 rel n=0
 	while IFS= read -r rel; do
@@ -4917,6 +4927,7 @@ cmd_vault() {
 		done
 		[ $# -gt 0 ] || die "which file? bier vault add ~/.zshrc"
 		for pass in "$@"; do
+			pass=$(home_path "$pass")
 			if [ -n "$app" ]; then vault_add_app "$app" "$pass" "$scope"; else vault_add "$pass" "$scope"; fi
 		done
 		return 0
@@ -4963,13 +4974,13 @@ EOF
 	resolve)
 		shift
 		[ $# -eq 2 ] || die "usage: bier vault resolve <file>.from-safe mine|theirs"
-		vault_resolve "$1" "$2"
+		vault_resolve "$(home_path "$1")" "$2"
 		return 0
 		;;
 	forget)
 		shift
 		[ $# -gt 0 ] || die "which file? bier vault forget ~/.zshrc"
-		for pass in "$@"; do vault_forget "$pass"; done
+		for pass in "$@"; do vault_forget "$(home_path "$pass")"; done
 		return 0
 		;;
 	esac
