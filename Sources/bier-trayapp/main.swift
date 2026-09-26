@@ -436,10 +436,15 @@ class Controller: NSObject, NSMenuDelegate {
 		let connect = NSMenuItem(title: "Connect", action: nil, keyEquivalent: "")
 		let connectMenu = NSMenu()
 		connectMenu.addItem(action("Join Your Macs …", #selector(doJoin)))
-		connectMenu.addItem(action("Connect Bierkasten …", #selector(doConnectApp)))
+		// Bierkasten connects to the Mac it runs on only: on a Mac without
+		// it, its code fits nowhere and was taken for the one to join with.
+		let hasBierkasten = NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.bierkasten) != nil
+		if hasBierkasten {
+			connectMenu.addItem(action("Connect Bierkasten on This Mac …", #selector(doConnectApp)))
+		}
 		connect.submenu = connectMenu
 		menu.addItem(connect)
-		if NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.bierkasten) != nil {
+		if hasBierkasten {
 			menu.addItem(action("Open Bierkasten", #selector(doOpenBierkasten)))
 		}
 
