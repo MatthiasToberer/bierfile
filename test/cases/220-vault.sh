@@ -77,3 +77,12 @@ assert_eq "export EDITOR=ed" "$(cat "$WORK/home-macbook/.zshrc")" "a forgotten f
 # And the note that explains how to get the files back without bier.
 assert_file_has "$WORK/mini/Safe/README-recovery.txt" "gpg -d" \
 	"the recovery note has to sit next to the data"
+
+# Reached through a linked folder -- as a sandboxed app's container links
+# Documents to the real one -- a file goes in under its real place.
+mkdir -p "$WORK/home-mini/Documents" "$WORK/home-mini/Library/Containers/app/Data"
+printf 'notes\n' >"$WORK/home-mini/Documents/notes.txt"
+ln -s "$WORK/home-mini/Documents" "$WORK/home-mini/Library/Containers/app/Data/Documents"
+assert_ok bier mini vault add "$WORK/home-mini/Library/Containers/app/Data/Documents/notes.txt"
+vaulted=$(cd "$WORK/home-mini/.barrel/vault" && find . -type f -name 'notes.txt*')
+assert_eq "./Documents/notes.txt" "$vaulted" "the file is in the vault under its real place"

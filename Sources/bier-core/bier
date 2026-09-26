@@ -4209,6 +4209,17 @@ vault_add_app() {
 # gets a copy.
 vault_add() {
 	local src=${1%/} scope=${2:-} name dest f inner taken=0 large=""
+	# Its real place: a path through a linked folder -- a sandboxed app's
+	# container links Documents and the rest to the real ones -- would
+	# otherwise go into the vault under the link's name.
+	# Home itself may be reached through a link (/var is /private/var),
+	# so what lies in it is written below $HOME again.
+	local home_real
+	home_real=$(cd "$HOME" && pwd -P)
+	if [ -d "$(dirname "$src")" ]; then
+		src=$(cd "$(dirname "$src")" && pwd -P)/$(basename "$src")
+		case $src in "$home_real"/*) src=$HOME${src#"$home_real"} ;; esac
+	fi
 	case $src in
 	"$HOME"/*) ;;
 	*) die "only files below $HOME can go into the vault: $src" ;;
