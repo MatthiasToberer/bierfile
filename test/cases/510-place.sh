@@ -102,3 +102,21 @@ assert_not_contains "$OUT" "scratch ="
 # install now.
 assert_ok bier mini apply --everywhere
 assert_contains "$(git -C "$data" log -1 --format=%s)" "bring every Mac in line (install now)"
+
+# Renaming a group takes its software, rules and files along.
+assert_ok bier mini group new lab mini
+assert_ok bier mini place jq --on lab
+assert_ok bier mini group rule lab apply ask
+printf 'l\n' >"$WORK/home-mini/.labrc"
+assert_ok bier mini vault add --for lab "$WORK/home-mini/.labrc"
+assert_ok bier mini sync
+assert_ok bier mini group rename lab bench
+assert_ok bier mini report
+assert_contains "$OUT" "GROUP	bench	mini"
+assert_contains "$OUT" "RULE	bench	apply	ask"
+assert_contains "$OUT" 'ENTRY	@bench	brew "jq"'
+assert_contains "$OUT" "FILE	~/.labrc	bench"
+assert_not_contains "$OUT" "GROUP	lab"
+assert_ok bier mini group drop bench
+answer y
+assert_ok bier mini init --no-push

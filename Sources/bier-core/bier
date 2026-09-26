@@ -3740,15 +3740,25 @@ cmd_group() {
 		group_publish "$HOST: $1 sets $2 = $3"
 		return 0
 		;;
-	--drop)
-		[ $# -eq 1 ] || die "which group? bier group --drop laptops"
+	new)
+		[ $# -ge 2 ] || die "usage: bier group new <name> <mac>…"
+		cmd_group "$@"
+		return 0
+		;;
+	rename)
+		[ $# -eq 2 ] || die "usage: bier group rename <old> <new>"
+		group_rename "$1" "$2"
+		return 0
+		;;
+	drop | --drop)
+		[ $# -eq 1 ] || die "which group? bier group drop laptops"
 		group_list | grep -qxF "$1" || die "there is no group $1"
 		sed -i '' -E "/^[[:space:]]*$1(\.[a-z]+)?[[:space:]]*=/d" "$GROUPS_FILE"
 		rm -f "$BREW_DIR/@$1"
 		group_publish "$HOST: group $1 dropped; its Macs are new"
 		return 0
 		;;
-	-*) die "usage: bier group [<group> <mac>… | move <mac> <group> | rule … | --drop <group>]" ;;
+	-*) die "usage: bier group [new <group> <mac>… | move <mac> <group> | rename <old> <new> | rule … | drop <group>]" ;;
 	esac
 	printf '%s' "$name" | grep -Eq '^[A-Za-z0-9_-]+$' || die "a group's name is letters, digits, - and _"
 	case $name in new | main | all) die "$name is taken; call the group something else" ;; esac
@@ -3762,6 +3772,25 @@ cmd_group() {
 	done
 	groups_set "$name" "$*"
 	group_publish "$HOST: group $name = $*"
+}
+
+# A group's new name: its line and rules, its software list, and its
+# files in the vault move along; its Macs notice nothing else.
+group_rename() {
+	local old=$1 new=$2 dir
+	group_list | grep -qxF "$old" || die "there is no group $old"
+	printf '%s' "$new" | grep -Eq '^[A-Za-z0-9_-]+$' || die "a group's name is letters, digits, - and _"
+	case $new in new | main | all) die "$new is taken; call the group something else" ;; esac
+	! group_list | grep -qxF "$new" || die "there is a group $new already"
+	sed -i '' -E "s/^([[:space:]]*)$old(\.[a-z]+)?([[:space:]]*=)/\1$new\2\3/" "$GROUPS_FILE"
+	[ ! -f "$BREW_DIR/@$old" ] || git -C "$DATA" mv -f "Brewfiles/@$old" "Brewfiles/@$new" 2>/dev/null ||
+		mv "$BREW_DIR/@$old" "$BREW_DIR/@$new"
+	for dir in "$VAULT" "$SAFE_DIR"; do
+		[ ! -d "$dir/@$old" ] || mv "$dir/@$old" "$dir/@$new"
+	done
+	[ ! -f "$STATE_DIR/vault-base" ] || sed -i '' "s#	@$old/#	@$new/#" "$STATE_DIR/vault-base"
+	git -C "$DATA" add -A Safe 2>/dev/null || true
+	group_publish "$HOST: group $old renamed $new"
 }
 
 # A change of groups goes out at once, and each Mac it concerns takes on
@@ -5554,13 +5583,9 @@ cmd_help() {
 	cat <<'EOF'
 bier — keeps Brewfiles in sync across Macs
 
-  bier dump [--adopt]     record what this Mac has that no list gives it
-                          (not assigned); --adopt takes in what was
-                          removed elsewhere too
-  bier main [--no-push]   make this Mac's software what All Macs have, and
-                          tidy every other list onto it (commits + pushes)
+  bier init [--no-push]   once, on the first Mac: its software becomes what
+                          All Macs have, and every other list is tidied onto it
   bier status             check the system against the Brewfiles
-  bier diff [host...]     compare the inventory with other devices
   bier install            install what All Macs and this Mac's group have
   bier add <pkg>          install it if needed, give it to All Macs or a
                           group, and offer to share the app's settings
@@ -5568,7 +5593,8 @@ bier — keeps Brewfiles in sync across Macs
                           (some groups keep it), or off a group
   bier prune [--yes]      remove what was deleted elsewhere or left main
   bier list | ls          everything bier keeps: packages, their settings, files
-  bier group [<group> <mac>…]  groups of Macs; every Mac is in one
+  bier group [new <group> <mac>…]  groups of Macs; every Mac is in one
+  bier group rename <old> <new> | drop <group>
   bier group move <mac> <group>   the Mac takes on the group's rules
   bier group rule <group> apply automatic|ask | inventory automatic|manual
   bier place <pkg> --all | --on <group>,… | --none [--now]
@@ -5580,7 +5606,6 @@ bier — keeps Brewfiles in sync across Macs
   bier search <name>      what Homebrew and the App Store have by that name
   bier share [--for <group>] <app>
                           share an installed app's settings and profiles
-  bier push [message]     commit the Brewfiles and push them
   bier sync [--record] [message]
                           record, fetch, merge, push — the everyday command
   bier upgrade [--force]  install a newer release of bier itself
@@ -5650,25 +5675,32 @@ fi
 
 case $cmd in
 dump)
-	# "bier dump --main" is the spelling that suggests itself — but what
-	# is meant is the rebuild, not the dump.
+	# Part of bier sync; kept for scripts, out of the help. "--main" is
+	# the spelling that suggests itself for init.
 	if [ "${1:-}" = "--main" ]; then
 		shift
 		cmd_main "$@"
 	else
+		info "Note: bier sync records what is installed; dump alone is not needed." >&2
 		cmd_dump "$@"
 	fi
 	;;
-main) cmd_main "$@" ;;
+init | main) cmd_main "$@" ;;
 uninstall | rm) cmd_uninstall "$@" ;;
 add) cmd_add "$@" ;;
 prune) cmd_prune ;;
 list | ls) cmd_list ;;
 status) cmd_status "$@" ;;
-diff) cmd_diff "$@" ;;
+diff)
+	info "Note: bier list shows what each group and each Mac has." >&2
+	cmd_diff "$@"
+	;;
 install) cmd_install "$@" ;;
 take) cmd_take "$@" ;;
-push) cmd_push "$@" ;;
+push)
+	info "Note: bier sync commits and passes on; push alone is not needed." >&2
+	cmd_push "$@"
+	;;
 sync) cmd_sync "$@" ;;
 upgrade) cmd_upgrade "$@" ;;
 update) cmd_update ;;
