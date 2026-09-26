@@ -10,6 +10,7 @@ bier group move <mac> <group>
 bier group rename <group> <new-name>
 bier group rule <group> apply automatic|ask
 bier group rule <group> inventory automatic|manual
+bier group color <group|all> <colour|none>
 bier group drop <group>
 ```
 
@@ -25,6 +26,10 @@ Every Mac is in exactly one group; a Mac in none is *new*.
   `apply automatic` (default) installs and removes what arrives marked
   *install now*, `apply ask` only reports it; `inventory automatic`
   (default) records what someone installs by hand, `manual` does not.
+- **`bier group color <group|all> <colour>`** sets the colour Bierkasten
+  shows the group in, everywhere; `all` is All Macs. One of red,
+  orange, yellow, green, mint, teal, cyan, blue, indigo, purple, pink,
+  brown, gray, or `none`. Every Mac shows the same.
 - **`bier group rename <group> <new-name>`** renames a group with its
   software, files, app settings and rules.
 - **`bier group drop <group>`** deletes the group and the software
