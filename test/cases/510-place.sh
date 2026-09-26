@@ -90,3 +90,10 @@ assert_ok bier mini report
 assert_not_contains "$OUT" 'ENTRY	@studio	brew "htop"'
 assert_contains "$OUT" "HISTORY	"
 assert_fails bier mini undo nosuchchange
+
+# A Mac leaving a group that is then empty, with no software and no
+# rules, takes the group with it; one with software stays.
+assert_ok bier mini group scratch mini
+assert_ok bier mini group move mini studio
+assert_ok bier mini group
+assert_not_contains "$OUT" "scratch ="

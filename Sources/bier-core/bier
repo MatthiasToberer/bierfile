@@ -24,7 +24,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.50.8
+BIER_VERSION=0.50.9
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -3544,14 +3544,22 @@ groups_set() {
 	mv "$tmp" "$GROUPS_FILE"
 }
 
-# Takes a Mac out of whatever group it is in.
+# Takes a Mac out of whatever group it is in. A group left with no Mac,
+# no software and no rules is gone with it: nobody made it to keep.
 groups_take_out() {
 	local g rest
 	for g in $(group_list); do
 		printf '%s\n' $(group_members "$g") | grep -qxF "$1" || continue
 		# Its last member leaving: grep finds nothing, which is no error.
 		rest=$(printf '%s\n' $(group_members "$g") | { grep -vxF "$1" || true; } | tr '\n' ' ')
-		groups_set "$g" "${rest% }"
+		rest=${rest% }
+		if [ -z "$rest" ] && [ -z "$(entries "$BREW_DIR/@$g")" ] &&
+			! grep -qE "^[[:space:]]*$g\.[a-z]+[[:space:]]*=" "$GROUPS_FILE" 2>/dev/null; then
+			sed -i '' -E "/^[[:space:]]*$g[[:space:]]*=/d" "$GROUPS_FILE"
+			rm -f "$BREW_DIR/@$g"
+		else
+			groups_set "$g" "$rest"
+		fi
 	done
 }
 
@@ -3560,6 +3568,12 @@ groups_take_out() {
 # list -- nothing is lost, and merging groups is then a matter of moving.
 groups_migrate() {
 	[ -n "$DATA" ] && [ -d "$BREW_DIR" ] && [ ! -f "$GROUPS_FILE" ] || return 0
+	# Only a fleet from before groups: one that has software for All Macs
+	# and never had a groups file. A freshly installed Mac has neither
+	# yet -- it gets the fleet's groups when it pairs, and making itself
+	# a group of its own first left a stray group behind.
+	[ -n "$(entries "$MAIN_FILE")" ] || return 0
+	[ -z "$(git -C "$DATA" log --all --oneline -1 -- groups 2>/dev/null)" ] || return 0
 	local h line
 	# Data repositories set up before groups lack the merge rule: two
 	# Macs creating the file at once would stop at a conflict.
@@ -3599,6 +3613,10 @@ cmd_group() {
 	[ $# -eq 0 ] || shift
 	case $name in
 	"")
+		if [ -z "$(group_list)" ]; then
+			info "No groups yet: everything goes to every Mac."
+			info "  bier group <name> <mac>…"
+		fi
 		for g in $(group_list); do
 			if printf '%s\n' $(group_members "$g") | grep -qxF "$HOST"; then
 				info "  $g = $(group_members "$g")   (this Mac)"
@@ -3617,7 +3635,9 @@ cmd_group() {
 		[ $# -eq 2 ] || die "usage: bier group move <mac> <group>"
 		group_list | grep -qxF "$2" || die "there is no group $2; make it with: bier group $2 $1"
 		groups_take_out "$1"
-		groups_set "$2" "$(group_members "$2") $1"
+		local members
+		members=$(group_members "$2")
+		groups_set "$2" "${members:+$members }$1"
 		group_publish "$HOST: $1 moved to $2"
 		return 0
 		;;
