@@ -24,7 +24,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.50.10
+BIER_VERSION=0.50.11
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -5342,6 +5342,7 @@ cmd_update() {
 #   PENDING <mac> <by>     a Mac introduced by a peer, waiting for accept
 #   INFO   <what> <value>  about this Mac: macos, model, disk
 #   MYGROUP <name>         the group this Mac is in; new when in none
+#   TRUSTS <mac>           a Mac this one trusts (has its key)
 #
 # What other devices have more or less of is deliberately absent: it says
 # nothing about whether there is anything to do on *this* Mac, and in the
@@ -5392,6 +5393,8 @@ cmd_state() {
 	printf 'HOST\t%s\n' "$HOST"
 	printf 'VERSION\t%s\n' "$BIER_VERSION"
 	printf 'MYGROUP\t%s\n' "$(host_group "$HOST" | grep . || echo new)"
+	# Whom this Mac trusts: asked of every Mac, it draws the real mesh.
+	[ ! -f "$LOCAL_PEER_SIGNERS" ] || awk 'NF >= 2 { printf "TRUSTS\t%s\n", $1 }' "$LOCAL_PEER_SIGNERS"
 	mac_info
 	local release
 	release=$(latest_release)

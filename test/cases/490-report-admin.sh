@@ -77,3 +77,9 @@ assert_contains "$OUT" "FLEET	up.ts.net	online"
 assert_contains "$OUT" "AT	up.ts.net	INFO	macos	26.0"
 assert_contains "$OUT" "FLEET	other.ts.net	offline"
 assert_contains "$OUT" "FLEET	old.ts.net	reachable"
+
+# Whom this Mac trusts, for the mesh in Bierkasten.
+mkdir -p "$h/.barrel/agent"
+printf 'macbook ssh-ed25519 AAAA\n' >"$h/.barrel/agent/peer_signers"
+assert_ok bier mini state
+assert_contains "$OUT" "TRUSTS	macbook"
