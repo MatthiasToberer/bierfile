@@ -19,6 +19,8 @@ import Testing
 	SELF\tmini.ts.net
 	GROUP\thome\tmini air
 	RULE\thome\tapply\task
+	RULE\thome\tcolor\tteal
+	RULE\tall\tcolor\tpurple
 	ENTRY\tmain\tbrew "wget"
 	ENTRY\t@home\tcask "firefox"
 	ENTRY\tair\tbrew "tree"
@@ -87,6 +89,27 @@ import Testing
 		#expect(page.needsYou?.first { $0.kind == "missing" }?.detail == "1 package that All Macs or a group gives is not installed yet.")
 	}
 
+	@Test func aMacWaitingOnAnotherIsAcceptedFromHere() throws {
+		let lab = """
+		FLEET\tlab.ts.net\tonline\t1700000600\t1700000600
+		AT\tlab.ts.net\tSTATE\tok
+		AT\tlab.ts.net\tHOST\tlab
+		AT\tlab.ts.net\tTRUSTS\tmini
+		AT\tlab.ts.net\tPENDING\tair\tmini
+		"""
+		let airWaits = air + "\nAT\tair.ts.net\tPENDING\tlab\tmini"
+		let view = FleetView(report: report + "\nPEER\tlab.ts.net\tabc\t1700000000\tlab", fleet: [airWaits, lab], now: 1700000700)
+		let page = try view.page("overview")
+		let waits = page.needsYou?.filter { $0.kind == "waits" } ?? []
+		// air waits on lab and lab on air: one accept settles both.
+		#expect(waits.count == 1)
+		#expect(waits.first?.actions.first?.args == ["peer", "accept", "lab", "--on", "air"])
+		#expect(page.macs.first { $0.id == "lab" }?.pending == ["air"])
+		#expect(page.links?.contains(ViewLink(from: "air", to: "lab", kind: "waiting")) == true)
+		let mac = try view.page("mac", "lab")
+		#expect(mac.needsYou?.map(\.kind).contains("waits") == true)
+	}
+
 	@Test func linksShowTheRealMesh() throws {
 		let links = try view().page("overview").links ?? []
 		// air says nothing about trust (older bier): taken at mini's word.
@@ -97,7 +120,8 @@ import Testing
 
 	@Test func groupAndMacPagesKeepToTheirOwn() throws {
 		let group = try view().page("group", "home")
-		#expect(group.group == ViewGroup(name: "home", macs: ["mini", "air"], apply: "ask", inventory: "automatic", software: 1))
+		#expect(group.group == ViewGroup(name: "home", macs: ["mini", "air"], apply: "ask", inventory: "automatic", software: 1, color: "teal"))
+		#expect(group.allColor == "purple")
 		#expect(group.files?.map(\.path) == ["~/.zshrc", "~/.ssh/config"])
 		let mac = try view().page("mac", "air")
 		#expect(mac.activity?.map(\.commit) == ["def456"])

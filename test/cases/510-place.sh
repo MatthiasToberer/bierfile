@@ -139,3 +139,21 @@ assert_contains "$OUT" "Remembered on this Mac."
 assert_ok bier mini init --no-push
 assert_not_contains "$OUT" "passphrase"
 export BIER_VAULT_PASS=probe
+
+# A group's colour, for Bierkasten, kept with the groups; also for All Macs.
+assert_ok bier mini group new paint mini
+assert_ok bier mini group color paint teal
+assert_ok bier mini group color all purple
+assert_fails bier mini group color paint rainbow
+assert_contains "$OUT" "is not one of"
+assert_fails bier mini group color nowhere teal
+assert_ok bier mini report
+assert_contains "$OUT" "RULE	paint	color	teal"
+assert_contains "$OUT" "RULE	all	color	purple"
+assert_ok bier mini group rename paint canvas
+assert_ok bier mini report
+assert_contains "$OUT" "RULE	canvas	color	teal"
+assert_ok bier mini group color canvas none
+assert_ok bier mini report
+assert_not_contains "$OUT" "RULE	canvas	color"
+assert_ok bier mini group drop canvas

@@ -42,6 +42,7 @@ A **Mac** has one name, `id` — its `hostname -s`. The rest:
 | `version`, `macos`, `model`, `disk` | as it said |
 | `trusts` | the Macs it trusts; empty when its bier is too old to say |
 | `waiting` | introduced, waiting to be accepted here |
+| `pending` | the Macs waiting to be accepted on it |
 | `missing`, `extra`, `notAssigned` | how many packages stand so there |
 | `inSync` | nothing missing, nothing extra, nothing arrived; missing when it has not said |
 
@@ -63,7 +64,8 @@ are in each state. A state is `installed` (should be there, is),
 elsewhere), `notAssigned` (is there, nothing gives it) or `unknown` (the
 Mac has not said). A Mac the package does not concern is left out.
 
-A **finding** in `needsYou` has a `kind` — `pending`, `new`, `missing`,
+A **finding** in `needsYou` has a `kind` — `pending` (waits here), `waits`
+(waits on another Mac, accepted with `--on`), `new`, `missing`,
 `extra`, `conflict`, `arrived`, `offline`, `old`, `release` — the Macs it
 is about, an English `text` and `detail`, `subject` (who introduced a
 waiting Mac, the file of a conflict, the files that arrived, the new

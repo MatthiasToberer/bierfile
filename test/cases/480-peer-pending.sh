@@ -68,3 +68,19 @@ EOF2
 assert_fails bier mini sync
 assert_contains "$OUT" "Not reached this time: one.ts.net"
 assert_contains "$OUT" "Synchronising Bier data with two.ts.net"
+
+# Accepted on another Mac, from here -- as Bierkasten does from the page
+# of that Mac: the request goes to the Mac where it waits.
+cat >"$WORK/peer-client" <<EOF2
+#!/bin/sh
+cmd=\$1 host=\$2
+case \$cmd in
+name) echo "\${host%%.*}" ;;
+accept) while [ "\$1" != --body ]; do shift; done; printf '%s %s\n' "\$host" "\$(cat "\$2")" >>"$WORK/accepted" ;;
+esac
+EOF2
+assert_ok bier mini peer accept lab --on two
+assert_file_has "$WORK/accepted" 'two.ts.net {"mac":"lab"}'
+assert_fails bier mini peer accept lab --on nowhere
+assert_contains "$OUT" "no paired Mac called nowhere"
+assert_fails bier mini peer accept all --on two

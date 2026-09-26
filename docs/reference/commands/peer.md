@@ -18,6 +18,10 @@ Manages the Macs this one exchanges data with.
 | `remove <host>` | forget a Mac: its address, or its key when given the name it signs with |
 | `address <mac> <new-address>` | reach a Mac at a new address — say Tailscale instead of the local network — keeping its key |
 | `hello <host>` | check that the other agent accepts this Mac |
+| `pending` | Macs another Mac introduced, waiting to be accepted here |
+| `accept <mac>\|all` | trust a waiting Mac; it trusts this one back, one accept is enough |
+| `accept <mac> --on <other>` | accept it on another Mac, where it waits — as Bierkasten does from that Mac's page |
+| `reject <mac>` | drop a waiting Mac |
 | `compare <host>` | compare verified data with a peer, change nothing |
 | `sync <host>` | exchange data and history with one peer |
 | `seed <host>` | copy this Mac's data to a peer whose data is empty |

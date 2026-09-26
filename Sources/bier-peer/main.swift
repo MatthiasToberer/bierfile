@@ -14,7 +14,7 @@ private enum CLIError: LocalizedError {
 	var errorDescription: String? {
 		switch self {
 		case .usage:
-			return "usage: bier-peer <hello|name|introduce|confirm|status|admin-pair|admin-run|pair|leave|seed|seed-if-empty|seed-if-pristine|compare|sync> <host> --local <name> --identity <path> [--data <path>] [--address <own-host>] [--code-file <path>] [--peer-signers <path>] [--port <port>] [--via <host>] [--body <path>]"
+			return "usage: bier-peer <hello|name|introduce|confirm|accept|status|admin-pair|admin-run|pair|leave|seed|seed-if-empty|seed-if-pristine|compare|sync> <host> --local <name> --identity <path> [--data <path>] [--address <own-host>] [--code-file <path>] [--peer-signers <path>] [--port <port>] [--via <host>] [--body <path>]"
 		case .invalidHost:
 			return "the peer host or port is invalid"
 		case .missingData:
@@ -124,12 +124,17 @@ private enum BierPeerCLI {
 			guard let body = options.body else { throw CLIError.usage }
 			let response = try JSONDecoder().decode(HelloResponse.self, from: try await transport.send(method: "POST", path: "/v1/peer/introduce", body: Data(contentsOf: body)))
 			guard response.status == "introduced" else { throw CLIError.invalidResponse }
-		case "status", "admin-run":
+		case "status", "admin-run", "accept":
 			// status: how another Mac is doing; admin-run: bier on this Mac,
-			// as Bierkasten runs it (--body holds {"args": [...]}).
-			let data = options.command == "status"
-				? try await transport.send(method: "GET", path: "/v1/peer/status", body: Data())
-				: try await transport.send(method: "POST", path: "/v1/admin/run", body: Data(contentsOf: options.body ?? URL(fileURLWithPath: "/dev/null")))
+			// as Bierkasten runs it (--body holds {"args": [...]}); accept:
+			// ask another Mac to accept one waiting there ({"mac": ...}).
+			let body = Data(try Data(contentsOf: options.body ?? URL(fileURLWithPath: "/dev/null")))
+			let data: Data
+			switch options.command {
+			case "status": data = try await transport.send(method: "GET", path: "/v1/peer/status", body: Data())
+			case "accept": data = try await transport.send(method: "POST", path: "/v1/peer/accept", body: body)
+			default: data = try await transport.send(method: "POST", path: "/v1/admin/run", body: body)
+			}
 			let result = try JSONDecoder().decode(RunResponse.self, from: data)
 			FileHandle.standardOutput.write(Data(result.out.utf8))
 			FileHandle.standardError.write(Data(result.err.utf8))

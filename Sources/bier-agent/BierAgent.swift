@@ -47,6 +47,10 @@ let adminCommands: [[String]] = [
 	["vault", "add"], ["vault", "forget"], ["vault", "resolve"], ["vault", "group"], ["share"],
 ]
 
+struct PeerAcceptRequest: Decodable {
+	let mac: String
+}
+
 struct AdminRunRequest: Decodable {
 	let args: [String]
 }
@@ -375,6 +379,25 @@ final class AgentServer {
 				if try store.record("peer-\(peer)-\(nonce)") { respond(connection, status: 409, body: "peer request was already processed"); return }
 				try pairingStore.introduce(introduction, by: peer, agent: agent)
 				respond(connection, status: 200, body: "{\"status\":\"introduced\"}", contentType: "application/json")
+			} catch { respond(connection, status: 403, body: "peer is not authorised") }
+			return
+		}
+		if method == "POST" && path == "/v1/peer/accept" {
+			guard let peerSigners, let bier, let peer = headers["x-bier-peer"], let time = headers["x-bier-time"],
+				let nonce = headers["x-bier-nonce"], let encoded = headers["x-bier-signature"], let signature = Data(base64Encoded: encoded),
+				let request = try? JSONDecoder().decode(PeerAcceptRequest.self, from: body),
+				request.mac.range(of: "^[A-Za-z0-9][A-Za-z0-9._-]*$", options: .regularExpression) != nil, request.mac != "all" else {
+				respond(connection, status: 400, body: "invalid accept request")
+				return
+			}
+			do {
+				// A Mac trusted here asks it to accept one that waits here:
+				// what someone does in Bierkasten on that Mac, for this one.
+				// Only a Mac that waits can be accepted, so nothing is
+				// trusted here that was not introduced first.
+				try verifyPeer(method: method, path: path, peer: peer, signers: peerSigners, time: time, nonce: nonce, body: body, signature: signature)
+				if try store.record("peer-\(peer)-\(nonce)") { respond(connection, status: 409, body: "peer request was already processed"); return }
+				respond(connection, status: 200, data: try JSONEncoder().encode(runBier(bier, ["peer", "accept", request.mac])), contentType: "application/json")
 			} catch { respond(connection, status: 403, body: "peer is not authorised") }
 			return
 		}

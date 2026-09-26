@@ -52,6 +52,8 @@ public struct ViewMac: Codable, Equatable, Sendable {
 	public var trusts: [String]
 	/// Whether it waits to be accepted here.
 	public var waiting: Bool
+	/// The Macs waiting to be accepted on it; nil when it has not said.
+	public var pending: [String]? = nil
 	public var missing: Int
 	public var extra: Int
 	public var notAssigned: Int
@@ -69,6 +71,8 @@ public struct ViewGroup: Codable, Equatable, Sendable {
 	public var inventory: String
 	/// How many packages the group gives.
 	public var software: Int
+	/// Its colour in Bierkasten: red, orange, … gray; nil for none.
+	public var color: String? = nil
 }
 
 public struct ViewPackage: Codable, Equatable, Sendable {
@@ -116,7 +120,8 @@ public struct ViewAction: Codable, Equatable, Sendable {
 /// Something that needs a person. kind and macs let the app word it in
 /// its own language; text is the English wording.
 public struct ViewFinding: Codable, Equatable, Sendable {
-	/// pending, new, missing, extra, conflict, arrived, offline, old, release
+	/// pending, waits, new, missing, extra, conflict, arrived, offline,
+	/// old, release
 	public var kind: String
 	public var text: String
 	public var macs: [String]
@@ -154,6 +159,8 @@ public struct FleetPage: Codable, Equatable, Sendable {
 	public var this: String
 	public var macs: [ViewMac]
 	public var groups: [ViewGroup]
+	/// The colour of All Macs; nil for none.
+	public var allColor: String? = nil
 	public var counts: ViewCounts?
 	public var needsYou: [ViewFinding]?
 	public var links: [ViewLink]?
@@ -335,6 +342,7 @@ public struct FleetView {
 			version: said?.first("VERSION"), macos: said?.info("macos"), model: said?.info("model"), disk: said?.info("disk"),
 			trusts: said?.values("TRUSTS").compactMap(\.first) ?? [],
 			waiting: pending.contains { $0.mac == id },
+			pending: waitingOn(id).map { $0.map(\.mac) },
 			missing: count(.missing), extra: count(.extra), notAssigned: count(.notAssigned),
 			// Only for a Mac that answers now: what one away said is old.
 			inSync: known && (reach == .this || reach == .online) ? count(.missing) == 0 && count(.extra) == 0 && said?.first("STATE") != "drift" : nil)
@@ -342,12 +350,31 @@ public struct FleetView {
 
 	var macs: [ViewMac] { macIDs.map(mac) }
 
+	/// Who waits to be accepted on a Mac, and who introduced them.
+	func waitingOn(_ id: String) -> [(mac: String, by: String)]? {
+		if id == this { return pending }
+		return said[id]?.values("PENDING").compactMap { f in f.first.map { ($0, f.count > 1 ? f[1] : "") } }
+	}
+
+	/// Two Macs of which one waits for the other, each pair once: one
+	/// accept, on either side, settles both.
+	var waitingPairs: [(mac: String, on: String, by: String)] {
+		var pairs: [(mac: String, on: String, by: String)] = []
+		for id in macIDs where id != this {
+			for (mac, by) in waitingOn(id) ?? [] where !pairs.contains(where: { Set([$0.mac, $0.on]) == Set([mac, id]) }) {
+				pairs.append((mac, id, by))
+			}
+		}
+		return pairs
+	}
+
 	var groups: [ViewGroup] {
 		groupMembers.map { name, members in
 			ViewGroup(name: name, macs: members,
 				apply: rules[name]?["apply"] ?? "automatic",
 				inventory: rules[name]?["inventory"] ?? "automatic",
-				software: lists["@" + name]?.count ?? 0)
+				software: lists["@" + name]?.count ?? 0,
+				color: rules[name]?["color"])
 		}
 	}
 
@@ -396,6 +423,14 @@ public struct FleetView {
 				actions: [ViewAction(title: "Accept", args: ["peer", "accept", mac]), ViewAction(title: "Reject", args: ["peer", "reject", mac])],
 				subject: by.isEmpty ? nil : by))
 		}
+		// Two other Macs that do not trust each other yet: accepted from
+		// here, on the one where the other waits.
+		for (mac, on, by) in waitingPairs where !pending.contains(where: { $0.mac == mac || $0.mac == on }) {
+			found.append(ViewFinding(kind: "waits", text: "\(mac) waits to be trusted by \(on)", macs: [mac, on],
+				detail: "Introduced by \(by). Accept it once; the two then trust each other.",
+				actions: [ViewAction(title: "Accept", args: ["peer", "accept", mac, "--on", on])],
+				subject: by.isEmpty ? nil : by))
+		}
 		let new = macs.filter { $0.group == nil && !$0.waiting && $0.reach != .unpaired }.map(\.id)
 		if !new.isEmpty {
 			found.append(ViewFinding(kind: "new", text: "\(FleetView.list(new)) \(new.count == 1 ? "is" : "are") in no group yet", macs: new,
@@ -438,7 +473,7 @@ public struct FleetView {
 		}
 		if let release = own.first("NEWCODE") {
 			found.append(ViewFinding(kind: "release", text: "bier \(release) is out", macs: [this],
-				detail: "Upgrade from the menu bar glass, or run bier upgrade.", actions: [], subject: release))
+				detail: "Upgrade from the bier tray, or run bier upgrade.", actions: [], subject: release))
 		}
 		return found
 	}
@@ -464,6 +499,9 @@ public struct FleetView {
 			if !links.contains(where: { Set([$0.from, $0.to]) == Set([from, mac]) }) {
 				links.append(ViewLink(from: from, to: mac, kind: "waiting"))
 			}
+		}
+		for (mac, on, _) in waitingPairs where !links.contains(where: { Set([$0.from, $0.to]) == Set([mac, on]) }) {
+			links.append(ViewLink(from: on, to: mac, kind: "waiting"))
 		}
 		return links
 	}
@@ -498,7 +536,7 @@ public struct FleetView {
 	// MARK: - Pages
 
 	public func page(_ name: String, _ argument: String? = nil) throws -> FleetPage {
-		var page = FleetPage(page: name, generated: now, this: this, macs: macs, groups: groups)
+		var page = FleetPage(page: name, generated: now, this: this, macs: macs, groups: groups, allColor: rules["all"]?["color"])
 		switch (name, argument) {
 		case ("overview", nil):
 			// A Mac waiting to be accepted is not one of the fleet yet.

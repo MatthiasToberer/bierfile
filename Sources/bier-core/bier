@@ -24,7 +24,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.50.12
+BIER_VERSION=0.50.13
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -1155,10 +1155,11 @@ cmd_report() {
 	for h in $(host_list); do printf 'MAC\t%s\n' "$h"; done
 	for h in $(group_list); do
 		printf 'GROUP\t%s\t%s\n' "$h" "$(group_members "$h")"
-		for f in apply inventory; do
+		for f in apply inventory color; do
 			[ -z "$(group_rule "$h" "$f")" ] || printf 'RULE\t%s\t%s\t%s\n' "$h" "$f" "$(group_rule "$h" "$f")"
 		done
 	done
+	[ -z "$(group_rule all color)" ] || printf 'RULE\tall\tcolor\t%s\n' "$(group_rule all color)"
 	entries "$MAIN_FILE" | sed 's/^/ENTRY'$'\t''main'$'\t''/'
 	for f in "$BREW_DIR"/*; do
 		[ -f "$f" ] && [ "$f" != "$MAIN_FILE" ] || continue
@@ -1849,7 +1850,20 @@ pending_take() {
 }
 
 cmd_peer_accept() {
-	[ $# -eq 1 ] || die 'usage: bier peer accept <mac>|all'
+	# --on <mac>: accept it on another Mac, one that trusts this one --
+	# as Bierkasten does from the page of that Mac.
+	if [ $# -eq 3 ] && [ "$2" = --on ] && [ "$3" != "$HOST" ]; then
+		local target body
+		peer_name_ok "$1" && [ "$1" != all ] || die 'usage: bier peer accept <mac> --on <other-mac>'
+		target=$(peer_address_of "$3") || die "no paired Mac called $3; see: bier peer list"
+		body=$(tmpfile)
+		printf '{"mac":"%s"}' "$1" >"$body"
+		peer_call accept "$target" --identity "$PEER_IDENTITY" --body "$body" ||
+			die "$3 did not accept $1: is it awake, and does $1 wait there? (bier 0.50.13 or later there)"
+		return 0
+	fi
+	[ $# -eq 3 ] && [ "$2" = --on ] && set -- "$1"
+	[ $# -eq 1 ] || die 'usage: bier peer accept <mac>|all [--on <other-mac>]'
 	local lines name address by type key tmp
 	lines=$(pending_take "$1")
 	while read -r name address by type key; do
@@ -2112,7 +2126,7 @@ cmd_main() {
 	fi
 
 	# The first Mac sets the vault passphrase; every Mac that joins later
-	# is asked for it by its menu bar glass. That is why installing does
+	# is asked for it by its bier tray. That is why installing does
 	# not ask: a Mac that is about to join has no passphrase to invent.
 	if [ "$(vault_pass_state)" = missing ]; then
 		info ""
@@ -3856,6 +3870,21 @@ cmd_group() {
 		group_publish "$HOST: $1 sets $2 = $3"
 		return 0
 		;;
+	color)
+		# The colour Bierkasten shows a group in, everywhere; "all" for All
+		# Macs. Kept with the groups, so every Mac shows the same.
+		local colors="red orange yellow green mint teal cyan blue indigo purple pink brown gray"
+		[ $# -eq 2 ] || die "usage: bier group color <group|all> <$(printf '%s' "$colors" | tr ' ' '|')|none>"
+		[ "$1" = all ] || group_list | grep -qxF "$1" || die "there is no group $1"
+		if [ "$2" = none ]; then
+			[ ! -f "$GROUPS_FILE" ] || sed -i '' -E "/^[[:space:]]*$1\.color[[:space:]]*=/d" "$GROUPS_FILE"
+		else
+			case " $colors " in *" $2 "*) ;; *) die "$2 is not one of: $colors" ;; esac
+			groups_set "$1.color" "$2"
+		fi
+		group_publish "$HOST: $1 in $2"
+		return 0
+		;;
 	new)
 		[ $# -ge 2 ] || die "usage: bier group new <name> <mac>…"
 		cmd_group "$@"
@@ -4824,7 +4853,7 @@ cmd_vault() {
 		info ""
 		# With files in the safe the answer is checked against them, so
 		# once is enough. With an empty safe there is nothing to check.
-		# --stdin: the menu bar glass asked, and asked twice itself where
+		# --stdin: the bier tray asked, and asked twice itself where
 		# that is needed; nothing here may wait for a terminal.
 		if [ "${2:-}" = --stdin ]; then
 			IFS= read -r pass || true

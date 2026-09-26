@@ -484,11 +484,11 @@ ok "$VAULTDIR"
 # The passphrase is not asked here. This may be a Mac about to join,
 # and one that invented a passphrase of its own could never open the
 # vault of the others. The first Mac sets it with bier init; a Mac that
-# joins is asked for it by its menu bar glass.
+# joins is asked for it by its bier tray.
 if "$HERE/Sources/bier-core/bier" vault 2>/dev/null | grep -q 'remembered on this Mac'; then
 	ok "the passphrase is already known here"
 else
-	ok "the passphrase comes later: bier init on your first Mac, the menu bar glass on the others"
+	ok "the passphrase comes later: bier init on your first Mac, the bier tray on the others"
 fi
 
 # --- Local peer agent -------------------------------------------------
@@ -642,16 +642,16 @@ cat <<EOF
 
 == Done
 
-   The glass in the menu bar shows how this Mac is. So that it comes
-   back after every login, tick "Start at login" in its menu once --
-   only the app itself can set that, not this script.
+   The bier tray in the menu bar shows how this Mac is. So that it
+   comes back after every login, tick "Start at login" in its menu
+   once -- only the app itself can set that, not this script.
 
    Your first Mac:     bier init
                        its software becomes what All Macs get, and it
                        asks for the vault passphrase.
-   Every other Mac:    in the glass, Connect > Join Your Macs ... shows
+   Every other Mac:    in the bier tray, Connect > Join Your Macs ... shows
                        a code; enter it in Bierkasten on your first Mac
-                       (File > Add Mac ...). The glass then asks for the
+                       (File > Add Mac ...). The tray then asks for the
                        vault passphrase.
 
 EOF
