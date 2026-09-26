@@ -102,6 +102,10 @@ private enum BierPeerCLI {
 	}
 
 	private static func run() async throws {
+		if CommandLine.arguments.dropFirst().first == "view" {
+			try view(Array(CommandLine.arguments.dropFirst(2)))
+			return
+		}
 		let options = try Options(arguments: Array(CommandLine.arguments.dropFirst()))
 		let transport = try PeerClient(baseURL: options.baseURL, peerName: options.localHost, identity: options.identity)
 		let snapshots = PeerSnapshotClient(transport: transport)
@@ -201,6 +205,40 @@ private enum BierPeerCLI {
 		else { throw CLIError.invalidResponse }
 		try remember(peer: result.agent, key: result.publicKey, in: signers)
 		print("Paired \(options.localHost) with \(result.agent) on \(options.displayHost).")
+	}
+
+	/// view <page> [<argument>] --report <file> --fleet <directory>: a page
+	/// of Bierkasten as JSON, from bier report and the fleet cache.
+	private static func view(_ arguments: [String]) throws {
+		var words: [String] = []
+		var values: [String: String] = [:]
+		var index = 0
+		while index < arguments.count {
+			if arguments[index].hasPrefix("--") {
+				guard index + 1 < arguments.count else { throw CLIError.usage }
+				values[arguments[index]] = arguments[index + 1]
+				index += 2
+			} else {
+				words.append(arguments[index])
+				index += 1
+			}
+		}
+		guard let reportPath = values["--report"], (1...2).contains(words.count) else { throw CLIError.usage }
+		let report = try String(contentsOfFile: reportPath, encoding: .utf8)
+		var fleet: [String] = []
+		if let directory = values["--fleet"],
+			let names = try? FileManager.default.contentsOfDirectory(atPath: directory) {
+			for name in names.sorted() where !name.hasPrefix(".") && !name.contains(".tmp") {
+				if let text = try? String(contentsOfFile: directory + "/" + name, encoding: .utf8) { fleet.append(text) }
+			}
+		}
+		do {
+			let data = try FleetView(report: report, fleet: fleet).json(words[0], words.count > 1 ? words[1] : nil)
+			FileHandle.standardOutput.write(data + Data("\n".utf8))
+		} catch let error as FleetViewError {
+			fputs("bier: \(error.description)\n", stderr)
+			exit(1)
+		}
 	}
 
 	private static func remember(peer: String, key: String, in file: URL) throws {

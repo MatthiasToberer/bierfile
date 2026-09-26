@@ -30,7 +30,7 @@ inventory = automatic                # or manual
 
 - **automatic** (default, recommended) — `bier sync` records everything
   installed that no list gives this Mac on its own list, *not assigned*.
-  All Macs and the groups change only through `bier main`, `bier place`,
+  All Macs and the groups change only through `bier init`, `bier place`,
   `bier add` and `bier uninstall`.
 - **manual** — `bier sync` records nothing; the lists stay exactly as
   you write them. Useful for a

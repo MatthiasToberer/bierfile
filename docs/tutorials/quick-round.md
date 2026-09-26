@@ -21,7 +21,7 @@ The one whose software should serve as the template:
 
 ```sh
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MatthiasToberer/bierfile/main/bootstrap.sh)"
-bier main
+bier init
 ```
 
 `command not found`? Open a new terminal or type `exec zsh`.

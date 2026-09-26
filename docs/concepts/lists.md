@@ -14,7 +14,7 @@ Brewfiles/<host>     what this one Mac has installed that nobody has
 
 All are valid Brewfiles and can be handed straight to
 `brew bundle install --file`. You create `main` once, from the software
-of your template Mac, with [`bier main`](../reference/commands/main.md).
+of your template Mac, with [`bier init`](../reference/commands/init.md).
 From then on you give software to All Macs or to groups with
 [`bier place`](../reference/commands/place.md) — never to a single Mac.
 A Mac of its own is a group of one.
@@ -49,7 +49,7 @@ you change your mind.
 
 | List | Adds entries | Removes entries |
 | --- | --- | --- |
-| `Brewfiles/main` (All Macs) | `bier main`, `bier place --all`, `bier add --all` | `bier main`, `bier place`, `bier uninstall` |
+| `Brewfiles/main` (All Macs) | `bier init`, `bier place --all`, `bier add --all` | `bier init`, `bier place`, `bier uninstall` |
 | `Brewfiles/@<group>` | `bier place --on`, `bier add --group` | `bier place`, `bier uninstall --group`, `bier group --drop` |
 | `Brewfiles/<host>` (not assigned) | `bier dump` (and so `bier sync`), `bier add --here` | `bier place`, `bier uninstall`, `bier retire` |
 

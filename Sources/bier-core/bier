@@ -24,7 +24,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.50.11
+BIER_VERSION=0.50.12
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -492,6 +492,7 @@ peer_forget() {
 	peer_list | grep -vxF "$peer" >"$tmp" || true
 	mkdir -p "$(dirname "$PEERS_FILE")"
 	mv "$tmp" "$PEERS_FILE"
+	rm -f "$FLEET_CACHE/$(peer_name_of "$peer")"
 }
 
 # Every SSH/SCP call in the peer setup path is deliberately non-interactive
@@ -1065,18 +1066,62 @@ cmd_fleet() {
 
 # A quick hello first: a Mac that is away is known in seconds, not after
 # the long wait a status may need.
+#
+# What was heard is kept per Mac, by its name, so bier view can show a Mac
+# that is away with what it last said and how old that is:
+#   FLEET <address> <online|offline|reachable> <checked> <heard>
+# followed by the AT lines last heard, which stay when it is away.
+FLEET_CACHE=$STATE_DIR/fleet
 fleet_one() {
-	local peer=$1 out
-	if ! peer_learn_name "$peer" >/dev/null; then
-		printf 'FLEET\t%s\toffline\n' "$peer"
+	local peer=$1 out name cache status now heard="" said=""
+	now=$(date +%s)
+	if ! name=$(peer_learn_name "$peer"); then
+		status=offline
 	elif out=$(peer_call status "$peer" --identity "$PEER_IDENTITY" 2>/dev/null); then
-		printf 'FLEET\t%s\tonline\n' "$peer"
-		printf '%s\n' "$out" | sed "s/^/AT"$'\t'"$peer"$'\t'"/"
+		status=online
+		heard=$now
+		said=$(printf '%s\n' "$out" | sed "s/^/AT"$'\t'"$peer"$'\t'"/")
 	else
 		# It answers, but could not say how it is: an older bier, or
 		# bier state failing there. Not the same as away.
-		printf 'FLEET\t%s\treachable\n' "$peer"
+		status=reachable
 	fi
+	[ -n "$name" ] || name=$(peer_name_of "$peer")
+	# The name is what the other Mac says; as a file name it must stay one.
+	case $name in "" | . | .. | *[!A-Za-z0-9._-]*) name=$(printf '%s' "$peer" | tr -c 'A-Za-z0-9._-' _) ;; esac
+	cache=$FLEET_CACHE/$name
+	if [ -z "$heard" ] && [ -f "$cache" ]; then
+		heard=$(awk -F '\t' 'NR == 1 { print $5 }' "$cache")
+		said=$(sed -n '2,$p' "$cache" | sed "s/^AT"$'\t'"[^"$'\t'"]*/AT"$'\t'"$peer/")
+	fi
+	mkdir -p "$FLEET_CACHE"
+	{
+		printf 'FLEET\t%s\t%s\t%s\t%s\n' "$peer" "$status" "$now" "$heard"
+		[ -z "$said" ] || printf '%s\n' "$said"
+	} >"$cache.$$"
+	mv "$cache.$$" "$cache"
+	cat "$cache"
+}
+
+# Every page of Bierkasten, ready to show, as JSON: what this Mac knows
+# (bier report) and what the others last said (bier fleet). Counting,
+# comparing and the wording of findings happen here, not in the app.
+cmd_view() {
+	local usage='usage: bier view <overview|groups|all|group <name>|mac <name>|package <entry>> --json'
+	local -a args=()
+	while [ $# -gt 0 ]; do
+		case $1 in
+		--json) ;;
+		*) args+=("$1") ;;
+		esac
+		shift
+	done
+	[ ${#args[@]} -ge 1 ] || die "$usage"
+	[ -x "$PEER_CLIENT" ] || die "the Swift peer client is not built; run install.sh"
+	local report
+	report=$(tmpfile)
+	cmd_report >"$report"
+	"$PEER_CLIENT" view "${args[@]}" --report "$report" --fleet "$FLEET_CACHE" || exit 1
 }
 
 # How other Macs reach this one: its Tailscale name when Tailscale runs,
@@ -5715,6 +5760,7 @@ access) cmd_access ;;
 brewmaster | doctor) cmd_brewmaster ;;
 report) cmd_report ;;
 fleet) cmd_fleet ;;
+view) cmd_view "$@" ;;
 place) cmd_place "$@" ;;
 undo) cmd_undo "$@" ;;
 group) cmd_group "$@" ;;

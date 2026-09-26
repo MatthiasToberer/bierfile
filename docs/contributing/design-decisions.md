@@ -48,9 +48,9 @@ should have to know git commands to keep their Macs in step.
 **Only `Brewfiles/` gets committed.** A `git add -A` once hid a source
 change under an inventory message.
 
-## Careful with `bier main`
+## Careful with `bier init`
 
-`bier main` rewrites the shared inventory from the Mac it runs on.
+`bier init` rewrites the shared inventory from the Mac it runs on.
 Anything that is in there but not installed here drops out for good —
 even if another device still has it. The command shows that before
 asking:

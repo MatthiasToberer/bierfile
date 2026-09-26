@@ -60,8 +60,13 @@ assert_ok bier mini prune --yes
 # What Bierkasten shows about each Mac, and the others' state.
 assert_ok bier mini state
 assert_contains "$OUT" "INFO	macos	"
-cat >"$WORK/fleet-client" <<'EOF2'
+real_peer=$REPO/Sources/bier-peer/build/bier-peer
+cat >"$WORK/fleet-client" <<EOF2
 #!/bin/sh
+[ "\$1" = view ] && exec "$real_peer" "\$@"
+[ -f "$WORK/up-away" ] && [ "\$2" = up.ts.net ] && exit 1
+EOF2
+cat >>"$WORK/fleet-client" <<'EOF2'
 case $2 in
 up.ts.net) if [ "$1" = name ]; then echo up; else printf 'STATE\tok\nHOST\tup\nINFO\tmacos\t26.0\n'; fi ;;
 old.ts.net) [ "$1" = name ] && echo old ;;
@@ -77,6 +82,31 @@ assert_contains "$OUT" "FLEET	up.ts.net	online"
 assert_contains "$OUT" "AT	up.ts.net	INFO	macos	26.0"
 assert_contains "$OUT" "FLEET	other.ts.net	offline"
 assert_contains "$OUT" "FLEET	old.ts.net	reachable"
+
+# What a Mac last said is kept, with when; a Mac that is away keeps it.
+cache=$(find "$h" -type d -name fleet -path '*state*' | head -1)
+assert_file_has "$cache/up" "AT	up.ts.net	INFO	macos	26.0"
+heard=$(awk -F '\t' 'NR == 1 { print $5 }' "$cache/up")
+[ -n "$heard" ] || fail "the time up was heard is kept"
+touch "$WORK/up-away"
+assert_ok bier mini fleet
+assert_contains "$OUT" "FLEET	up.ts.net	offline"
+assert_contains "$OUT" "AT	up.ts.net	INFO	macos	26.0"
+assert_eq "$(awk -F '\t' 'NR == 1 { print $5 }' "$cache/up")" "$heard"
+rm "$WORK/up-away"
+
+# The pages of Bierkasten, worked out by bier.
+if [ -x "$real_peer" ]; then
+	assert_ok bier mini view overview --json
+	assert_contains "$OUT" '"page" : "overview"'
+	assert_contains "$OUT" '"id" : "up"'
+	assert_contains "$OUT" '"reach" : "offline"'
+	assert_ok bier mini view mac up --json
+	assert_contains "$OUT" '"macos" : "26.0"'
+	assert_fails bier mini view group nothing --json
+	assert_contains "$OUT" "no group called nothing"
+	assert_fails bier mini view
+fi
 
 # Whom this Mac trusts, for the mesh in Bierkasten.
 mkdir -p "$h/.barrel/agent"

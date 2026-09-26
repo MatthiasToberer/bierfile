@@ -111,7 +111,7 @@ Afterwards a beer glass hangs in the menu bar at the top right.
 Now the step that happens **only once in the life of a setup**:
 
 ```sh
-bier main
+bier init
 ```
 
 This declares this Mac's inventory the shared baseline. Every program
@@ -171,8 +171,8 @@ already recorded its own inventory keeps it and gets the rest. (How that is
 protected: [Pairing](../security/pairing.md).)
 
 > [!CAUTION]
-> Do **not** type `bier main` on the second Mac. It would replace the
-> shared inventory with this machine's nearly empty one. `bier main`
+> Do **not** type `bier init` on the second Mac. It would replace the
+> shared inventory with this machine's nearly empty one. `bier init`
 > belongs on the template Mac only, and there only once.
 
 Instead, back on the second Mac:

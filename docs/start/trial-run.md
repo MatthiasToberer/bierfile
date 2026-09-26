@@ -67,7 +67,7 @@ bier config inventory automatic
 ```
 
 The next `bier sync` records everything that is installed. Then, on the
-Mac whose software should be the template, run `bier main` once, and
+Mac whose software should be the template, run `bier init` once, and
 put the Macs into groups — see [Groups](../concepts/groups.md).
 
 To remove the test file again everywhere: `bier vault drop ~/.fakezshrc`

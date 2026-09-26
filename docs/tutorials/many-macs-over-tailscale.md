@@ -25,7 +25,7 @@ and every sync.
 
 ```sh
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/MatthiasToberer/bierfile/main/bootstrap.sh)"
-bier main                  # this Mac's software is the template for all
+bier init                  # this Mac's software is the template for all
 bier vault add ~/.zshrc    # optional: files and settings, not only packages
 bier sync
 ```
@@ -120,4 +120,7 @@ In Bierkasten you drag the new Mac onto its group. See
   Tailscale is not running on one of the two Macs, or the short name was
   used instead of the full one.
 - `bier brewmaster` checks every peer and says what to do.
+- A Mac paired over the local network or SSH moves to Tailscale with
+  one command on each Mac that knows it; the pairing stays:
+  `bier peer address laptop laptop.example.ts.net`.
 - Why this is safe: [Pairing](../security/pairing.md#a-third-mac-introduce-then-accept).

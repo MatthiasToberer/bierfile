@@ -2,6 +2,9 @@
 
 # bier diff
 
+> Out of sight since 0.50.12: `bier list` and Bierkasten show this. The command still
+> works and says so.
+
 ```
 bier diff [host…]
 ```

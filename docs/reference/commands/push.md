@@ -2,6 +2,9 @@
 
 # bier push
 
+> Out of sight since 0.50.12: `bier sync` does this. The command still
+> works and says so.
+
 ```
 bier push [message]
 ```

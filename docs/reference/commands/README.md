@@ -11,7 +11,6 @@
 | [`bier sync [--record] [message]`](sync.md) | record, exchange with peers, merge — the everyday command |
 | [`bier status`](status.md) | what differs on this Mac? |
 | [`bier list`](list.md) | All Macs, each group, and what is not assigned |
-| [`bier diff [host…]`](diff.md) | compare this Mac's lists with other Macs |
 
 ## Groups and software
 
@@ -27,10 +26,12 @@
 | [`bier share [--for <group>] <app>`](share.md) | share an app's settings and profiles |
 | [`bier uninstall <pkg>…`](uninstall.md) | uninstall; asks which lists lose it |
 | [`bier prune [--yes]`](prune.md) | remove what was taken off a list this Mac follows |
-| [`bier dump [--adopt]`](dump.md) | record what this Mac has that no list gives it |
-| [`bier push [message]`](push.md) | commit the lists without recording |
-| [`bier main`](main.md) | make this Mac's software what All Macs have — once |
-| [`bier take`](take.md) | gone — see `place` |
+
+## Setting up
+
+| Command | What it does |
+| --- | --- |
+| [`bier init`](init.md) | make this Mac's software what All Macs have — once, on the first Mac |
 
 ## Files, peers and the fleet
 
@@ -42,9 +43,10 @@
 | [`bier knockout`](knockout.md) | take bier off this Mac, signing off at the others |
 | [`bier access`](access.md) | let bier read app settings in their sandbox (Full Disk Access) |
 | [`bier brewmaster`](brewmaster.md) | check this Mac, its peers and the vault, like `brew doctor` |
-| `bier fleet` | every paired Mac's own state, asked over the network |
+| `bier fleet` | every paired Mac's own state, asked over the network and kept |
 | `bier admin offer \| list \| remove` | let Bierkasten connect to this Mac |
-| `bier report` | everything Bierkasten shows, in lines |
+| `bier report` | everything this Mac knows, in lines |
+| [`bier view <page> --json`](view.md) | a page of Bierkasten, worked out, as JSON |
 
 ## The program
 
@@ -55,3 +57,15 @@
 | [`bier config`](config.md) | settings in effect |
 | [`bier version`](version.md) | version, commit and paths |
 | [`bier state`](state.md) | machine-readable state for BierMenu |
+
+## Out of sight
+
+Not in `bier help`, because another command does their job. They still
+work and say what to use instead.
+
+| Command | Instead |
+| --- | --- |
+| [`bier dump`](dump.md) | `bier sync` records what is installed |
+| [`bier push`](push.md) | `bier sync` commits and passes on |
+| [`bier diff`](diff.md) | `bier list`, or Bierkasten |
+| [`bier take`](take.md) | `bier place` |

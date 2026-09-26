@@ -48,6 +48,8 @@ A paired Mac could not be reached — asleep, off, or on another network.
 Wake it and try again. For Macs that are often apart, use
 [Tailscale](../security/pairing.md#syncing-beyond-the-local-network-tailscale). A Mac that is gone for good:
 [`bier retire`](../using/retiring-a-mac.md) and `bier peer remove`.
+A Mac that is reached another way now — Tailscale instead of the local
+network: `bier peer address <mac> <new-address>` keeps its pairing.
 
 **Pairing fails**
 The code is valid for ten minutes and locks after five wrong attempts.

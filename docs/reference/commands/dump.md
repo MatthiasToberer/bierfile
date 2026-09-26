@@ -2,6 +2,9 @@
 
 # bier dump
 
+> Out of sight since 0.50.12: `bier sync` does this. The command still
+> works and says so.
+
 ```
 bier dump [--adopt]
 ```
@@ -18,6 +21,6 @@ commits nothing.
   `--adopt` takes such entries in deliberately.
 - **Never rewrites `main`.**
 
-`bier dump --main` is understood as [`bier main`](main.md).
+`bier dump --main` is understood as [`bier init`](init.md).
 
 **See also:** [How removals travel](../../concepts/removals.md)

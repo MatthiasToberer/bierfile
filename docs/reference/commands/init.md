@@ -1,9 +1,9 @@
 [Docs](../../README.md) › [Commands](README.md)
 
-# bier main
+# bier init
 
 ```
-bier main [--no-push]
+bier init [--no-push]
 ```
 
 Makes this Mac's software what **All Macs** have — `Brewfiles/main` —
@@ -28,5 +28,7 @@ Commits the result; `--no-push` leaves it uncommitted for a later
 `bier sync`.
 
 > [!CAUTION]
-> Never run `bier main` on a Mac that joined later. It would replace the
+> Never run `bier init` on a Mac that joined later. It would replace the
 > shared inventory with that Mac's.
+
+`bier main` is the same command by its old name.

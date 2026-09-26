@@ -110,7 +110,7 @@ Handed on to `install.sh`. With the one line, put them after a `_`:
 
 ## After installing
 
-- On the **first** Mac: `bier main`, once — its software becomes what
+- On the **first** Mac: `bier init`, once — its software becomes what
   All Macs have; see [All Macs, groups, and what is not assigned](../concepts/lists.md).
 - On **every further** Mac: pair it — see [Pairing](../security/pairing.md) —
   then `bier install`.

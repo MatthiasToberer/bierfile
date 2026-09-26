@@ -77,8 +77,6 @@ lines in a Brewfile that are not package entries — see
 
 ```sh
 bier list             # All Macs, each group, and what is not assigned
-bier diff             # this Mac against each other Mac
-bier diff studio      # against one
 ```
 
 What other groups have never counts as a difference *here*. To give
