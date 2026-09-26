@@ -97,3 +97,8 @@ assert_ok bier mini group scratch mini
 assert_ok bier mini group move mini studio
 assert_ok bier mini group
 assert_not_contains "$OUT" "scratch ="
+
+# apply --everywhere asks every Mac to catch up, by a change marked
+# install now.
+assert_ok bier mini apply --everywhere
+assert_contains "$(git -C "$data" log -1 --format=%s)" "bring every Mac in line (install now)"

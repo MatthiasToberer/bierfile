@@ -24,7 +24,7 @@ set -euo pipefail
 # One source for the version number: build.sh reads it from here and
 # writes it into the app bundle, bier state reports it, and that is how
 # BierMenu notices that it is out of date itself.
-BIER_VERSION=0.50.9
+BIER_VERSION=0.50.10
 
 # Set by check_code, read by cmd_upgrade: the release tag to move to.
 # Empty means "follow the branch" — see check_code for when that applies.
@@ -2216,6 +2216,19 @@ place_line() {
 cmd_apply() {
 	need_brew
 	need_repo
+	# Every Mac, not only this one: a change of nothing, marked install
+	# now, that each Mac applies as it arrives -- the way to have
+	# software installed on another Mac from here, when the lists already
+	# name it and only the Mac has not caught up.
+	if [ "${1:-}" = --everywhere ]; then
+		git -C "$DATA" commit -q --allow-empty -m "$HOST: bring every Mac in line (install now)"
+		git -C "$DATA" rev-parse HEAD >"$STATE_DIR/applied" 2>/dev/null || true
+		if [ -x "$PEER_CLIENT" ] && [ -n "$(peer_list)" ]; then
+			sync_peers "$HOST: bring every Mac in line (install now)" ||
+				info "The Macs not reached do it when they are back."
+		fi
+		set --
+	fi
 	local mark=$STATE_DIR/applied head since
 	head=$(git -C "$DATA" rev-parse HEAD 2>/dev/null) || return 0
 	mkdir -p "$STATE_DIR"
@@ -5483,7 +5496,8 @@ bier — keeps Brewfiles in sync across Macs
   bier place <pkg> --all | --on <group>,… | --none [--now]
                           where a package belongs; --now installs it on
                           every Mac as soon as the change reaches it
-  bier apply              install and remove what the lists say for here
+  bier apply [--everywhere]  install and remove what the lists say, here
+                          or on every Mac as the request reaches it
   bier undo <commit>      take back one change, on every Mac
   bier search <name>      what Homebrew and the App Store have by that name
   bier share [--for <group>] <app>
