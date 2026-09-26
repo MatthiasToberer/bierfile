@@ -81,6 +81,9 @@ import Testing
 		#expect(page.needsYou?.first?.actions.map(\.args) == [["peer", "accept", "book"], ["peer", "reject", "book"]])
 		#expect(page.needsYou?.first { $0.kind == "offline" }?.detail == "Last heard from 11 minutes ago.")
 		#expect(page.needsYou?.first { $0.kind == "conflict" }?.text == "~/.zshrc was changed on two Macs")
+		#expect(page.needsYou?.first { $0.kind == "conflict" }?.subject == "~/.zshrc")
+		#expect(page.needsYou?.first { $0.kind == "pending" }?.subject == "air")
+		#expect(page.needsYou?.first { $0.kind == "missing" }?.count == 1)
 		#expect(page.needsYou?.first { $0.kind == "missing" }?.detail == "1 package that All Macs or a group gives is not installed yet.")
 	}
 

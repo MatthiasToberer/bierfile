@@ -65,8 +65,11 @@ Mac has not said). A Mac the package does not concern is left out.
 
 A **finding** in `needsYou` has a `kind` — `pending`, `new`, `missing`,
 `extra`, `conflict`, `arrived`, `offline`, `old`, `release` — the Macs it
-is about, an English `text` and `detail`, and `actions`: each a button
-`title` and the bier command `args` it runs.
+is about, an English `text` and `detail`, `subject` (who introduced a
+waiting Mac, the file of a conflict, the files that arrived, the new
+version), `count` (packages missing or extra), and `actions`: each a
+button `title` and the bier command `args` it runs. An app in another
+language words it from `kind`, `macs`, `subject` and `count`.
 
 A **link** joins two Macs: `paired` when each trusts the other, `waiting`
 when one waits to be accepted or only one side trusts the other. Two

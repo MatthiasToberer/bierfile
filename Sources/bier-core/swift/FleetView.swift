@@ -122,6 +122,11 @@ public struct ViewFinding: Codable, Equatable, Sendable {
 	public var macs: [String]
 	public var detail: String?
 	public var actions: [ViewAction]
+	/// What it is about besides the Macs: who introduced a waiting Mac,
+	/// the file of a conflict, the files that arrived, the new version.
+	public var subject: String? = nil
+	/// How many packages, for missing and extra.
+	public var count: Int? = nil
 }
 
 /// A line in the network picture.
@@ -388,7 +393,8 @@ public struct FleetView {
 		for (mac, by) in pending {
 			found.append(ViewFinding(kind: "pending", text: "\(mac) waits to be trusted", macs: [mac],
 				detail: by.isEmpty ? nil : "Introduced by \(by). Accept it once; \(mac) then trusts this Mac as well.",
-				actions: [ViewAction(title: "Accept", args: ["peer", "accept", mac]), ViewAction(title: "Reject", args: ["peer", "reject", mac])]))
+				actions: [ViewAction(title: "Accept", args: ["peer", "accept", mac]), ViewAction(title: "Reject", args: ["peer", "reject", mac])],
+				subject: by.isEmpty ? nil : by))
 		}
 		let new = macs.filter { $0.group == nil && !$0.waiting && $0.reach != .unpaired }.map(\.id)
 		if !new.isEmpty {
@@ -399,24 +405,28 @@ public struct FleetView {
 		if !missing.isEmpty {
 			found.append(ViewFinding(kind: "missing", text: "Software is missing on \(FleetView.list(missing.map(\.id)))", macs: missing.map(\.id),
 				detail: "\(FleetView.packages(missing.map(\.missing).reduce(0, +))) that All Macs or a group gives \(missing.map(\.missing).reduce(0, +) == 1 ? "is" : "are") not installed yet.",
-				actions: [ViewAction(title: "Install on Every Mac Now", args: ["apply", "--everywhere"])]))
+				actions: [ViewAction(title: "Install on Every Mac Now", args: ["apply", "--everywhere"])],
+				count: missing.map(\.missing).reduce(0, +)))
 		}
 		let extra = macs.filter { $0.extra > 0 }
 		if !extra.isEmpty {
 			found.append(ViewFinding(kind: "extra", text: "Software taken off is still on \(FleetView.list(extra.map(\.id)))", macs: extra.map(\.id),
 				detail: "\(FleetView.packages(extra.map(\.extra).reduce(0, +))) removed elsewhere \(extra.map(\.extra).reduce(0, +) == 1 ? "is" : "are") still installed.",
-				actions: [ViewAction(title: "Remove on Every Mac Now", args: ["apply", "--everywhere"])]))
+				actions: [ViewAction(title: "Remove on Every Mac Now", args: ["apply", "--everywhere"])],
+				count: extra.map(\.extra).reduce(0, +)))
 		}
 		for path in own.values("VAULT_LEFT").compactMap(\.first) {
 			found.append(ViewFinding(kind: "conflict", text: "\(FleetView.shown(path)) was changed on two Macs", macs: [this],
 				detail: "Both versions are kept. Choose which one stays.",
 				actions: [ViewAction(title: "Keep This Mac's", args: ["vault", "resolve", path, "mine"]),
-					ViewAction(title: "Keep the Other", args: ["vault", "resolve", path, "theirs"])]))
+					ViewAction(title: "Keep the Other", args: ["vault", "resolve", path, "theirs"])],
+				subject: FleetView.shown(path)))
 		}
 		let arrived = own.values("VAULT_IN").compactMap(\.first)
 		if !arrived.isEmpty {
 			found.append(ViewFinding(kind: "arrived", text: "Settings arrived for \(FleetView.list(arrived.map(FleetView.shown)))", macs: [this],
-				detail: "They are put in place with the next sync.", actions: [ViewAction(title: "Sync Now", args: ["sync"])]))
+				detail: "They are put in place with the next sync.", actions: [ViewAction(title: "Sync Now", args: ["sync"])],
+				subject: FleetView.list(arrived.map(FleetView.shown))))
 		}
 		for mac in macs where mac.reach == .offline {
 			found.append(ViewFinding(kind: "offline", text: "\(mac.id) is away", macs: [mac.id],
@@ -428,7 +438,7 @@ public struct FleetView {
 		}
 		if let release = own.first("NEWCODE") {
 			found.append(ViewFinding(kind: "release", text: "bier \(release) is out", macs: [this],
-				detail: "Upgrade from the menu bar glass, or run bier upgrade.", actions: []))
+				detail: "Upgrade from the menu bar glass, or run bier upgrade.", actions: [], subject: release))
 		}
 		return found
 	}
