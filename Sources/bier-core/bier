@@ -1659,6 +1659,85 @@ peer_discover_run() {
 	wait "$pid" 2>/dev/null || true
 }
 
+# The hosts that announce a service on the local network, one per line,
+# this Mac left out.
+peer_discover_hosts() {
+	local service=$1 seconds browse lookup instances instance host
+	seconds=$(peer_discover_wait)
+	browse=$(tmpfile)
+	peer_discover_run "$browse" "$seconds" -B "$service" local.
+	instances=$(awk '
+		/ Add / {
+			for (i = 1; i <= NF; i++) {
+				if ($i == service || $i == service ".") {
+					for (j = i + 1; j <= NF; j++) {
+						printf "%s%s", (j == i + 1 ? "" : " "), $j
+					}
+					printf "\n"
+					break
+				}
+			}
+		}
+	' service="$service" "$browse" | sed '/^$/d' | sort -u)
+	[ -n "$instances" ] || return 0
+	while IFS= read -r instance; do
+		[ -n "$instance" ] || continue
+		lookup=$(tmpfile)
+		peer_discover_run "$lookup" "$seconds" -L "$instance" "$service" local.
+		# "can be reached at macbook.local.:53991": the name without its
+		# trailing dot and the port.
+		host=$(sed -nE 's/.*can be reached at ([^ :]+).*/\1/p' "$lookup" |
+			sed 's/\.$//' | head -1)
+		if peer_name_ok "$host" && ! peer_is_self "$host"; then
+			printf '%s\n' "$host"
+		fi
+	done <<EOF
+$instances
+EOF
+}
+
+# The Macs on the tailnet that are online, as "<address> <name>": the
+# name is the first part of its Tailscale name. tailscale prints one
+# field per line, in a fixed order, so no JSON parser is needed.
+tailnet_macs() {
+	local ts
+	ts=$(command -v tailscale || echo /Applications/Tailscale.app/Contents/MacOS/Tailscale)
+	[ -x "$ts" ] || return 0
+	"$ts" status --json 2>/dev/null | awk '
+		/^  "Peer": \{/ { peers = 1 }
+		!peers { next }
+		/"DNSName":/ { dns = $2; gsub(/[",]/, "", dns); sub(/\.$/, "", dns) }
+		/"OS":/ { os = $2; gsub(/[",]/, "", os) }
+		/"Online":/ {
+			if ($2 ~ /true/ && os == "macOS" && dns != "") { split(dns, part, "."); print dns, part[1] }
+			dns = ""; os = ""
+		}'
+}
+
+# Macs that could join, for Bierkasten's Add a Mac: online Macs on the
+# tailnet, and bier agents announced on the local network. This Mac and
+# the ones already paired are left out, by address and by name.
+#   CANDIDATE <address> <name> <tailscale|lan>
+cmd_peer_candidates() {
+	local known self address name via seen=" "
+	self=$(own_address)
+	known=$(
+		peer_list
+		[ ! -f "$LOCAL_PEER_SIGNERS" ] || awk 'NF >= 2 { print $1 }' "$LOCAL_PEER_SIGNERS"
+		for address in $(peer_list); do peer_name_of "$address"; done
+	)
+	while read -r address name via; do
+		[ -n "$address" ] && [ "$address" != "$self" ] && ! peer_is_self "$address" || continue
+		if printf '%s\n' "$known" | grep -qxF -e "$address" -e "$name"; then continue; fi
+		case $seen in *" $address "*) continue ;; esac
+		seen="$seen$address "
+		printf 'CANDIDATE\t%s\t%s\t%s\n' "$address" "$name" "$via"
+	done < <(
+		tailnet_macs | sed 's/$/ tailscale/'
+		peer_discover_hosts _bier-agent._tcp | awk '{ n = $1; sub(/\..*/, "", n); print $1, n, "lan" }'
+	)
+}
+
 cmd_peer_discover() {
 	command -v dns-sd >/dev/null 2>&1 ||
 		die 'Bonjour discovery needs dns-sd (included with macOS)'
@@ -1677,23 +1756,9 @@ cmd_peer_discover() {
 		;;
 	*) die 'usage: bier peer discover [-ssh]' ;;
 	esac
-	seconds=$(peer_discover_wait)
-	browse=$(tmpfile)
-	peer_discover_run "$browse" "$seconds" -B "$service" local.
-	instances=$(awk '
-		/ Add / {
-			for (i = 1; i <= NF; i++) {
-				if ($i == service || $i == service ".") {
-					for (j = i + 1; j <= NF; j++) {
-						printf "%s%s", (j == i + 1 ? "" : " "), $j
-					}
-					printf "\n"
-					break
-				}
-			}
-		}
-	' service="$service" "$browse" | sed '/^$/d' | sort -u)
-	if [ -z "$instances" ]; then
+	local hosts
+	hosts=$(peer_discover_hosts "$service")
+	if [ -z "$hosts" ]; then
 		if [ "$mode" = -ssh ]; then
 			info 'No Macs with Remote Login found on the local network.'
 		else
@@ -1701,20 +1766,12 @@ cmd_peer_discover() {
 		fi
 		return 0
 	fi
-
 	info "$title"
-	while IFS= read -r instance; do
-		[ -n "$instance" ] || continue
-		lookup=$(tmpfile)
-		peer_discover_run "$lookup" "$seconds" -L "$instance" "$service" local.
-		host=$(sed -nE 's/.*can be reached at ([^ ]+)\.?(:[0-9]+)?.*/\1/p' "$lookup" |
-			sed 's/\.$//' | head -1)
-		if peer_name_ok "$host" && ! peer_is_self "$host"; then
-			n=$((n + 1))
-			printf '  %2s  %s\n' "$n" "$host"
-		fi
+	while IFS= read -r host; do
+		n=$((n + 1))
+		printf '  %2s  %s\n' "$n" "$host"
 	done <<EOF
-$instances
+$hosts
 EOF
 	if [ "$n" = 0 ]; then
 		info 'No usable host address was announced.'
@@ -1897,6 +1954,7 @@ install) cmd_peer_install "$@" ;;
 upgrade | update) cmd_peer_upgrade "$@" ;;
 uninstall) cmd_peer_uninstall "$@" ;;
 discover) cmd_peer_discover "$@" ;;
+candidates) cmd_peer_candidates "$@" ;;
 pending) cmd_peer_pending "$@" ;;
 address) cmd_peer_address "$@" ;;
 accept) cmd_peer_accept "$@" ;;
@@ -4753,7 +4811,12 @@ cmd_vault() {
 		info ""
 		# With files in the safe the answer is checked against them, so
 		# once is enough. With an empty safe there is nothing to check.
-		if [ -n "$(find "$SAFE_DIR" -name '*.gpg' -print -quit 2>/dev/null)" ]; then
+		# --stdin: the menu bar glass asked, and asked twice itself where
+		# that is needed; nothing here may wait for a terminal.
+		if [ "${2:-}" = --stdin ]; then
+			IFS= read -r pass || true
+			[ -n "$pass" ] || die "no passphrase given"
+		elif [ -n "$(find "$SAFE_DIR" -name '*.gpg' -print -quit 2>/dev/null)" ]; then
 			pass=$(vault_ask "Passphrase: ")
 		else
 			pass=$(vault_ask_twice "Passphrase: ")
@@ -5489,6 +5552,8 @@ cmd_update() {
 #   VAULT_IN <file> <how>  settings from another Mac, not in place yet
 #   VAULT_LEFT <path>      a .from-safe copy from a conflict
 #   PENDING <mac> <by>     a Mac introduced by a peer, waiting for accept
+#   VAULTPASS missing|locked  the safe holds files this Mac cannot open yet:
+#                          no passphrase here, or the keychain is locked
 #   INFO   <what> <value>  about this Mac: macos, model, disk
 #   MYGROUP <name>         the group this Mac is in; new when in none
 #   TRUSTS <mac>           a Mac this one trusts (has its key)
@@ -5532,9 +5597,17 @@ cmd_state() {
 	# another Mac -- to install, to remove, settings to put in place --
 	# or something is wrong. What is only waiting to go out is for the
 	# next sync, not for the menu bar.
-	local arrived
+	local arrived vaultpass=""
 	arrived=$(vault_arrived)
-	if [ -z "$stale$dropped$gone$arrived" ]; then
+	# A new Mac that has the safe but not its passphrase: the glass asks
+	# for it, so nobody needs a terminal for it.
+	if [ -n "$(find "$SAFE_DIR" -name '*.gpg' -print -quit 2>/dev/null)" ]; then
+		case $(vault_pass_state) in
+		missing) vaultpass=missing ;;
+		locked) vaultpass=locked ;;
+		esac
+	fi
+	if [ -z "$stale$dropped$gone$arrived$vaultpass" ]; then
 		printf 'STATE\tok\n'
 	else
 		printf 'STATE\tdrift\n'
@@ -5560,6 +5633,7 @@ cmd_state() {
 	if [ -n "$gone" ]; then printf '%s\n' "$gone" | sed 's/^/GONE'$'\t''/'; fi
 	[ -z "$arrived" ] || printf '%s\n' "$arrived"
 	pending_list | awk '{ printf "PENDING\t%s\t%s\n", $1, $3 }'
+	[ -z "$vaultpass" ] || printf 'VAULTPASS\t%s\n' "$vaultpass"
 	[ -z "$offline" ] || printf 'OFFLINE\t%s\n' "${offline# }"
 }
 

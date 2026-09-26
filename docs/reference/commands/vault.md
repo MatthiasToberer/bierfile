@@ -22,7 +22,7 @@ bier vault --passphrase
 | `drop` | out of the vault and off every Mac, into the Trash, after asking |
 | `group` | list, define or drop groups |
 | `--restore` | put back a file deleted here, from the vault's copy |
-| `--init` | enter the passphrase on this Mac (the installer does this) |
+| `--init` | enter the passphrase on this Mac (the installer does this); `--init --stdin` takes it from standard input, checked against the safe — the menu bar glass asks this way |
 | `--passphrase` | change the passphrase and re-encrypt everything |
 
 Only files below your home folder can go into the vault.

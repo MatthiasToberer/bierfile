@@ -44,7 +44,9 @@ BIER_PEER_DISCOVER_SECONDS=1
 export BIER_PEER_DISCOVER_SECONDS
 assert_ok bier mini peer discover
 assert_contains "$OUT" 'Bier agents found on the local network:'
-assert_contains "$OUT" 'macbook.local'
+assert_contains "$OUT" '   1  macbook.local
+'
+assert_not_contains "$OUT" ':53991'
 assert_contains "$OUT" 'To remember one: bier peer add <host>'
 assert_file_has "$WORK/dns-sd.args" '-B _bier-agent._tcp local.'
 assert_ok bier mini peer list
@@ -58,6 +60,49 @@ assert_contains "$OUT" 'bier peer install <user>@<host>'
 assert_file_has "$WORK/dns-sd.args" '-B _ssh._tcp local.'
 assert_fails bier mini peer discover -ssh unexpected
 assert_contains "$OUT" 'usage: bier peer discover [-ssh]'
+
+# Macs that could join, for Bierkasten: online Macs on the tailnet, and
+# agents on the local network; not Linux, not a Mac that is off.
+mkdir -p "$WORK/tsbin"
+cat >"$WORK/tsbin/tailscale" <<'TS'
+#!/bin/sh
+cat <<'JSON'
+{
+  "Self": {
+    "DNSName": "mini.example.ts.net.",
+    "OS": "macOS",
+    "Online": true
+  },
+  "Peer": {
+    "nodekey:a": {
+      "HostName": "Studio",
+      "DNSName": "studio.example.ts.net.",
+      "OS": "macOS",
+      "Online": true
+    },
+    "nodekey:b": {
+      "DNSName": "router.example.ts.net.",
+      "OS": "linux",
+      "Online": true
+    },
+    "nodekey:c": {
+      "DNSName": "old.example.ts.net.",
+      "OS": "macOS",
+      "Online": false
+    }
+  }
+}
+JSON
+TS
+chmod +x "$WORK/tsbin/tailscale"
+PATH=$WORK/tsbin:$PATH
+assert_ok bier mini peer candidates
+assert_contains "$OUT" "CANDIDATE	studio.example.ts.net	studio	tailscale"
+assert_contains "$OUT" "CANDIDATE	macbook.local	macbook	lan"
+assert_not_contains "$OUT" "router"
+assert_not_contains "$OUT" "old.example"
+assert_not_contains "$OUT" "mini.example"
+PATH=${PATH#"$WORK/tsbin:"}
 unset BIER_PEER_DISCOVER_SECONDS
 
 keys=$WORK/agent-signing

@@ -22,6 +22,7 @@ Manages the Macs this one exchanges data with.
 | `sync <host>` | exchange data and history with one peer |
 | `seed <host>` | copy this Mac's data to a peer whose data is empty |
 | `discover` | list bier agents announced via Bonjour |
+| `candidates` | Macs that could join: online Macs on the tailnet and bier agents on the local network, not yet paired — for Bierkasten's Add Mac |
 | `trust [url]` | alias for [`bier trust`](trust.md) |
 
 `--address` advertises this Mac's reachable name or IPv4 address — or

@@ -42,7 +42,7 @@ struct BundleReadRequest: Decodable {
 // the first words must match -- and nothing asks: stdin is empty.
 let adminCommands: [[String]] = [
 	["report"], ["fleet"], ["state"], ["sync"], ["place"], ["group"], ["undo"], ["apply"], ["search"], ["config", "apply"], ["brewmaster"], ["status"], ["list"],
-	["peer", "pending"], ["peer", "accept"], ["peer", "reject"], ["peer", "list"], ["peer", "pair"],
+	["peer", "pending"], ["peer", "accept"], ["peer", "reject"], ["peer", "list"], ["peer", "pair"], ["peer", "candidates"],
 	["add"], ["install"], ["uninstall"], ["prune", "--yes"], ["view"],
 	["vault", "add"], ["vault", "forget"], ["vault", "resolve"], ["vault", "group"], ["share"],
 ]

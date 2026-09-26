@@ -42,3 +42,19 @@ out=$(printf 'neu' | GNUPGHOME=$GPGHOME gpg --batch --quiet --passphrase-fd 0 \
 	--pinentry-mode loopback -d "$WORK/mini/Safe/dot_probe.gpg" 2>/dev/null)
 assert_eq "inhalt" "$out" \
 	"gpg by hand has to open it with exactly what was typed"
+
+# A Mac that has the safe but not its passphrase says so, and the menu
+# bar glass hands the passphrase in on stdin: checked against the safe,
+# never asked twice, no terminal needed.
+unset BIER_VAULT_PASS
+assert_ok bier mini state
+assert_contains "$OUT" "VAULTPASS	missing"
+assert_contains "$OUT" "STATE	drift"
+printf 'falsch\n' >"$WORK/.in"
+assert_fails bier mini vault --init --stdin
+assert_contains "$OUT" "does not open the vault"
+printf 'neu\n' >"$WORK/.in"
+assert_ok bier mini vault --init --stdin
+assert_contains "$OUT" "Remembered"
+assert_ok bier mini state
+assert_not_contains "$OUT" "VAULTPASS"
