@@ -207,8 +207,9 @@ private enum BierPeerCLI {
 		print("Paired \(options.localHost) with \(result.agent) on \(options.displayHost).")
 	}
 
-	/// view <page> [<argument>] --report <file> --fleet <directory>: a page
-	/// of Bierkasten as JSON, from bier report and the fleet cache.
+	/// view <page> [<argument>] --report <file> --fleet <directory> [--now
+	/// <seconds>]: a page of Bierkasten as JSON, from bier report and the
+	/// fleet cache; --now fixes the time, for samples that stay the same.
 	private static func view(_ arguments: [String]) throws {
 		var words: [String] = []
 		var values: [String: String] = [:]
@@ -233,7 +234,8 @@ private enum BierPeerCLI {
 			}
 		}
 		do {
-			let data = try FleetView(report: report, fleet: fleet).json(words[0], words.count > 1 ? words[1] : nil)
+			let now = values["--now"].flatMap(Int.init) ?? Int(Date().timeIntervalSince1970)
+			let data = try FleetView(report: report, fleet: fleet, now: now).json(words[0], words.count > 1 ? words[1] : nil)
 			FileHandle.standardOutput.write(data + Data("\n".utf8))
 		} catch let error as FleetViewError {
 			fputs("bier: \(error.description)\n", stderr)

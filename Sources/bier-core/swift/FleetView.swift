@@ -327,7 +327,8 @@ public struct FleetView {
 			trusts: said?.values("TRUSTS").compactMap(\.first) ?? [],
 			waiting: pending.contains { $0.mac == id },
 			missing: count(.missing), extra: count(.extra), notAssigned: count(.notAssigned),
-			inSync: known ? count(.missing) == 0 && count(.extra) == 0 && said?.first("STATE") != "drift" : nil)
+			// Only for a Mac that answers now: what one away said is old.
+			inSync: known && (reach == .this || reach == .online) ? count(.missing) == 0 && count(.extra) == 0 && said?.first("STATE") != "drift" : nil)
 	}
 
 	var macs: [ViewMac] { macIDs.map(mac) }
@@ -393,24 +394,24 @@ public struct FleetView {
 		let missing = macs.filter { $0.missing > 0 }
 		if !missing.isEmpty {
 			found.append(ViewFinding(kind: "missing", text: "Software is missing on \(FleetView.list(missing.map(\.id)))", macs: missing.map(\.id),
-				detail: "\(missing.map(\.missing).reduce(0, +)) package(s) that All Macs or a group gives are not installed yet.",
+				detail: "\(FleetView.packages(missing.map(\.missing).reduce(0, +))) that All Macs or a group gives \(missing.map(\.missing).reduce(0, +) == 1 ? "is" : "are") not installed yet.",
 				actions: [ViewAction(title: "Install on Every Mac Now", args: ["apply", "--everywhere"])]))
 		}
 		let extra = macs.filter { $0.extra > 0 }
 		if !extra.isEmpty {
 			found.append(ViewFinding(kind: "extra", text: "Software taken off is still on \(FleetView.list(extra.map(\.id)))", macs: extra.map(\.id),
-				detail: "\(extra.map(\.extra).reduce(0, +)) package(s) were removed elsewhere and are still installed.",
+				detail: "\(FleetView.packages(extra.map(\.extra).reduce(0, +))) removed elsewhere \(extra.map(\.extra).reduce(0, +) == 1 ? "is" : "are") still installed.",
 				actions: [ViewAction(title: "Remove on Every Mac Now", args: ["apply", "--everywhere"])]))
 		}
 		for path in own.values("VAULT_LEFT").compactMap(\.first) {
-			found.append(ViewFinding(kind: "conflict", text: "\(path) was changed on two Macs", macs: [this],
+			found.append(ViewFinding(kind: "conflict", text: "\(FleetView.shown(path)) was changed on two Macs", macs: [this],
 				detail: "Both versions are kept. Choose which one stays.",
 				actions: [ViewAction(title: "Keep This Mac's", args: ["vault", "resolve", path, "mine"]),
 					ViewAction(title: "Keep the Other", args: ["vault", "resolve", path, "theirs"])]))
 		}
 		let arrived = own.values("VAULT_IN").compactMap(\.first)
 		if !arrived.isEmpty {
-			found.append(ViewFinding(kind: "arrived", text: "Settings arrived for \(FleetView.list(arrived))", macs: [this],
+			found.append(ViewFinding(kind: "arrived", text: "Settings arrived for \(FleetView.list(arrived.map(FleetView.shown)))", macs: [this],
 				detail: "They are put in place with the next sync.", actions: [ViewAction(title: "Sync Now", args: ["sync"])]))
 		}
 		for mac in macs where mac.reach == .offline {
@@ -455,6 +456,20 @@ public struct FleetView {
 
 	static func list(_ names: [String]) -> String {
 		names.count <= 1 ? names.joined() : names.dropLast().joined(separator: ", ") + " and " + names.last!
+	}
+
+	static func packages(_ n: Int) -> String { n == 1 ? "1 package" : "\(n) packages" }
+
+	/// A path as a person reads it: ~ for the home folder, and the file a
+	/// conflict copy stands for, not the copy.
+	static func shown(_ path: String) -> String {
+		var path = path
+		if path.hasSuffix(".from-safe") { path.removeLast(".from-safe".count) }
+		let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+		if parts.count > 3, parts[0].isEmpty, parts[1] == "Users" {
+			return "~/" + parts.dropFirst(3).joined(separator: "/")
+		}
+		return path
 	}
 
 	static func ago(_ seconds: Int) -> String {
