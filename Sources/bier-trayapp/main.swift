@@ -23,6 +23,7 @@ struct BierState {
 	var settings: [String] = [] // arrived: settings from another Mac
 	var conflicts: [String] = [] // wrong: .from-safe copies to merge
 	var pending: [String] = [] // Macs introduced by a peer, to accept
+	var vaultPass = "" // missing or locked: the safe holds files this Mac cannot open
 	var version = "" // the script's version, for the out-of-date hint
 	var release = "" // a newer release on the code server, empty if none
 	var repo = "" // path to the repository, for the info menu
@@ -83,7 +84,7 @@ enum Bier {
 
 	/// Runs bier and returns (output, error text, success).
 	@discardableResult
-	static func run(_ args: [String], limit: TimeInterval = runLimit) -> (out: String, err: String, ok: Bool) {
+	static func run(_ args: [String], limit: TimeInterval = runLimit, input: String? = nil) -> (out: String, err: String, ok: Bool) {
 		guard let exe = executable() else {
 			return ("", "bier not found — is ~/.barrel still there?", false)
 		}
@@ -95,13 +96,20 @@ enum Bier {
 		env["HOMEBREW_NO_AUTO_UPDATE"] = "1"
 		task.environment = env
 
-		let outPipe = Pipe(), errPipe = Pipe()
+		let outPipe = Pipe(), errPipe = Pipe(), inPipe = Pipe()
 		task.standardOutput = outPipe
 		task.standardError = errPipe
+		// What bier would otherwise ask in a terminal, such as the vault
+		// passphrase: handed in, never on the command line.
+		if input != nil { task.standardInput = inPipe }
 		do {
 			try task.run()
 		} catch {
 			return ("", "bier could not be started: \(error.localizedDescription)", false)
+		}
+		if let input {
+			inPipe.fileHandleForWriting.write(Data((input + "\n").utf8))
+			try? inPipe.fileHandleForWriting.close()
 		}
 
 		var timedOut = false
@@ -148,6 +156,7 @@ enum Bier {
 			case "VAULT_IN": s.settings.append(f[1])
 			case "VAULT_LEFT": s.conflicts.append(f[1])
 			case "PENDING": s.pending.append(f[1])
+			case "VAULTPASS": s.vaultPass = f[1]
 			default: break
 			}
 		}
@@ -343,6 +352,17 @@ class Controller: NSObject, NSMenuDelegate {
 		}
 
 		// Something is wrong: what the last sync ran into, and conflicts.
+		if !state.vaultPass.isEmpty {
+			menu.addItem(header("The vault is closed on this Mac"))
+			if state.vaultPass == "locked" {
+				menu.addItem(detail("the keychain is locked — log in to this Mac to open it"))
+			} else {
+				menu.addItem(detail("it needs the passphrase of your vault"))
+				menu.addItem(action("Enter Vault Passphrase …", #selector(doPassphrase)))
+			}
+			menu.addItem(.separator())
+		}
+
 		if !syncTrouble.isEmpty || !state.conflicts.isEmpty || !state.pending.isEmpty {
 			menu.addItem(header("Something needs you"))
 			let waiting = state.pending.map { "\($0) waits: bier peer accept \($0)" }
@@ -415,10 +435,13 @@ class Controller: NSObject, NSMenuDelegate {
 		// Pairing without a terminal: the one-time code, shown here.
 		let connect = NSMenuItem(title: "Connect", action: nil, keyEquivalent: "")
 		let connectMenu = NSMenu()
-		connectMenu.addItem(action("Let a Mac Join …", #selector(doJoin)))
+		connectMenu.addItem(action("Join Your Macs …", #selector(doJoin)))
 		connectMenu.addItem(action("Connect Bierkasten …", #selector(doConnectApp)))
 		connect.submenu = connectMenu
 		menu.addItem(connect)
+		if NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.bierkasten) != nil {
+			menu.addItem(action("Open Bierkasten", #selector(doOpenBierkasten)))
+		}
 
 		let login = NSMenuItem(title: "Start at login",
 		                       action: #selector(toggleLogin), keyEquivalent: "")
@@ -548,8 +571,8 @@ class Controller: NSObject, NSMenuDelegate {
 		let code = line(after: "One-time code: ", in: r.out)
 		let run = line(after: "On the other Mac run:", in: r.out)?.trimmingCharacters(in: .whitespaces)
 		guard r.ok, let code else { return showFailure("Could not open pairing", r.err) }
-		showCode(code, title: "A Mac can join for 10 minutes",
-			text: "On the new Mac, run in Terminal:\n\n    \(run ?? "bier peer pair <this Mac>")\n\nand enter this code — or enter it in Bierkasten's Add a Mac.")
+		showCode(code, title: "This Mac can join for 10 minutes",
+			text: "In Bierkasten on one of your Macs, choose File ▸ Add Mac … and enter this code.\n\nWithout Bierkasten, run this on that Mac and enter the code:\n\n    \(run ?? "bier peer pair <this Mac>")")
 	}
 
 	/// Lets Bierkasten connect to this Mac's agent, once.
@@ -559,8 +582,47 @@ class Controller: NSObject, NSMenuDelegate {
 			return showFailure("Could not open the connection", r.err)
 		}
 		showCode(code, title: "Connect Bierkasten", text: "Enter this code in Bierkasten. It is open for 10 minutes.")
-		if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "net.toberer.bierkasten") {
+		doOpenBierkasten()
+	}
+
+	static let bierkasten = "net.toberer.bierkasten"
+
+	@objc private func doOpenBierkasten() {
+		if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: Self.bierkasten) {
 			NSWorkspace.shared.open(app)
+		}
+	}
+
+	/// The vault passphrase, asked here instead of in a terminal. bier
+	/// checks it against the safe; a wrong one is said so and asked again.
+	@objc private func doPassphrase() {
+		NSApp.activate(ignoringOtherApps: true)
+		var problem = ""
+		while true {
+			let alert = NSAlert()
+			alert.messageText = "Vault passphrase"
+			alert.informativeText = (problem.isEmpty ? "" : problem + "\n\n")
+				+ "The passphrase you chose for your vault on your first Mac. It opens the files and settings your Macs share, and is kept in this Mac's keychain."
+			let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+			alert.accessoryView = field
+			alert.addButton(withTitle: "Open Vault")
+			alert.addButton(withTitle: "Cancel")
+			alert.window.initialFirstResponder = field
+			guard alert.runModal() == .alertFirstButtonReturn else { return }
+			let pass = field.stringValue
+			guard !pass.isEmpty else { problem = "Enter the passphrase."; continue }
+			let r = Bier.run(["vault", "--init", "--stdin"], input: pass)
+			if r.ok { break }
+			problem = r.err.contains("does not open") ? "That passphrase does not open your vault." : r.err.trimmed
+		}
+		// Put in place what the vault holds for this Mac, then look again.
+		beginBusy()
+		DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+			_ = Bier.run(["sync"], limit: 600)
+			DispatchQueue.main.async {
+				self?.endBusy()
+				self?.refresh(fetch: false)
+			}
 		}
 	}
 
