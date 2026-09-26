@@ -35,7 +35,7 @@ A **Mac** has one name, `id` — its `hostname -s`. The rest:
 
 | Field | |
 | --- | --- |
-| `address` | how this Mac reaches it; missing for this Mac |
+| `address` | how this Mac reaches it; for this Mac, how the others reach it |
 | `group` | its group; missing while it is new |
 | `reach` | `this`, `online`, `offline`, `reachable` (answers, but bier there is too old to say how it is) or `unpaired` |
 | `checked`, `heard` | when it was last asked, and when it last said how it is |

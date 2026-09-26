@@ -34,7 +34,8 @@ public enum Reach: String, Codable, Sendable {
 public struct ViewMac: Codable, Equatable, Sendable {
 	/// Its one name, hostname -s.
 	public var id: String
-	/// How this Mac reaches it; nil for this Mac and for one not paired.
+	/// How this Mac reaches it -- for this Mac, how the others reach it;
+	/// nil for a Mac not paired.
 	public var address: String?
 	/// Its group; nil while it is new, in none.
 	public var group: String?
@@ -205,6 +206,8 @@ public struct FleetView {
 	var said: [String: MacSaid] = [:]
 	var fleet: [String: (status: String, checked: Int?, heard: Int?)] = [:]
 	var pending: [(mac: String, by: String)] = []
+	/// How the other Macs reach this one.
+	var ownAddress: String?
 
 	/// report: the output of bier report; fleet: the cache files of bier
 	/// fleet, one per Mac.
@@ -229,7 +232,8 @@ public struct FleetView {
 			case "HISTORY" where v.count >= 3: history.append(ViewChange(time: Int(v[0]) ?? 0, subject: v[1], commit: v[2]))
 			case "PEER" where v.count >= 1: peers.append((v[0], v.count > 3 && !v[3].isEmpty ? v[3] : FleetView.shortName(v[0])))
 			case "PENDING" where v.count >= 1: pending.append((v[0], v.count > 1 ? v[1] : ""))
-			case "SELF", "MAC", "REPO", "COMMIT": break
+			case "SELF": ownAddress = v.first
+			case "MAC", "REPO", "COMMIT": break
 			default: own.lines.append(f)
 			}
 		}
@@ -307,7 +311,7 @@ public struct FleetView {
 
 	func mac(_ id: String) -> ViewMac {
 		let said = state(of: id)
-		let address = peers.first { $0.name == id }?.address
+		let address = id == this ? ownAddress : peers.first { $0.name == id }?.address
 		let reach: Reach
 		if id == this {
 			reach = .this

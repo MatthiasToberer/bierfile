@@ -46,6 +46,7 @@ import Testing
 		#expect(page.macs.map(\.id) == ["mini", "air", "book"])
 		let air = try #require(page.macs.first { $0.id == "air" })
 		#expect(air.address == "air.ts.net")
+		#expect(page.macs.first?.address == "mini.ts.net")
 		#expect(air.reach == .offline)
 		#expect(air.heard == 1700000000 && air.checked == 1700000600)
 		#expect(air.group == "home")
