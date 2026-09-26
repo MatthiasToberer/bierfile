@@ -39,7 +39,7 @@ A **Mac** has one name, `id` — its `hostname -s`. The rest:
 | `group` | its group; missing while it is new |
 | `reach` | `this`, `online`, `offline`, `reachable` (answers, but bier there is too old to say how it is) or `unpaired` |
 | `checked`, `heard` | when it was last asked, and when it last said how it is |
-| `version`, `macos`, `model`, `disk` | as it said |
+| `version`, `macos`, `model`, `disk` | as it said; `diskFree` and `diskSize` are the parts of `disk` |
 | `trusts` | the Macs it trusts; empty when its bier is too old to say |
 | `waiting` | introduced, waiting to be accepted here |
 | `pending` | the Macs waiting to be accepted on it |

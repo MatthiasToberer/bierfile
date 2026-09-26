@@ -48,6 +48,9 @@ public struct ViewMac: Codable, Equatable, Sendable {
 	public var macos: String?
 	public var model: String?
 	public var disk: String?
+	/// The same in parts, "412G" and "994G", for an app that words it.
+	public var diskFree: String? = nil
+	public var diskSize: String? = nil
 	/// The Macs it trusts.
 	public var trusts: [String]
 	/// Whether it waits to be accepted here.
@@ -340,6 +343,7 @@ public struct FleetView {
 			checked: id == this ? now : fleet[id]?.checked,
 			heard: id == this ? now : fleet[id]?.heard,
 			version: said?.first("VERSION"), macos: said?.info("macos"), model: said?.info("model"), disk: said?.info("disk"),
+			diskFree: FleetView.diskPart(said?.info("disk"), 0), diskSize: FleetView.diskPart(said?.info("disk"), 1),
 			trusts: said?.values("TRUSTS").compactMap(\.first) ?? [],
 			waiting: pending.contains { $0.mac == id },
 			pending: waitingOn(id).map { $0.map(\.mac) },
@@ -508,6 +512,12 @@ public struct FleetView {
 
 	static func list(_ names: [String]) -> String {
 		names.count <= 1 ? names.joined() : names.dropLast().joined(separator: ", ") + " and " + names.last!
+	}
+
+	/// "412G free of 994G": the free space (0) or the size (1).
+	static func diskPart(_ disk: String?, _ index: Int) -> String? {
+		let parts = disk?.components(separatedBy: " free of ") ?? []
+		return parts.count == 2 ? parts[index] : nil
 	}
 
 	static func packages(_ n: Int) -> String { n == 1 ? "1 package" : "\(n) packages" }

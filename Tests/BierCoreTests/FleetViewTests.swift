@@ -13,6 +13,7 @@ import Testing
 	MYGROUP\thome
 	TRUSTS\tair
 	INFO\tmacos\t26.0
+	INFO\tdisk\t412G free of 994G
 	NEW\tbrew "jq"
 	VAULT_LEFT\t/Users/ma/.zshrc.from-safe
 	PENDING\tbook\tair
@@ -49,6 +50,7 @@ import Testing
 		let air = try #require(page.macs.first { $0.id == "air" })
 		#expect(air.address == "air.ts.net")
 		#expect(page.macs.first?.address == "mini.ts.net")
+		#expect(page.macs.first?.diskFree == "412G" && page.macs.first?.diskSize == "994G")
 		#expect(air.reach == .offline)
 		#expect(air.heard == 1700000000 && air.checked == 1700000600)
 		#expect(air.group == "home")
