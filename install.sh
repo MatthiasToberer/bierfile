@@ -481,17 +481,14 @@ NOTE
 fi
 ok "$VAULTDIR"
 
-# The passphrase is asked here and nowhere else. Asking later, on the
-# day somebody first puts a file in, means the setup was never actually
-# finished -- and it is the day they are thinking about something else.
+# The passphrase is not asked here. This may be a Mac about to join,
+# and one that invented a passphrase of its own could never open the
+# vault of the others. The first Mac sets it with bier init; a Mac that
+# joins is asked for it by its menu bar glass.
 if "$HERE/Sources/bier-core/bier" vault 2>/dev/null | grep -q 'remembered on this Mac'; then
 	ok "the passphrase is already known here"
-elif [ "$YES" = yes ] || [ ! -t 0 ]; then
-	# --yes cannot invent a passphrase, and guessing is not an option.
-	warn "no passphrase yet — run 'bier vault --init' to set one"
 else
-	"$HERE/Sources/bier-core/bier" vault --init ||
-		warn "not set; run 'bier vault --init' when you are ready"
+	ok "the passphrase comes later: bier init on your first Mac, the menu bar glass on the others"
 fi
 
 # --- Local peer agent -------------------------------------------------
@@ -645,12 +642,16 @@ cat <<EOF
 
 == Done
 
-   A click on the mug shows what differs. So that it comes back after
-   every login, tick "Start at login" in the menu once — only the app
-   itself can set that, not this script.
+   The glass in the menu bar shows how this Mac is. So that it comes
+   back after every login, tick "Start at login" in its menu once --
+   only the app itself can set that, not this script.
 
-   bier status   shows whether anything here is unrecorded
-   bier list     shows what the other devices have on top
-   bier take     pulls single entries here or into main
+   Your first Mac:     bier init
+                       its software becomes what All Macs get, and it
+                       asks for the vault passphrase.
+   Every other Mac:    in the glass, Connect > Join Your Macs ... shows
+                       a code; enter it in Bierkasten on your first Mac
+                       (File > Add Mac ...). The glass then asks for the
+                       vault passphrase.
 
 EOF

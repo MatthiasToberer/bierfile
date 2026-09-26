@@ -2110,6 +2110,19 @@ cmd_main() {
 	else
 		info "Not pushed — later with 'bier sync'."
 	fi
+
+	# The first Mac sets the vault passphrase; every Mac that joins later
+	# is asked for it by its menu bar glass. That is why installing does
+	# not ask: a Mac that is about to join has no passphrase to invent.
+	if [ "$(vault_pass_state)" = missing ]; then
+		info ""
+		if [ -t 0 ] || [ -n "${BIER_TEST_TTY:-}" ]; then
+			# In a subshell: a wrong answer must not undo "init went well".
+			(cmd_vault --init) || info "Not set; later with: bier vault --init"
+		else
+			info "No vault passphrase yet; set one with: bier vault --init"
+		fi
+	fi
 }
 
 # Installs a package if it is not here yet, puts it on a list, and

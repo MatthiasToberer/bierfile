@@ -120,3 +120,22 @@ assert_not_contains "$OUT" "GROUP	lab"
 assert_ok bier mini group drop bench
 answer y
 assert_ok bier mini init --no-push
+
+# The first Mac sets the vault passphrase with init; installing does not
+# ask, because a Mac about to join has none to invent.
+unset BIER_VAULT_PASS
+answer y
+assert_ok bier mini init --no-push
+assert_contains "$OUT" "No vault passphrase yet; set one with: bier vault --init"
+# The safe already holds files: a wrong answer is refused, and init
+# still counts as done.
+printf 'y\ngeheim\n' >"$WORK/.in"
+BIER_TEST_TTY=1 assert_ok bier mini init --no-push
+assert_contains "$OUT" "does not open the vault"
+assert_contains "$OUT" "Not set; later with: bier vault --init"
+printf 'y\nprobe\n' >"$WORK/.in"
+BIER_TEST_TTY=1 assert_ok bier mini init --no-push
+assert_contains "$OUT" "Remembered on this Mac."
+assert_ok bier mini init --no-push
+assert_not_contains "$OUT" "passphrase"
+export BIER_VAULT_PASS=probe
